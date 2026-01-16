@@ -68,6 +68,7 @@ else:
     logger.info(f"Running as normal Python script. Project root: {PROJECT_ROOT}")
 
 from src.app import create_app, download_static_resources, find_free_port, is_port_available, print_banner
+from src import __version__
 
 
 def start_flask_server(port: int, debug: bool = False):
@@ -153,7 +154,7 @@ def main():
         try:
             # Create webview window
             window = webview.create_window(
-                title="Anime1",
+                title=f"Anime1 v{__version__}",
                 url=url,
                 width=args.width,
                 height=args.height,
@@ -174,7 +175,7 @@ def main():
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>Anime1 - 启动失败</title>
+                    <title>Anime1 v{__version__} - 启动失败</title>
                     <style>
                         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                                padding: 40px; text-align: center; background: #f5f5f5; }}
@@ -203,7 +204,7 @@ def main():
                 </html>
                 """
                 window = webview.create_window(
-                    title="Anime1 - 启动失败",
+                    title=f"Anime1 v{__version__} - 启动失败",
                     html=error_html,
                     width=500,
                     height=400,

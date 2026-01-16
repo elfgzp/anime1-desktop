@@ -11,6 +11,8 @@
     const API_ANIME = '/api/anime';
     const API_ANIME_SEARCH = '/api/anime/search';
     const API_COVERS = '/api/anime/covers';
+    const API_UPDATE_CHECK = '/api/update/check';
+    const API_UPDATE_INFO = '/api/update/info';
 
     // Adult content detection
     const ADULT_MARKER = '🔞';
@@ -36,6 +38,18 @@
     const ID_SEARCH_BTN = 'searchBtn';
     const ID_CLEAR_SEARCH_BTN = 'clearSearchBtn';
     const ID_SEARCH_OVERLAY = 'searchOverlay';
+    const ID_LOADING_OVERLAY = 'loadingOverlay';
+    const ID_CHECK_UPDATE_BTN = 'checkUpdateBtn';
+    const ID_UPDATE_MODAL = 'updateModal';
+    const ID_HEADER_COMPACT = 'headerCompact';
+    const ID_UPDATE_BADGE = 'updateBadge';
+    const ID_CLOSE_UPDATE_MODAL = 'closeUpdateModal';
+    const ID_CURRENT_VERSION_TEXT = 'currentVersionText';
+    const ID_LATEST_VERSION_TEXT = 'latestVersionText';
+    const ID_PRERELEASE_BADGE = 'prereleaseBadge';
+    const ID_RELEASE_NOTES = 'releaseNotes';
+    const ID_DOWNLOAD_UPDATE_BTN = 'downloadUpdateBtn';
+    const ID_CANCEL_UPDATE_BTN = 'cancelUpdateBtn';
 
     // UI Text
     const TEXT_PAGE_PREFIX = '第 ';
@@ -82,7 +96,19 @@
         searchInput: document.getElementById(ID_SEARCH_INPUT),
         searchBtn: document.getElementById(ID_SEARCH_BTN),
         clearSearchBtn: document.getElementById(ID_CLEAR_SEARCH_BTN),
-        searchOverlay: document.getElementById(ID_SEARCH_OVERLAY)
+        searchOverlay: document.getElementById(ID_SEARCH_OVERLAY),
+        loadingOverlay: document.getElementById(ID_LOADING_OVERLAY),
+        checkUpdateBtn: document.getElementById(ID_CHECK_UPDATE_BTN),
+        headerCompact: document.getElementById(ID_HEADER_COMPACT),
+        updateBadge: document.getElementById(ID_UPDATE_BADGE),
+        updateModal: document.getElementById(ID_UPDATE_MODAL),
+        closeUpdateModal: document.getElementById(ID_CLOSE_UPDATE_MODAL),
+        currentVersionText: document.getElementById(ID_CURRENT_VERSION_TEXT),
+        latestVersionText: document.getElementById(ID_LATEST_VERSION_TEXT),
+        prereleaseBadge: document.getElementById(ID_PRERELEASE_BADGE),
+        releaseNotes: document.getElementById(ID_RELEASE_NOTES),
+        downloadUpdateBtn: document.getElementById(ID_DOWNLOAD_UPDATE_BTN),
+        cancelUpdateBtn: document.getElementById(ID_CANCEL_UPDATE_BTN)
     };
 
     // ============================================
@@ -118,6 +144,11 @@
         if (state.isLoading) return;
 
         state.isLoading = true;
+        
+        // 显示加载遮罩（仅在非搜索模式下显示，搜索模式使用 searchOverlay）
+        if (!state.isSearching && elements.loadingOverlay) {
+            elements.loadingOverlay.classList.remove(CLS_HIDDEN);
+        }
 
         try {
             let url;
@@ -145,6 +176,10 @@
         } catch (error) {
             console.error(TEXT_LOADING_FAILED, error);
             showEmpty();
+            // 出错时也隐藏加载遮罩
+            if (elements.loadingOverlay) {
+                elements.loadingOverlay.classList.add(CLS_HIDDEN);
+            }
         } finally {
             state.isLoading = false;
         }
@@ -231,11 +266,20 @@
     function renderGrid(animeList) {
         if (!animeList || animeList.length === 0) {
             showEmpty();
+            // 没有数据时隐藏加载遮罩
+            if (elements.loadingOverlay) {
+                elements.loadingOverlay.classList.add(CLS_HIDDEN);
+            }
             return;
         }
 
         elements.content.classList.remove(CLS_HIDDEN);
         elements.emptyState.classList.add(CLS_HIDDEN);
+        
+        // 有数据时隐藏加载遮罩
+        if (elements.loadingOverlay) {
+            elements.loadingOverlay.classList.add(CLS_HIDDEN);
+        }
 
         elements.grid.innerHTML = animeList.map(anime => {
             // 成人番剧：标题包含🔞或者链接到 anime1.pw
@@ -249,7 +293,7 @@
             if (isAdult) {
                 coverHtml = '<div class="adult-mark">' + ADULT_MARKER + '</div>';
             } else {
-                coverHtml = '<span class="loading-placeholder">⏳</span>';
+                coverHtml = '';
             }
 
             return '<a id="anime-card-' + animeId + '" class="anime-card' + (isAdult ? '' : ' card-loading') + '" href="/anime/' + animeId + '">' +
@@ -333,6 +377,116 @@
         if (elements.previewImage) {
             elements.previewImage.addEventListener('click', (e) => e.stopPropagation());
         }
+
+        // Update checker - 点击标题检查更新
+        if (elements.headerCompact) {
+            elements.headerCompact.addEventListener('click', () => {
+                checkForUpdate(true);
+            });
+        }
+        if (elements.closeUpdateModal) {
+            elements.closeUpdateModal.addEventListener('click', hideUpdateModal);
+        }
+        if (elements.cancelUpdateBtn) {
+            elements.cancelUpdateBtn.addEventListener('click', hideUpdateModal);
+        }
+        if (elements.downloadUpdateBtn) {
+            elements.downloadUpdateBtn.addEventListener('click', downloadUpdate);
+        }
+        // Close modal when clicking outside
+        if (elements.updateModal) {
+            elements.updateModal.addEventListener('click', (e) => {
+                if (e.target === elements.updateModal) {
+                    hideUpdateModal();
+                }
+            });
+        }
+    }
+
+    // ============================================
+    // Update Checker
+    // ============================================
+
+    let updateInfo = null;
+
+    async function checkForUpdate(showModal = true) {
+        try {
+            const response = await fetch(API_UPDATE_CHECK);
+            const data = await response.json();
+
+            if (data.has_update) {
+                updateInfo = data;
+                // 显示更新提示红点
+                if (elements.updateBadge) {
+                    elements.updateBadge.classList.add('show');
+                }
+                // 如果要求显示弹窗，则显示
+                if (showModal) {
+                    showUpdateModal(data);
+                }
+                return true;
+            } else {
+                // 隐藏更新提示红点
+                if (elements.updateBadge) {
+                    elements.updateBadge.classList.remove('show');
+                }
+                return false;
+            }
+        } catch (error) {
+            console.error('检查更新失败:', error);
+            return false;
+        }
+    }
+
+    function showUpdateModal(data) {
+        if (!elements.updateModal) return;
+
+        // Set version info
+        if (elements.currentVersionText) {
+            elements.currentVersionText.textContent = data.current_version || '-';
+        }
+        if (elements.latestVersionText) {
+            elements.latestVersionText.textContent = data.latest_version || '-';
+        }
+
+        // Show prerelease badge if needed
+        if (elements.prereleaseBadge) {
+            if (data.is_prerelease) {
+                elements.prereleaseBadge.classList.remove(CLS_HIDDEN);
+            } else {
+                elements.prereleaseBadge.classList.add(CLS_HIDDEN);
+            }
+        }
+
+        // Set release notes
+        if (elements.releaseNotes) {
+            const notes = data.release_notes || '暂无更新说明';
+            // Convert markdown links to HTML if needed
+            const notesHtml = notes
+                .replace(/\n/g, '<br>')
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #4ecdc4;">$1</a>');
+            elements.releaseNotes.innerHTML = notesHtml || '暂无更新说明';
+        }
+
+        // Show modal
+        elements.updateModal.classList.remove(CLS_HIDDEN);
+    }
+
+    function hideUpdateModal() {
+        if (elements.updateModal) {
+            elements.updateModal.classList.add(CLS_HIDDEN);
+        }
+    }
+
+    function downloadUpdate() {
+        if (!updateInfo || !updateInfo.download_url) {
+            alert('下载链接不可用');
+            return;
+        }
+
+        // Open download URL in new tab/window
+        window.open(updateInfo.download_url, '_blank');
+        hideUpdateModal();
     }
 
     // ============================================
@@ -342,6 +496,11 @@
     function init() {
         bindEvents();
         fetchAnimeList(INITIAL_PAGE);
+        
+        // Auto check for updates on startup (after a delay, 不显示弹窗)
+        setTimeout(() => {
+            checkForUpdate(false);
+        }, 2000);
     }
 
     // Run on DOM ready
@@ -360,6 +519,7 @@
         searchAnime,
         clearSearch,
         openPreview,
-        closePreview
+        closePreview,
+        checkForUpdate
     };
 })();
