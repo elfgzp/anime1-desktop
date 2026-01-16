@@ -132,12 +132,39 @@
         .fetching { background: rgba(255, 235, 59, 0.15) !important; }
         .has-cover { background: rgba(78, 205, 196, 0.1) !important; }
 
+        /* 紧凑标题样式 */
+        .header-compact {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 20px;
+            flex-shrink: 0;
+        }
+        .header-compact h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ff6b9d 0%, #7c5cff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            line-height: 1.2;
+        }
+        .header-compact .subtitle {
+            font-size: 0.85rem;
+            color: #8888a0;
+            margin: 0;
+            padding-left: 12px;
+            border-left: 1px solid #2a2a4a;
+        }
+        
         /* 搜索框样式 - 暗色主题 */
         .search-box {
             display: flex;
+            align-items: center;
             gap: 12px;
             margin-bottom: 25px;
-            padding: 20px 25px;
+            padding: 15px 20px;
             background: #1a1a2e;
             border-radius: 12px;
             border: 1px solid #2a2a4a;
@@ -305,20 +332,30 @@
 
         @media (max-width: 768px) {
             .anime-table { display: block; overflow-x: auto; }
-            .search-box { flex-direction: column; }
+            .search-box { 
+                flex-direction: column; 
+                align-items: stretch;
+            }
+            .header-compact {
+                margin-right: 0;
+                margin-bottom: 12px;
+                justify-content: center;
+            }
+            .header-compact .subtitle {
+                padding-left: 8px;
+            }
             .page-jump { margin-left: 0; margin-top: 15px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header class="header">
-            <h1>Anime1</h1>
-            <p class="subtitle">番剧浏览器</p>
-        </header>
-
         <!-- 搜索框 -->
         <div class="search-box">
+            <div class="header-compact">
+                <h1>Anime1</h1>
+                <p class="subtitle">桌面版</p>
+            </div>
             <input type="text" id="searchInput" class="search-input" placeholder="搜索番剧名称...">
             <button id="searchBtn" class="btn btn-search">搜索</button>
             <button id="clearSearchBtn" class="btn btn-clear hidden">清除搜索</button>
