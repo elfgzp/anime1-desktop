@@ -1,12 +1,16 @@
 [project]
-name = "anime1-cover"
+name = "anime1-desktop"
 version = "1.0.0"
-description = "Anime1.me 番剧封面浏览器 - 支持分页查看番剧封面信息"
+description = "Anime1 桌面应用 - 番剧浏览器"
 requires-python = ">=3.8"
 dependencies = [
     "flask>=2.3.0",
     "beautifulsoup4>=4.12.0",
     "requests>=2.31.0",
+    "pywebview>=4.0.0",
+    "pyinstaller>=6.0.0",
+    "pillow>=10.0.0",
+    "hanziconv>=0.3.2",
 ]
 
 [project.optional-dependencies]
@@ -15,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-anime1-cover = "src.app:main"
+anime1 = "src.app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

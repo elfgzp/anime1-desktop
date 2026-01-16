@@ -1,4 +1,4 @@
-/* Anime1 Cover Browser - Main JavaScript */
+/* Anime1 - Main JavaScript */
 
 (function() {
     'use strict';
@@ -41,7 +41,7 @@
     const TEXT_PAGE_PREFIX = '第 ';
     const TEXT_PAGE_SUFFIX = ' 页';
     const TEXT_LOADING_FAILED = '获取失败:';
-    const TEXT_COVER_FAILED = '获取封面失败:';
+    const TEXT_IMAGE_FAILED = '加载图片失败';
     const TEXT_DEFAULT_VALUE = '-';
     const TEXT_COVER_IMG_ERROR = "this.style.display='none'";
 
@@ -197,7 +197,7 @@
                     updateAnimeRow(result.animeId, result.data);
                 }
             } catch (e) {
-                console.error(TEXT_COVER_FAILED, e);
+                console.error(TEXT_IMAGE_FAILED, e);
             }
         }
     }
