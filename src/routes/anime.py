@@ -11,6 +11,7 @@ from src.models.anime import Anime, AnimePage
 from src.parser.anime1_parser import Anime1Parser
 from src.parser.cover_finder import CoverFinder
 from src.utils.text_converter import get_search_variants
+from src import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -247,12 +248,12 @@ def register_page_routes(app):
     @app.route("/")
     def index():
         page = request.args.get("page", 1, type=int)
-        return render_template("index.html", page=page)
+        return render_template("index.html", page=page, version=__version__)
 
     @app.route("/anime/<anime_id>")
     def detail(anime_id: str):
         """Render the anime detail page."""
-        return render_template("detail.html", anime_id=anime_id)
+        return render_template("detail.html", anime_id=anime_id, version=__version__)
 
     @app.route("/api/extract-player")
     def extract_player():

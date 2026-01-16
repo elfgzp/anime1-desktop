@@ -1,3 +1,5 @@
 """Anime1 - Desktop application for browsing Anime1.me"""
 
-__version__ = "1.0.0"
+from .utils.version import get_version
+
+__version__ = get_version()

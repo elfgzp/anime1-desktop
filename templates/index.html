@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anime1</title>
+    <title>Anime1{% if version %} v{{ version }}{% endif %}</title>
     <link rel="stylesheet" href="/static/style.css">
     <style>
         /* 表格布局样式 - 暗色主题 */
@@ -139,6 +139,12 @@
             gap: 12px;
             margin-right: 20px;
             flex-shrink: 0;
+            position: relative;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        .header-compact:hover {
+            opacity: 0.8;
         }
         .header-compact h1 {
             font-size: 1.5rem;
@@ -156,6 +162,33 @@
             margin: 0;
             padding-left: 12px;
             border-left: 1px solid #2a2a4a;
+        }
+        /* 更新提示红点 */
+        .update-badge {
+            position: absolute;
+            top: -4px;
+            right: -8px;
+            width: 10px;
+            height: 10px;
+            background: linear-gradient(135deg, #ff6b9d 0%, #7c5cff 100%);
+            border-radius: 50%;
+            border: 2px solid #1a1a2e;
+            box-shadow: 0 0 8px rgba(255, 107, 157, 0.6);
+            animation: pulse-badge 2s infinite;
+            display: none;
+        }
+        .update-badge.show {
+            display: block;
+        }
+        @keyframes pulse-badge {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.8;
+            }
         }
         
         /* 搜索框样式 - 暗色主题 */
@@ -346,15 +379,157 @@
             }
             .page-jump { margin-left: 0; margin-top: 15px; }
         }
+
+        /* 更新提示弹窗样式 */
+        .update-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 3000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .update-modal.hidden {
+            display: none;
+        }
+        .update-modal-content {
+            background: #1a1a2e;
+            border-radius: 16px;
+            border: 1px solid #2a2a4a;
+            box-shadow: 0 10px 60px rgba(0, 0, 0, 0.5);
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .update-modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(255, 107, 157, 0.1) 0%, rgba(124, 92, 255, 0.1) 100%);
+        }
+        .update-modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, #ff6b9d 0%, #7c5cff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .update-modal-close {
+            background: none;
+            border: none;
+            color: #8888a0;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+        .update-modal-close:hover {
+            background: #252542;
+            color: #ff6b9d;
+        }
+        .update-modal-body {
+            padding: 24px;
+            overflow-y: auto;
+        }
+        .update-version-info {
+            margin-bottom: 20px;
+        }
+        .update-version-info p {
+            margin: 8px 0;
+            color: #e8e8f0;
+        }
+        .update-version-info strong {
+            color: #4ecdc4;
+        }
+        .prerelease-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 12px;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .update-release-notes {
+            margin-bottom: 24px;
+        }
+        .update-release-notes h3 {
+            margin: 0 0 12px 0;
+            color: #e8e8f0;
+            font-size: 1rem;
+        }
+        .release-notes-content {
+            background: #0f0f1a;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #2a2a4a;
+            color: #8888a0;
+            font-size: 14px;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .update-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #ff6b9d 0%, #7c5cff 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .btn-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 157, 0.5);
+        }
+        .btn-cancel {
+            background: #1a1a2e;
+            color: #8888a0;
+            border: 2px solid #2a2a4a;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-cancel:hover {
+            background: #252542;
+            border-color: #8888a0;
+            color: #e8e8f0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- 搜索框 -->
         <div class="search-box">
-            <div class="header-compact">
+            <div class="header-compact" id="headerCompact" title="点击检查应用更新">
                 <h1>Anime1</h1>
                 <p class="subtitle">桌面版</p>
+                <span id="updateBadge" class="update-badge" title="有新版本可用"></span>
             </div>
             <input type="text" id="searchInput" class="search-input" placeholder="搜索番剧名称...">
             <button id="searchBtn" class="btn btn-search">搜索</button>
@@ -365,6 +540,12 @@
         <div id="searchOverlay" class="search-overlay hidden">
             <div class="search-spinner"></div>
             <span>搜索中...</span>
+        </div>
+
+        <!-- 加载中遮罩 -->
+        <div id="loadingOverlay" class="search-overlay">
+            <div class="search-spinner"></div>
+            <span>加载中...</span>
         </div>
 
         <div id="content">
@@ -378,6 +559,31 @@
         <!-- 点击预览弹窗 -->
         <div id="previewOverlay" class="preview-overlay">
             <img id="previewImage" class="preview-image" src="" alt="预览">
+        </div>
+
+        <!-- 更新提示弹窗 -->
+        <div id="updateModal" class="update-modal hidden">
+            <div class="update-modal-content">
+                <div class="update-modal-header">
+                    <h2>发现新版本</h2>
+                    <button id="closeUpdateModal" class="update-modal-close">×</button>
+                </div>
+                <div class="update-modal-body">
+                    <div class="update-version-info">
+                        <p>当前版本: <strong id="currentVersionText">-</strong></p>
+                        <p>最新版本: <strong id="latestVersionText">-</strong></p>
+                        <p id="prereleaseBadge" class="prerelease-badge hidden">测试版本</p>
+                    </div>
+                    <div class="update-release-notes">
+                        <h3>更新内容:</h3>
+                        <div id="releaseNotes" class="release-notes-content"></div>
+                    </div>
+                    <div class="update-actions">
+                        <button id="downloadUpdateBtn" class="btn-download">下载更新</button>
+                        <button id="cancelUpdateBtn" class="btn-cancel">稍后提醒</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <nav class="pagination">

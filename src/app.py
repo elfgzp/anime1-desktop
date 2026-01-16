@@ -15,9 +15,10 @@ PROJECT_ROOT = Path(os.path.abspath(__file__)).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import DEFAULT_HOST, DEFAULT_PORT, STATIC_CACHE_DIR, STATIC_RESOURCES
-from src.routes import anime_bp, proxy_bp, register_page_routes
+from src.routes import anime_bp, proxy_bp, update_bp, register_page_routes
 from src.parser.anime1_parser import Anime1Parser
 from src.parser.cover_finder import CoverFinder
+from src import __version__
 
 
 def download_static_resources():
@@ -66,6 +67,7 @@ def create_app() -> Flask:
     # Register blueprints
     app.register_blueprint(anime_bp)
     app.register_blueprint(proxy_bp)
+    app.register_blueprint(update_bp)
 
     # Register page routes
     register_page_routes(app)
@@ -118,7 +120,7 @@ def open_browser(port: int):
 def print_banner(host: str, port: int):
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
-║                       Anime1                              ║
+║                    Anime1 v{__version__:<15}              ║
 ║                                                          ║
 ║   Server running at: http://{host}:{port}              ║
 ║                                                          ║

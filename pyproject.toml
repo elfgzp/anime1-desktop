@@ -1,6 +1,6 @@
 [project]
 name = "anime1-desktop"
-version = "1.0.0"
+version = "0.1.0"
 description = "Anime1 桌面应用 - 番剧浏览器"
 requires-python = ">=3.8"
 dependencies = [
@@ -20,6 +20,9 @@ dev = [
 
 [project.scripts]
 anime1 = "src.app:main"
+
+[tool.setuptools]
+packages = {find = {}}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

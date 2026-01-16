@@ -102,3 +102,8 @@ STATIC_RESOURCES = {
     "videojs.css": "https://sta.anicdn.com/videojs.css",
     "videojs.bundle.js": "https://sta.anicdn.com/videojs.bundle.js?ver=8",
 }
+
+# Update Checker Configuration
+GITHUB_REPO_OWNER = "elfgzp"
+GITHUB_REPO_NAME = "anime1-desktop"
+UPDATE_CHANNEL = "stable"  # "stable" or "test"
