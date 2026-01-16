@@ -199,3 +199,16 @@ cython_debug/
 # Generated files
 anime1-covers.md
 anime1_data.json
+
+# PyInstaller build output
+dist/
+build/
+*.exe
+*.dylib
+*.so
+__pycache__/
+
+# macOS specific
+.DS_Store
+*.app/
+*.dSYM/

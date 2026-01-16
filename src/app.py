@@ -1,4 +1,4 @@
-"""Flask web application for Anime1 Cover Browser."""
+"""Flask web application for Anime1."""
 import argparse
 import os
 import socket
@@ -118,7 +118,7 @@ def open_browser(port: int):
 def print_banner(host: str, port: int):
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
-║           Anime1 Cover Browser                            ║
+║                       Anime1                              ║
 ║                                                          ║
 ║   Server running at: http://{host}:{port}              ║
 ║                                                          ║
@@ -132,7 +132,7 @@ def print_banner(host: str, port: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Anime1 Cover Browser")
+    parser = argparse.ArgumentParser(description="Anime1 Desktop App")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to run on")
     parser.add_argument("--host", default=DEFAULT_HOST, help="Host to bind to")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")

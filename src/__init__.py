@@ -1,3 +1,3 @@
-"""Anime1 Cover Browser - A web interface for browsing Anime1.me anime covers."""
+"""Anime1 - Desktop application for browsing Anime1.me"""
 
 __version__ = "1.0.0"
