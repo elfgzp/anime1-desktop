@@ -1,0 +1,25 @@
+[project]
+name = "anime1-cover"
+version = "1.0.0"
+description = "Anime1.me 番剧封面浏览器 - 支持分页查看番剧封面信息"
+requires-python = ">=3.8"
+dependencies = [
+    "flask>=2.3.0",
+    "beautifulsoup4>=4.12.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+anime1-cover = "src.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
