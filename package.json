@@ -1,7 +1,7 @@
 {
   "name": "anime1-cover",
   "version": "1.0.0",
-  "description": "Anime1.me 番剧封面浏览器 - 支持分页查看番剧封面信息",
+  "description": "Anime1 桌面应用",
   "main": "src/app.py",
   "scripts": {
     "start": "python -m src.app",
