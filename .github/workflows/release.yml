@@ -63,14 +63,7 @@ jobs:
           brew install create-dmg
 
       - name: Build application
-        run: |
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            python build.py --clean --onefile
-          elif [ "${{ runner.os }}" == "macOS" ]; then
-            python build.py --clean
-          else
-            python build.py --clean --onefile
-          fi
+        run: bash scripts/build.sh "${{ runner.os }}"
 
       - name: Prepare artifacts
         env:
@@ -114,36 +107,14 @@ jobs:
       - name: Extract tag name
         id: tag
         run: |
-          # 如果是手动触发，使用输入的版本号
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            TAG_NAME="v${{ github.event.inputs.version }}"
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            # 从 tag 获取版本号
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            VERSION=${TAG_NAME#v}
-          fi
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Tag/Version: $TAG_NAME"
+          eval $(bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}")
+          echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
+          echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Extract changelog
         id: changelog
         run: |
-          VERSION="${{ steps.tag.outputs.version }}"
-          if [ -z "$VERSION" ] || [ "$VERSION" == "test" ]; then
-            CHANGELOG="测试构建 - 查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细变更。"
-          else
-            CHANGELOG=$(python scripts/extract_changelog.py "$VERSION")
-            if [ -z "$CHANGELOG" ]; then
-              CHANGELOG="查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细变更。"
-            fi
-          fi
-          {
-            echo "changelog<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          bash scripts/extract_changelog.sh "${{ steps.tag.outputs.version }}" "${{ github.repository }}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

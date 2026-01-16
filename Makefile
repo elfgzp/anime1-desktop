@@ -34,7 +34,7 @@ PROJECT_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 DIST_DIR := $(PROJECT_ROOT)dist
 BUILD_DIR := $(PROJECT_ROOT)build
 
-.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps
+.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth
 
 help:
 	@echo "Anime1 Cover Browser - Makefile Commands"
@@ -65,6 +65,9 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test          - Run tests"
+	@echo "  make test-workflow - Test GitHub Actions workflow (需要 gh CLI)"
+	@echo "  make test-gh-auth  - Check GitHub CLI authentication"
+	@echo "  make verify-scripts - Verify all workflow scripts"
 
 # Dependencies
 deps:
@@ -186,3 +189,17 @@ clean-all: clean
 test:
 	@echo "Running tests..."
 	@$(PYTHON_CMD) -m pytest $(PROJECT_ROOT)tests -v 2>/dev/null || echo "No tests found or pytest not installed."
+
+# GitHub Actions Workflow Testing
+test-workflow:
+	@echo "Testing GitHub Actions workflow..."
+	@bash $(PROJECT_ROOT)scripts/test-workflow.sh
+
+test-gh-auth:
+	@echo "检查 GitHub CLI 认证状态..."
+	@gh auth status || (echo "未登录，请运行: gh auth login --scopes workflow" && exit 1)
+	@echo "✓ GitHub CLI 已登录"
+
+verify-scripts:
+	@echo "验证所有 workflow 相关脚本..."
+	@bash $(PROJECT_ROOT)scripts/verify-scripts.sh
