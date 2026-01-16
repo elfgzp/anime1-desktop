@@ -23,18 +23,22 @@ Anime1 的桌面应用，跨平台支持 Windows / macOS / Linux。
 
 ## 开发
 
-```bash
-# 安装依赖
-make install
+详细开发说明、构建流程和测试指南请查看 [DEVELOPMENT.md](DEVELOPMENT.md)
 
-# 运行应用
-make dev
+## 更新日志
 
-# 打包
-make build
-```
+查看 [CHANGELOG.md](CHANGELOG.md) 了解所有版本的更新内容。
 
-详细开发说明请查看 [DEVELOPMENT.md](DEVELOPMENT.md)
+## 下载
+
+从 [GitHub Releases](https://github.com/your-username/anime1-desktop/releases) 下载最新版本。
+
+支持平台：
+- **Windows (x64)**: 下载 `anime1-windows-x64.zip`
+- **macOS (Intel)**: 下载 `anime1-macos-x64.dmg`
+- **macOS (Apple Silicon)**: 下载 `anime1-macos-arm64.dmg`
+- **Linux (x64)**: 下载 `anime1-linux-x64.tar.gz`
+- **Linux (ARM64)**: 下载 `anime1-linux-arm64.tar.gz`
 
 ## License
 

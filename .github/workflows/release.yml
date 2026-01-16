@@ -1,0 +1,179 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送以 v 开头的 tag 时触发，例如 v1.0.0
+  workflow_dispatch:  # 手动触发，用于测试（GitHub 官方推荐方式）
+    inputs:
+      version:
+        description: '版本号（用于测试，例如 1.0.0-test）'
+        required: false
+        default: 'test'
+        type: string
+      create_release:
+        description: '是否创建 Release（仅 tag 触发时自动创建）'
+        required: false
+        default: false
+        type: boolean
+      test_mode:
+        description: '测试模式：只构建一个平台（用于快速测试）'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: macos-latest
+            arch: arm64
+          # macOS Intel 构建
+          # 注意：GitHub Actions 可能不再提供 Intel macOS runner
+          # 如果构建失败，可以注释掉下面这行，只构建 arm64 版本
+          # Apple Silicon Mac 可以通过 Rosetta 运行 x64 应用
+          - os: macos-12
+            arch: x64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      
+      - name: Install create-dmg (macOS only)
+        if: runner.os == 'macOS'
+        run: |
+          brew install create-dmg
+
+      - name: Build application
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            python build.py --clean --onefile
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            python build.py --clean
+          else
+            python build.py --clean --onefile
+          fi
+
+      - name: Prepare artifacts
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: python scripts/prepare_artifacts.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-${{ matrix.arch }}-build
+          path: release/
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # 只在 push tag 或手动触发且选择创建 release 时执行
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: python scripts/prepare_release_assets.py
+        # 查找并复制所有构建产物（Windows 是 zip，macOS 是 dmg，Linux 是 tar.gz）
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          # 如果是手动触发，使用输入的版本号
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG_NAME="v${{ github.event.inputs.version }}"
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # 从 tag 获取版本号
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#v}
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Tag/Version: $TAG_NAME"
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" == "test" ]; then
+            CHANGELOG="测试构建 - 查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细变更。"
+          else
+            CHANGELOG=$(python scripts/extract_changelog.py "$VERSION")
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细变更。"
+            fi
+          fi
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Release ${{ steps.tag.outputs.tag_name }}
+          body: |
+            ## Anime1 Desktop ${{ steps.tag.outputs.tag_name }}
+            
+            ### 下载
+            
+            - **Windows (x64)**: `anime1-windows-x64.zip` (解压后运行 Anime1.exe)
+            - **macOS (Intel)**: `anime1-macos-x64.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
+            - **macOS (Apple Silicon)**: `anime1-macos-arm64.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
+            - **Linux (x64)**: `anime1-linux-x64.tar.gz` (解压后运行可执行文件)
+            - **Linux (ARM64)**: `anime1-linux-arm64.tar.gz` (解压后运行可执行文件)
+            
+            ### 安装说明
+            
+            - **Windows**: 解压 zip 文件，运行其中的 Anime1.exe
+            - **macOS**: 根据你的 Mac 架构选择对应的版本，双击 DMG 文件挂载，将 Anime1.app 拖拽到应用程序文件夹
+            - **Linux**: 根据你的系统架构选择对应的版本，解压 tar.gz 文件，添加执行权限后运行 `tar -xzf anime1-linux-*.tar.gz && chmod +x Anime1 && ./Anime1`
+            
+            ### 变更日志
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ---
+            
+            查看完整的 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 或 [提交历史](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.tag_name }}^...${{ steps.tag.outputs.tag_name }})。
+          files: release-assets/*
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag_name, '-') || contains(steps.tag.outputs.tag_name, 'alpha') || contains(steps.tag.outputs.tag_name, 'beta') || contains(steps.tag.outputs.tag_name, 'rc') }}

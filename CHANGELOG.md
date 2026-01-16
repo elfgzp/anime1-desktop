@@ -1,0 +1,39 @@
+# Changelog
+
+本文档记录项目的所有重要变更。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+### 计划中
+- 待添加的功能和修复
+
+## [1.0.0] - 2024-01-01
+
+### Added
+- 初始版本发布
+- 支持从 Anime1.me 浏览和观看番剧
+- 跨平台支持（Windows、macOS、Linux）
+- 桌面应用界面，基于 pywebview
+- 番剧列表和详情页面
+- 视频播放功能
+
+### Changed
+- 无
+
+### Deprecated
+- 无
+
+### Removed
+- 无
+
+### Fixed
+- 无
+
+### Security
+- 无
+
+[Unreleased]: https://github.com/your-username/anime1-desktop/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/your-username/anime1-desktop/releases/tag/v1.0.0

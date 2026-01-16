@@ -146,6 +146,89 @@ pip install -e ".[dev]"
 包含：
 - **pytest** >= 7.0.0 - 测试框架
 
+## GitHub Actions 构建和发布
+
+项目使用 GitHub Actions 自动构建和发布到所有平台。
+
+### 正式发布
+
+当推送以 `v` 开头的 tag 时，会自动触发构建流程：
+
+```bash
+# 创建并推送 tag
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions 会自动：
+1. 在 Windows、macOS、Linux 三个平台上构建应用
+2. 将构建产物上传到 GitHub Release
+3. 创建 Release 页面，包含所有平台的下载链接
+
+### 构建产物
+
+- **Windows (x64)**: `anime1-windows-x64.zip` - 包含 Anime1.exe 的压缩包
+- **macOS (Intel)**: `anime1-macos-x64.dmg` - DMG 安装包
+- **macOS (Apple Silicon)**: `anime1-macos-arm64.dmg` - DMG 安装包
+- **Linux (x64)**: `anime1-linux-x64.tar.gz` - 包含可执行文件的压缩包
+- **Linux (ARM64)**: `anime1-linux-arm64.tar.gz` - 包含可执行文件的压缩包
+
+### 测试构建
+
+使用 GitHub CLI (gh) 测试构建流程，无需打 tag。
+
+#### 安装 GitHub CLI
+
+```bash
+# macOS
+brew install gh
+
+# Linux / Windows
+# 参考: https://cli.github.com/manual/installation
+```
+
+#### 快速测试
+
+```bash
+# 1. 登录 GitHub（首次使用）
+gh auth login
+
+# 2. 触发测试构建（只构建，不创建 Release）
+gh workflow run "Build and Release" \
+  --ref main \
+  -f version=1.0.0-test \
+  -f create_release=false
+
+# 3. 查看运行状态
+gh run list --workflow="Build and Release"
+gh run watch  # 实时查看最新运行
+```
+
+#### 查看构建日志
+
+```bash
+# 查看最新的运行
+gh run view
+
+# 查看特定运行的日志
+gh run view --log
+
+# 查看特定 workflow 的运行列表
+gh run list --workflow="Build and Release"
+```
+
+#### 下载构建产物
+
+```bash
+# 下载最新运行的 artifacts
+gh run download
+
+# 下载特定运行的 artifacts
+gh run download <run-id>
+```
+
+详细测试指南请查看 [.github/workflows/TESTING.md](.github/workflows/TESTING.md)
+
 ## 故障排查
 
 ### macOS 应用无法启动
