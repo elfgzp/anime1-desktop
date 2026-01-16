@@ -34,7 +34,7 @@ PROJECT_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 DIST_DIR := $(PROJECT_ROOT)dist
 BUILD_DIR := $(PROJECT_ROOT)build
 
-.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth
+.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth test-local-build test-local-build-full
 
 help:
 	@echo "Anime1 Cover Browser - Makefile Commands"
@@ -68,6 +68,8 @@ help:
 	@echo "  make test-workflow - Test GitHub Actions workflow (需要 gh CLI)"
 	@echo "  make test-gh-auth  - Check GitHub CLI authentication"
 	@echo "  make verify-scripts - Verify all workflow scripts"
+	@echo "  make test-local-build - Test build scripts locally (dry-run)"
+	@echo "  make test-local-build-full - Test build scripts with actual build"
 
 # Dependencies
 deps:
@@ -203,3 +205,21 @@ test-gh-auth:
 verify-scripts:
 	@echo "验证所有 workflow 相关脚本..."
 	@bash $(PROJECT_ROOT)scripts/verify-scripts.sh
+
+# 本地构建测试
+test-local-build:
+	@echo "本地测试构建脚本 (dry-run 模式)..."
+	@bash $(PROJECT_ROOT)scripts/test-local-build.sh dry-run all
+
+test-local-build-full:
+	@echo "本地测试构建脚本 (实际构建模式)..."
+	@bash $(PROJECT_ROOT)scripts/test-local-build.sh full all
+
+test-local-build-platform:
+	@echo "本地测试指定平台的构建脚本..."
+	@echo "用法: make test-local-build-platform PLATFORM=macos"
+	@if [ -z "$(PLATFORM)" ]; then \
+		echo "错误: 请指定平台 (PLATFORM=windows|macos|linux)"; \
+		exit 1; \
+	fi
+	@bash $(PROJECT_ROOT)scripts/test-local-build.sh dry-run $(PLATFORM)
