@@ -37,10 +37,11 @@ jobs:
           - os: macos-latest
             arch: arm64
           # macOS Intel 构建
-          # 注意：GitHub Actions 可能不再提供 Intel macOS runner
+          # 注意：macos-12 已废弃（2024年12月3日），macos-13 也将在 2025年12月4日弃用
+          # 使用 macos-15-intel 明确指定 Intel 架构
           # 如果构建失败，可以注释掉下面这行，只构建 arm64 版本
           # Apple Silicon Mac 可以通过 Rosetta 运行 x64 应用
-          - os: macos-12
+          - os: macos-15-intel
             arch: x64
     
     steps:
