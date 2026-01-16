@@ -2,6 +2,23 @@
 
 本目录包含 GitHub Actions workflow 使用的所有脚本。
 
+## 本地测试
+
+可以使用 `test-local-build.sh` 在本地验证所有平台的构建和打包脚本：
+
+```bash
+# Dry-run 模式（快速验证脚本逻辑）
+make test-local-build
+
+# 实际构建模式（需要安装依赖）
+make test-local-build-full
+
+# 测试指定平台
+bash scripts/test-local-build.sh dry-run macos
+```
+
+详细说明请参考 [TEST_LOCAL_BUILD.md](./TEST_LOCAL_BUILD.md)。
+
 ## 脚本列表
 
 ### 构建相关
