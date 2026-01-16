@@ -46,7 +46,7 @@ body {
     padding: 20px;
 }
 
-/* Header Styles */
+/* Header Styles - 已移动到搜索框内，这里保留作为备用 */
 .header {
     text-align: center;
     padding: 40px 20px;
