@@ -9,60 +9,54 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-# Configure logging
-def setup_logging():
-    """Setup logging to file and console."""
-    import os
+# CRITICAL: Redirect stdout/stderr BEFORE any print statements
+# This prevents console window from appearing on Windows
+if sys.platform == 'win32':
+    # Use os.devnull as a persistent file object
+    try:
+        _null = open(os.devnull, 'w')
+        sys.stdout = _null
+        sys.stderr = _null
+    except Exception:
+        pass
 
-    # Determine log path - use APPDATA for installed app (has write permissions)
+# Pre-configure logging (file only, no console)
+def setup_logging():
+    """Setup logging - file only, no console to avoid window."""
+    # Determine log path
     if getattr(sys, 'frozen', False):
-        # Running as frozen executable
         app_dir = Path(sys.executable).parent
-        # Try APPDATA first for installed app (has write permissions in Program Files)
         appdata_dir = os.environ.get('APPDATA')
         if appdata_dir:
             log_file = Path(appdata_dir) / "Anime1" / "anime1.log"
         else:
             log_file = app_dir / "anime1.log"
     else:
-        # Running as normal Python script
         app_dir = Path(__file__).parent.parent
         log_file = app_dir / "anime1.log"
 
-    # Create log directory if needed
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create formatter
     formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # File handler
-    file_handler = None
+    # File handler only
     try:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.DEBUG)
-    except Exception as e:
-        print(f"[WARN] Could not create log file at {log_file}: {e}")
+    except Exception:
         file_handler = None
 
-    # Console handler (for debugging)
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(logging.INFO)
-
-    # Setup root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
-    root_logger.addHandler(console_handler)
     if file_handler:
         root_logger.addHandler(file_handler)
 
     return log_file
 
-# Initialize logging early
 LOG_FILE = setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -79,6 +73,7 @@ else:
     logger.info(f"Running as normal Python script. Project root: {PROJECT_ROOT}")
 
 from src.app import create_app, download_static_resources, find_free_port, is_port_available, print_banner
+from src.config import DEFAULT_PORT
 from src import __version__
 from src.utils.version import get_window_title
 from src.constants.settings import (
@@ -87,7 +82,6 @@ from src.constants.settings import (
     DEFAULT_WIDTH,
     DEFAULT_HEIGHT,
     DEVTOOLS_ENABLED,
-    WEBVIEW_SETTINGS,
 )
 
 
@@ -301,39 +295,105 @@ def _toggle_maximize():
         pass
 
 
-def start_flask_server(port: int, debug: bool = False):
-    """Start Flask server in a background thread."""
+import subprocess
+import signal
+import ctypes
+
+
+def start_flask_server_subprocess(port: int):
+    """Start Flask server as a subprocess without console window."""
     import os
-    # Completely disable werkzeug reloader subprocess
+
+    logger.info(f"Starting Flask server subprocess on port {port}...")
+
+    if getattr(sys, 'frozen', False):
+        # Running as frozen executable - use the executable itself
+        exe_path = sys.executable
+        cmd = [exe_path, '--flask-only', '--port', str(port)]
+    else:
+        python_exe = sys.executable
+        app_path = os.path.abspath(__file__)
+        cmd = [python_exe, app_path, '--flask-only', '--port', str(port)]
+
+    # Windows: Use DETACHED_PROCESS + CREATE_NO_WINDOW to prevent console window
+    creation_flags = 0x00000008  # DETACHED_PROCESS
+    if sys.platform == 'win32':
+        creation_flags = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
+
+    # Also set startupinfo to hide window on Windows
+    startupinfo = None
+    if sys.platform == 'win32':
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0  # SW_HIDE
+
+    env = os.environ.copy()
+    env['WERKZEUG_RUN_MAIN'] = 'false'
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+        creationflags=creation_flags,
+        startupinfo=startupinfo
+    )
+
+    return proc
+
+
+def run_flask_inline(port: int, debug: bool = False):
+    """Run Flask inline (original method, kept as fallback)."""
+    import os
     os.environ['WERKZEUG_RUN_MAIN'] = 'false'
 
     logger.info(f"Starting Flask server on port {port}...")
     app = create_app()
 
-    # Configure Flask logging
     flask_logger = logging.getLogger('werkzeug')
-    flask_logger.setLevel(logging.ERROR)  # Suppress werkzeug info logs
+    flask_logger.setLevel(logging.ERROR)
 
-    # Use quiet mode - disable debug, reloader, and any subprocess spawning
-    try:
-        # Use a simple threaded server without debug mode
-        app.run(
-            host="127.0.0.1",
-            port=port,
-            debug=False,  # Must be False to avoid reloader
-            threaded=True,
-            use_reloader=False,
-            extra_files=[],  # No extra files to watch
-            reloader_type='stat',
-        )
-    except Exception as e:
-        logger.error(f"Flask server error: {e}")
-        raise
+    app.run(
+        host="127.0.0.1",
+        port=port,
+        debug=False,
+        threaded=True,
+        use_reloader=False,
+        extra_files=[],
+        reloader_type='stat',
+    )
+
+
+def hide_console():
+    """Hide console window on Windows."""
+    if sys.platform == 'win32':
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
 
 
 def main():
     """Main entry point for desktop application."""
     import argparse
+
+    # Hide console window immediately on Windows
+    hide_console()
+
+    parser = argparse.ArgumentParser(description="Anime1 Desktop App")
+    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Window width")
+    parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Window height")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--remote", action="store_true", help="Open in browser instead of webview")
+    parser.add_argument("--flask-only", action="store_true", help="Run Flask server only (internal use)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port for Flask server")
+
+    args = parser.parse_args()
+
+    # Flask-only mode (used by subprocess)
+    if args.flask_only:
+        run_flask_inline(args.port)
+        return
 
     logger.info("=" * 50)
     logger.info("Anime1 Desktop App")
@@ -342,18 +402,11 @@ def main():
     # 设置 macOS 应用名称
     setup_macos_app()
 
-    parser = argparse.ArgumentParser(description="Anime1 Desktop App")
-    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Window width")
-    parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Window height")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--remote", action="store_true", help="Open in browser instead of webview")
-
-    args = parser.parse_args()
-
     logger.info(f"Arguments: width={args.width}, height={args.height}, debug={args.debug}, remote={args.remote}")
 
     # Find available port
-    port = 7860  # Default port for webview
+    # Use default port from config
+    port = DEFAULT_PORT
     if not is_port_available(port):
         logger.warning(f"Port {port} is not available, finding free port...")
         port = find_free_port(port)
@@ -372,15 +425,9 @@ def main():
 
     print_banner("127.0.0.1", port)
     logger.info("Starting desktop application...")
-    print("")  # Add newline before starting
 
-    # Start Flask in background thread
-    server_thread = threading.Thread(
-        target=start_flask_server,
-        args=(port, args.debug),
-        daemon=True
-    )
-    server_thread.start()
+    # Start Flask as subprocess (no console window on Windows)
+    flask_proc = start_flask_server_subprocess(port)
 
     # Wait for Flask server to be ready
     url = f"http://127.0.0.1:{port}"
@@ -412,8 +459,11 @@ def main():
         import webbrowser
         webbrowser.open(url)
         logger.info(f"Opened in browser: {url}")
-        # Keep server running
-        server_thread.join()
+        # Keep server running (wait for keyboard interrupt)
+        try:
+            flask_proc.wait()
+        except KeyboardInterrupt:
+            flask_proc.terminate()
     else:
         logger.info("Creating webview window...")
 
@@ -437,8 +487,7 @@ def main():
                 confirm_close=False,  # 禁用关闭确认对话框
                 js_api=js_api,  # Expose API to JavaScript for anime1.pw handling
                 # Note: icon parameter removed (not supported in pywebview 5.0)
-                # Apply webview settings for better video playback
-                **WEBVIEW_SETTINGS,
+                # WEBVIEW_SETTINGS removed to avoid WebView2 compatibility issues
             )
             logger.info("Webview window created successfully")
 
@@ -455,12 +504,14 @@ def main():
             logger.info("JS API methods exposed")
 
             # Start webview (blocking) - 默认开启 debug 模式
-            # 强制启用 DevTools（适用于所有平台）
-            os.environ['PYWEBVIEW_DEBUG'] = '1'
-            os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--auto-open-devtools-for-tabs'
+            # 注意：不要在这里设置 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，会导致 pywebview 兼容性问题
             logger.info("Starting webview with DevTools enabled...")
             webview.start(debug=True)
             logger.info("Webview closed")
+
+            # Terminate Flask subprocess when webview closes
+            flask_proc.terminate()
+            logger.info("Flask server terminated")
         except Exception as e:
             logger.error(f"Webview error: {e}")
             # Try to show error in webview
@@ -507,8 +558,9 @@ def main():
                 )
                 webview.start(func=None, debug=True)
             except Exception:
-                print(f"\n[ERROR] 启动失败: {e}")
-                print(f"[ERROR] 日志文件: {LOG_FILE}\n")
+                logger.error(f"启动失败: {e}")
+                logger.error(f"日志文件: {LOG_FILE}")
+            flask_proc.terminate()
             sys.exit(1)
 
     logger.info("Application exited")

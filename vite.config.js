@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+// Get Flask port from environment variable (set by dev.py)
+const flaskPort = process.env.FLASK_PORT || 5172
+
 export default defineConfig({
   plugins: [vue()],
   root: 'frontend',
@@ -27,11 +30,11 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: `http://localhost:${flaskPort}`,
         changeOrigin: true
       },
       '/proxy': {
-        target: 'http://localhost:5000',
+        target: `http://localhost:${flaskPort}`,
         changeOrigin: true
       }
     }

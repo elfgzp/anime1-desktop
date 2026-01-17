@@ -23,8 +23,8 @@ VIDEO_SETTINGS = {
 # 开发者工具设置
 DEVTOOLS_ENABLED = False
 
-# WebView 性能设置 (pywebview 5.0 - 参数在 create_window 中不受支持)
-WEBVIEW_SETTINGS = {}
+# WebView 性能设置 - 已弃用，pywebview 5.x 在 Windows 上存在兼容性问题
+# WEBVIEW_SETTINGS = {}
 
 # 开发者工具快捷键
 DEVTOOLS_SHORTCUT = "Cmd+Option+I"  # macOS: Option+Cmd+I

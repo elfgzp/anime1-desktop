@@ -204,10 +204,10 @@ def get_bangumi_info(anime_id: str):
     """Get Bangumi info for a specific anime.
 
     Uses SQLite cache to avoid repeated network requests.
-    If not cached, returns basic info immediately and triggers background fetch.
+    Fetches synchronously to return complete info in a single request.
 
     Returns:
-        JSON with Bangumi info (rating, rank, type, date, summary, genres, staff).
+        JSON with Bangumi info (cover_url, rating, rank, type, date, summary, genres, staff).
     """
     # Get anime data
     anime_map = get_anime_map()
@@ -229,16 +229,32 @@ def get_bangumi_info(anime_id: str):
         _trigger_background_bangumi_update(anime_id, anime, cache_service)
         return jsonify(cached_info)
 
-    # Not cached, return basic info immediately (non-blocking)
-    basic_info = {
+    # Not cached, fetch synchronously to return complete info
+    _, finder = get_services()
+    bangumi_info = finder.get_bangumi_info(anime)
+
+    if bangumi_info:
+        # Cache the result for future requests
+        cache_service.set_bangumi_info(anime_id, bangumi_info)
+        return jsonify(bangumi_info)
+
+    # Fallback: return basic info if no Bangumi data found
+    fallback_info = {
         "title": anime.title,
         "subject_url": f"https://bgm.tv/search?keyword={anime.title}",
+        "cover_url": None,
+        "rating": None,
+        "rank": None,
+        "type": None,
+        "date": None,
+        "summary": None,
+        "genres": [],
+        "staff": [],
+        "cast": []
     }
-
-    # Trigger background fetch
-    _trigger_background_bangumi_update(anime_id, anime, cache_service)
-
-    return jsonify(basic_info)
+    # 缓存基本信息，避免重复请求
+    cache_service.set_bangumi_info(anime_id, fallback_info)
+    return jsonify(fallback_info)
 
 
 def _trigger_background_bangumi_update(anime_id, anime, cache_service):
@@ -546,7 +562,19 @@ def register_page_routes(app):
         """
         dev = app.config.get("DEV", False)
         css_path, js_path = get_manifest_paths()
-        return render_template("index.html", version=__version__, dev=dev, css_path=css_path, js_path=js_path)
+        # Serve Vue SPA from static/dist/ directory
+        from flask import render_template_string
+        import os
+        index_path = os.path.join(str(PROJECT_ROOT), "static", "dist", "index.html")
+        try:
+            with open(index_path, 'r', encoding='utf-8') as f:
+                html = f.read()
+            # Inject version and dev mode
+            html = html.replace('__VERSION__', __version__)
+            return html
+        except Exception as e:
+            logger.error(f"[WARN] Failed to read Vue index.html: {e}")
+            return "Vue app not found. Please build the frontend.", 500
 
     @app.route("/")
     def index():

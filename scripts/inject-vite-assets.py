@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-注入 Vite 构建后的资源路径到 Flask 模板。
+注入 Vite 构建后的资源路径到 Vue index.html。
 
 Vite 构建后会生成 manifest.json，包含所有资源的映射关系。
-此脚本读取 manifest 并更新 templates/index.html 中的资源路径。
+此脚本读取 manifest 并更新 static/dist/index.html 中的资源路径。
 """
 import json
 import sys
@@ -11,47 +11,35 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 STATIC_DIST = PROJECT_ROOT / "static" / "dist"
-TEMPLATE_PATH = PROJECT_ROOT / "templates" / "index.html"
+INDEX_HTML_PATH = STATIC_DIST / "index.html"
 
 # Vite 5 生成 manifest.json 在 .vite/ 目录下
 MANIFEST_PATH = STATIC_DIST / ".vite" / "manifest.json"
 
 
 def inject_assets():
-    """读取 manifest 并更新模板中的资源路径。"""
+    """读取 manifest 并更新 index.html 中的资源路径。"""
     if not MANIFEST_PATH.exists():
         print(f"Warning: Manifest not found at {MANIFEST_PATH}")
         print("Skipping asset injection. Make sure to run 'npm run build' first.")
         return
-    
+
+    if not INDEX_HTML_PATH.exists():
+        print(f"Warning: Vue index.html not found at {INDEX_HTML_PATH}")
+        return
+
     # 读取 manifest
     with open(MANIFEST_PATH, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
-    
-    # 查找主入口文件
-    # Vite 的 manifest 中，index.html 是 key
-    main_entry = None
-    for key, value in manifest.items():
-        if key.endswith('.html') or 'index' in key.lower():
-            main_entry = value
-            break
-    
-    if not main_entry:
-        # 尝试查找第一个入口
-        main_entry = list(manifest.values())[0] if manifest else None
-    
-    if not main_entry:
-        print("Warning: Could not find main entry in manifest")
-        return
-    
-    # 读取模板
-    with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
-        template_content = f.read()
-    
+
+    # 读取 index.html
+    with open(INDEX_HTML_PATH, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
     # 查找 CSS 和 JS 文件
     css_files = []
     js_files = []
-    
+
     for key, value in manifest.items():
         if isinstance(value, dict):
             file_path = value.get('file', '')
@@ -59,35 +47,33 @@ def inject_assets():
                 css_files.append(f"/static/dist/{file_path}")
             elif file_path.endswith('.js'):
                 js_files.append(f"/static/dist/{file_path}")
-    
-    # 更新模板
+
+    # 更新 HTML
     # 替换 CSS 链接
     if css_files:
         css_links = '\n'.join([f'    <link rel="stylesheet" href="{css}">' for css in css_files])
-        # 查找并替换现有的 CSS 链接
         import re
-        template_content = re.sub(
+        html_content = re.sub(
             r'    <link rel="stylesheet" href="/static/dist/assets/index\.css">',
             css_links,
-            template_content
+            html_content
         )
-    
+
     # 替换 JS 脚本
     if js_files:
         js_scripts = '\n'.join([f'    <script type="module" src="{js}"></script>' for js in js_files])
-        # 查找并替换现有的 JS 脚本
         import re
-        template_content = re.sub(
+        html_content = re.sub(
             r'    <script type="module" src="/static/dist/assets/index\.js"></script>',
             js_scripts,
-            template_content
+            html_content
         )
-    
-    # 写回模板
-    with open(TEMPLATE_PATH, 'w', encoding='utf-8') as f:
-        f.write(template_content)
-    
-    print(f"[OK] Injected {len(css_files)} CSS files and {len(js_files)} JS files into template")
+
+    # 写回 index.html
+    with open(INDEX_HTML_PATH, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    print(f"[OK] Injected {len(css_files)} CSS files and {len(js_files)} JS files into index.html")
 
 
 if __name__ == "__main__":
