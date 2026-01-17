@@ -65,13 +65,16 @@ jobs:
           cd frontend
           npm ci
 
+      - name: Clean Unicode from dependencies
+        run: |
+          python scripts/cleanup_unicode.py
+
       - name: Build frontend
         run: |
           cd frontend
           npm run build
           cd ..
           python scripts/inject-vite-assets.py
-          python scripts/cleanup_unicode.py
 
       - name: Install Python dependencies
         run: |
