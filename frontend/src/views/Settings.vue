@@ -44,6 +44,27 @@
       </div>
     </el-card>
 
+    <!-- 日志 -->
+    <el-card shadow="never" class="settings-section">
+      <template #header>
+        <div class="section-title">日志</div>
+      </template>
+      <div class="settings-item">
+        <div class="settings-label">
+          <span>日志文件夹</span>
+        </div>
+        <div class="settings-control">
+          <el-button
+            type="primary"
+            :loading="openingLogs"
+            @click="handleOpenLogs"
+          >
+            {{ openingLogs ? '打开中...' : '打开日志文件夹' }}
+          </el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 关于 -->
     <el-card shadow="never" class="settings-section">
       <template #header>
@@ -78,6 +99,7 @@ const themeStore = useThemeStore()
 const theme = ref(THEME.SYSTEM)
 const checkingUpdate = ref(false)
 const aboutInfo = ref(null)
+const openingLogs = ref(false)
 
 const handleThemeChange = async (value) => {
   await themeStore.saveTheme(value)
@@ -122,6 +144,19 @@ const loadAbout = async () => {
     }
   } catch (error) {
     console.error('加载关于信息失败:', error)
+  }
+}
+
+const handleOpenLogs = async () => {
+  openingLogs.value = true
+  try {
+    await settingsAPI.openLogsFolder()
+    ElMessage.success('已打开日志文件夹')
+  } catch (error) {
+    console.error('打开日志文件夹失败:', error)
+    ElMessage.error('打开日志文件夹失败')
+  } finally {
+    openingLogs.value = false
   }
 }
 

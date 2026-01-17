@@ -123,17 +123,20 @@ export const favoriteAPI = {
 export const settingsAPI = {
   // 获取主题
   getTheme: () => api.get(API_ENDPOINTS.SETTINGS.THEME),
-  
+
   // 保存主题
   saveTheme: (theme) => api.post(API_ENDPOINTS.SETTINGS.THEME, {
     [REQUEST_PARAMS.THEME]: theme
   }),
-  
+
   // 获取关于信息
   getAbout: () => api.get(API_ENDPOINTS.SETTINGS.ABOUT),
-  
+
   // 检查更新
-  checkUpdate: () => api.get(API_ENDPOINTS.SETTINGS.CHECK_UPDATE)
+  checkUpdate: () => api.get(API_ENDPOINTS.SETTINGS.CHECK_UPDATE),
+
+  // 打开日志文件夹
+  openLogsFolder: () => api.post(API_ENDPOINTS.SETTINGS.LOGS_OPEN)
 }
 
 // 更新相关 API

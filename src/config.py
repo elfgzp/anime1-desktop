@@ -101,3 +101,7 @@ PAGE_SIZE = 20
 GITHUB_REPO_OWNER = "elfgzp"
 GITHUB_REPO_NAME = "anime1-desktop"
 UPDATE_CHANNEL = "stable"  # "stable" or "test"
+
+# Cache Configuration
+CACHE_REFRESH_INTERVAL = 300  # 5 minutes between cache refreshes
+ANIME_LIST_CACHE_TTL = 600  # 10 minutes TTL for anime list cache
