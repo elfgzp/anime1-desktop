@@ -82,7 +82,7 @@ ENV_ARCH = "ARCH"
 # 消息常量
 MSG_DETECTED_ARCH = "Detected architecture: {arch}"
 MSG_SIGNING_APP = "Signing app with adhoc signature..."
-MSG_APP_SIGNED = "✓ App signed successfully"
+MSG_APP_SIGNED = "[OK] App signed successfully"
 MSG_CONTINUING_WITHOUT_SIGNATURE = "Continuing without signature..."
 MSG_DMG_CREATED = "macOS DMG created: {output_file}"
 MSG_SIZE_MB = "  Size: {size:.2f} MB"

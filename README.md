@@ -14,9 +14,11 @@
 
 ## 预览
 
-![番剧列表](screenshots/main-page-viewport.png)
+![首页](screenshots/home-page.png)
 
-![番剧详情](screenshots/detail-page.png)
+![番剧详情](screenshots/anime-detail.png)
+
+更多功能介绍请查看 [产品功能介绍](docs/FEATURES.md)
 
 ## 下载安装
 

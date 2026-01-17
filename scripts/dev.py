@@ -53,7 +53,7 @@ def check_dependencies():
         print("\n请先运行: make install")
         sys.exit(1)
 
-    print("✓ 依赖检查通过")
+    print("[OK] Dependency check passed")
 
 
 def kill_process_by_port(port):
@@ -308,7 +308,7 @@ def setup_macos():
 
         # 设置进程名称
         NSProcessInfo.processInfo().setProcessName_("Anime1")
-        print("✓ macOS 进程名称已设置为 Anime1")
+        print("[OK] macOS process name set to Anime1")
     except Exception as e:
         print(f"⚠️  macOS 设置警告: {e}")
 

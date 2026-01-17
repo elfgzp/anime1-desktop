@@ -44,7 +44,7 @@ check_dependencies() {
         echo "请运行: gh auth login --hostname github.com --scopes workflow"
     fi
     
-    echo -e "${GREEN}✓ 依赖检查通过${NC}\n"
+    echo -e "${GREEN}[OK] Dependencies check passed${NC}\n"
 }
 
 # 检查 git 状态
@@ -60,12 +60,12 @@ check_git_status() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             git add -A
             git commit -m "Test: Trigger workflow test - $TEST_VERSION"
-            echo -e "${GREEN}✓ 更改已提交${NC}"
+            echo -e "${GREEN}[OK] Changes committed${NC}"
         else
             echo -e "${YELLOW}跳过提交，继续测试现有代码${NC}"
         fi
     else
-        echo -e "${GREEN}✓ 工作目录干净${NC}"
+        echo -e "${GREEN}[OK] Working directory clean${NC}"
     fi
     
     # 检查是否需要推送
@@ -76,7 +76,7 @@ check_git_status() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             git push
-            echo -e "${GREEN}✓ 代码已推送${NC}"
+            echo -e "${GREEN}[OK] Code pushed${NC}"
             # 等待 GitHub 同步
             echo -e "${BLUE}等待 GitHub 同步...${NC}"
             sleep 5
@@ -100,7 +100,7 @@ trigger_workflow() {
         -f create_release=false 2>&1)
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Workflow 已触发${NC}\n"
+        echo -e "${GREEN}[OK] Workflow triggered${NC}\n"
         return 0
     else
         echo -e "${RED}✗ 触发失败: $run_output${NC}"
@@ -133,7 +133,7 @@ verify_all_platforms() {
         
         if [ "$job_status" == "completed" ]; then
             if [ "$job_conclusion" == "success" ]; then
-                echo -e "  ${GREEN}✓ $platform: 成功${NC}"
+                echo -e "  ${GREEN}[OK] $platform: success${NC}"
             else
                 echo -e "  ${RED}✗ $platform: 失败 ($job_conclusion)${NC}"
                 all_success=false
@@ -155,11 +155,11 @@ verify_all_platforms() {
     local artifacts=$(gh run download "$run_id" --dir /tmp/gh-artifacts-$run_id 2>&1 || echo "")
     
     if [ -d "/tmp/gh-artifacts-$run_id" ]; then
-        echo -e "${GREEN}✓ 构建产物已下载${NC}"
+        echo -e "${GREEN}[OK] Build artifacts downloaded${NC}"
         echo "产物列表:"
         find /tmp/gh-artifacts-$run_id -type f -name "*.zip" -o -name "*.dmg" -o -name "*.tar.gz" | while read -r file; do
             local size=$(du -h "$file" | cut -f1)
-            echo -e "  ${GREEN}✓ $(basename "$file") ($size)${NC}"
+            echo -e "  ${GREEN}[OK] $(basename "$file") ($size)${NC}"
         done
         rm -rf /tmp/gh-artifacts-$run_id
     else
@@ -200,7 +200,7 @@ monitor_workflow() {
                 ;;
             "completed")
                 if [ "$conclusion" == "success" ]; then
-                    echo -e "${GREEN}✓ 成功完成${NC}\n"
+                    echo -e "${GREEN}[OK] Completed successfully${NC}\n"
                     verify_all_platforms "$run_id"
                     return $?
                 else
@@ -229,7 +229,7 @@ show_results() {
     echo -e "\n${BLUE}=== 测试结果 ===${NC}\n"
     
     if [ $success -eq 0 ]; then
-        echo -e "${GREEN}✓ 所有平台构建成功${NC}\n"
+        echo -e "${GREEN}[OK] All platforms built successfully${NC}\n"
     else
         echo -e "${RED}✗ 部分平台构建失败${NC}\n"
     fi
@@ -238,7 +238,7 @@ show_results() {
     echo -e "${BLUE}任务状态:${NC}"
     gh run view "$run_id" --json jobs --jq '.jobs[] | "\(.name): \(.status) \(.conclusion // "")"' | while read -r line; do
         if echo "$line" | grep -q "success"; then
-            echo -e "  ${GREEN}✓ $line${NC}"
+            echo -e "  ${GREEN}[OK] $line${NC}"
         elif echo "$line" | grep -q "failure"; then
             echo -e "  ${RED}✗ $line${NC}"
         else

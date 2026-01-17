@@ -25,5 +25,5 @@ if [ ! -d "$FRONTEND_DIST/assets" ]; then
     echo "The build might be incomplete"
 fi
 
-echo "✓ Frontend build verified"
+echo "[OK] Frontend build verified"
 exit 0

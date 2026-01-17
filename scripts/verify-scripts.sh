@@ -19,7 +19,7 @@ ERRORS=0
 check_file() {
     local file=$1
     if [ -f "$file" ]; then
-        echo -e "${GREEN}✓${NC} $file 存在"
+        echo -e "${GREEN}[OK]${NC} $file 存在"
         return 0
     else
         echo -e "${RED}✗${NC} $file 不存在"
@@ -35,7 +35,7 @@ check_syntax() {
     
     if [ "$type" == "bash" ]; then
         if bash -n "$file" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC} $file 语法正确"
+            echo -e "${GREEN}[OK]${NC} $file syntax correct"
             return 0
         else
             echo -e "${RED}✗${NC} $file 语法错误"
@@ -45,7 +45,7 @@ check_syntax() {
         fi
     elif [ "$type" == "python" ]; then
         if python3 -m py_compile "$file" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC} $file 语法正确"
+            echo -e "${GREEN}[OK]${NC} $file syntax correct"
             return 0
         else
             echo -e "${RED}✗${NC} $file 语法错误"
@@ -60,7 +60,7 @@ check_syntax() {
 check_permission() {
     local file=$1
     if [ -x "$file" ]; then
-        echo -e "${GREEN}✓${NC} $file 有执行权限"
+        echo -e "${GREEN}[OK]${NC} $file 有执行权限"
         return 0
     else
         echo -e "${YELLOW}○${NC} $file 无执行权限（将自动添加）"
@@ -110,8 +110,8 @@ echo -e "\n${BLUE}4. 测试脚本功能...${NC}\n"
 # 测试 extract_version.sh
 echo -e "${BLUE}测试 extract_version.sh:${NC}"
 if result=$(bash scripts/extract_version.sh workflow_dispatch "1.0.0-test" "refs/heads/main" 2>&1); then
-    echo -e "${GREEN}✓${NC} extract_version.sh 工作正常"
-    echo "$result" | grep -q "tag_name='v1.0.0-test'" && echo -e "${GREEN}  ✓${NC} 输出正确"
+    echo -e "${GREEN}[OK]${NC} extract_version.sh works correctly"
+    echo "$result" | grep -q "tag_name='v1.0.0-test'" && echo -e "${GREEN}  [OK]${NC} Output correct"
 else
     echo -e "${RED}✗${NC} extract_version.sh 测试失败"
     ((ERRORS++))
@@ -121,8 +121,8 @@ fi
 echo -e "\n${BLUE}测试 extract_changelog.py:${NC}"
 if result=$(python3 scripts/extract_changelog.py "1.0.0" 2>&1); then
     if [ -n "$result" ]; then
-        echo -e "${GREEN}✓${NC} extract_changelog.py 工作正常"
-        echo "$result" | grep -q "Added" && echo -e "${GREEN}  ✓${NC} 输出包含内容"
+        echo -e "${GREEN}[OK]${NC} extract_changelog.py works correctly"
+        echo "$result" | grep -q "Added" && echo -e "${GREEN}  [OK]${NC} Output contains content"
     else
         echo -e "${YELLOW}○${NC} extract_changelog.py 返回空（可能是版本不存在）"
     fi
@@ -134,7 +134,7 @@ fi
 # 测试 build.sh（不实际构建）
 echo -e "\n${BLUE}测试 build.sh (dry-run):${NC}"
 if bash scripts/build.sh "Windows" 2>&1 | head -3 | grep -q "Building Windows"; then
-    echo -e "${GREEN}✓${NC} build.sh 可以识别 Windows 平台"
+    echo -e "${GREEN}[OK]${NC} build.sh can recognize Windows platform"
 else
     echo -e "${RED}✗${NC} build.sh Windows 平台测试失败"
     ((ERRORS++))
@@ -143,17 +143,17 @@ fi
 echo -e "\n${BLUE}5. 检查 workflow 文件...${NC}\n"
 
 if [ -f ".github/workflows/release.yml" ]; then
-    echo -e "${GREEN}✓${NC} .github/workflows/release.yml 存在"
+    echo -e "${GREEN}[OK]${NC} .github/workflows/release.yml exists"
     # 检查是否引用了所有脚本
     if grep -q "scripts/build.sh" .github/workflows/release.yml; then
-        echo -e "${GREEN}  ✓${NC} 引用了 build.sh"
+        echo -e "${GREEN}  [OK]${NC} references build.sh"
     else
         echo -e "${RED}  ✗${NC} 未引用 build.sh"
         ((ERRORS++))
     fi
     # 检查前端构建步骤
     if grep -q "Build frontend" .github/workflows/release.yml; then
-        echo -e "${GREEN}  ✓${NC} 包含前端构建步骤"
+        echo -e "${GREEN}  [OK]${NC} contains frontend build step"
     else
         echo -e "${YELLOW}  ○${NC} 未找到前端构建步骤（可能需要更新）"
     fi
@@ -165,7 +165,7 @@ fi
 echo -e "\n${BLUE}=== 验证结果 ===${NC}\n"
 
 if [ $ERRORS -eq 0 ]; then
-    echo -e "${GREEN}✓ 所有脚本验证通过！${NC}"
+    echo -e "${GREEN}[OK] All scripts verified!${NC}"
     exit 0
 else
     echo -e "${RED}✗ 发现 $ERRORS 个问题${NC}"
