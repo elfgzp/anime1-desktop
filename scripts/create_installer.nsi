@@ -1,5 +1,4 @@
 ; Anime1 Desktop Windows Installer (NSIS)
-; 使用方法: makensis scripts/create_installer.nsi
 
 !define APPNAME "Anime1"
 !define COMPANYNAME "Anime1"
@@ -14,11 +13,6 @@
 ; MUI settings
 !include "MUI2.nsh"
 !include "WinVer.nsh"
-
-; 界面设置
-!define MUI_ICON "static\app.ico"
-!define MUI_UNICON "static\app.ico"
-!define MUI_ABORTWARNING
 
 ; 安装程序名称
 Name "${APPNAME}"
@@ -38,17 +32,11 @@ VIAddVersionKey /LANG=2052 "FileVersion" "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2024 ${COMPANYNAME}. All rights reserved."
 
 ; ----------------------------------------------
-; 界面语言
-!insertmacro MUI_LANGUAGE "SimpChinese"
-!insertmacro MUI_LANGUAGE "English"
-
-; ----------------------------------------------
 ; 安装前检查
 
 Function .onInit
     ; 检查 Windows 版本
     ${If} ${AtLeastWinVista}
-        ; Windows Vista 或更高版本，检查管理员权限
         UserInfo::GetAccountType
         Pop $0
         ${If} $0 != "Admin"
@@ -71,7 +59,6 @@ FunctionEnd
 Section "Main Application" SecMain
     SectionIn RO
 
-    ; 设置安装详细信息
     SetDetailsPrint textonly
 
     ; 创建安装目录
@@ -83,12 +70,23 @@ Section "Main Application" SecMain
     SetOutPath "$INSTDIR"
     File /r "dist\anime1\*.*"
 
-    ; 创建开始菜单快捷方式
+    ; 检查 app.ico 是否存在，不存在则使用内置默认图标
+    IfFileExists "$INSTDIR\app.ico" 0 SkipIcon
+
+    ; 创建开始菜单快捷方式（带图标）
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
     CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
-
-    ; 创建桌面快捷方式（可选）
     CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
+
+    Goto DoneShortcuts
+
+SkipIcon:
+    ; 没有图标时创建快捷方式
+    CreateDirectory "$SMPROGRAMS\${APPNAME}"
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\Anime1.exe"
+    CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe"
+
+DoneShortcuts:
 
     ; 创建卸载程序
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -121,11 +119,9 @@ Section "Main Application" SecMain
     WriteRegStr HKLM "Software\${COMPANYNAME}\${APPNAME}" \
                      "Version" "${VERSIONMAJOR}.${VERSIONMINOR}"
 
-    ; 完成信息
     SetDetailsPrint both
     DetailPrint ""
     DetailPrint "安装完成！"
-    DetailPrint ""
     SetAutoClose true
 
 SectionEnd
@@ -135,43 +131,35 @@ SectionEnd
 
 Section "Uninstall"
 
-    ; 移除快捷方式
     Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
     RMDir "$SMPROGRAMS\${APPNAME}"
     Delete "$DESKTOP\${APPNAME}.lnk"
 
-    ; 移除安装目录下的所有文件
     Delete "$INSTDIR\*.*"
     RMDir /r "$INSTDIR"
 
-    ; 移除注册表项
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
     DeleteRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}"
 
-    ; 完成信息
     SetDetailsPrint both
     DetailPrint ""
-    DetailPrint "卸载完成！"
-    DetailPrint "感谢使用 ${APPNAME}。"
+    DetailPrint "卸载完成！感谢使用 ${APPNAME}。"
 
 SectionEnd
 
 ; ----------------------------------------------
-; 安装完成页面
+; 页面（必须在 MUI_LANGUAGE 之前）
 
 !insertmacro MUI_PAGE_FINISH
-
-; ----------------------------------------------
-; 卸载开始页面
 
 UninstPage uninstConfirm
 UninstPage uninstFinished
 
 ; ----------------------------------------------
-; 语言文件
+; 界面语言（必须在页面之后）
 
-LangString DESC_SecMain ${2052} "Anime1 桌面应用程序"
-LangString DESC_SecMain ${1033} "Anime1 Desktop Application"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+!insertmacro MUI_LANGUAGE "English"
 
 ; ----------------------------------------------
 ; 安装脚本结束

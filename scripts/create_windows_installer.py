@@ -133,6 +133,24 @@ def prepare_files():
 
         print(f"[OK] Prepared directory structure: {anime1_dir}")
 
+    # Ensure app.ico exists in the app directory for shortcuts
+    # Look for anime1 or Anime1 directory
+    anime1_dir = DIST_DIR / "anime1"
+    if not anime1_dir.exists():
+        anime1_dir = DIST_DIR / "Anime1"
+
+    if anime1_dir.exists():
+        ico_src = PROJECT_ROOT / "static" / "app.ico"
+        ico_dst = anime1_dir / "app.ico"
+
+        if ico_src.exists():
+            import shutil
+            shutil.copy2(ico_src, ico_dst)
+            print(f"[OK] Copied app.ico to build directory: {ico_dst}")
+        else:
+            print(f"[WARN] app.ico not found: {ico_src}")
+            print(f"[INFO] Run 'python scripts/generate_icons.py' first")
+
     # Ensure release directory exists
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
