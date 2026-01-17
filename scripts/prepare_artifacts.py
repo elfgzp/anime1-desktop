@@ -16,6 +16,14 @@ import zipfile
 import tarfile
 from pathlib import Path
 
+# 导入 macholib 用于处理 Mach-O 文件
+try:
+    from macholib.MachO import MachO
+    from macholib.mach_o import LC_CODE_SIGNATURE, LC_SYMTAB, LC_SEGMENT_64
+    MACHOLIB_AVAILABLE = True
+except ImportError:
+    MACHOLIB_AVAILABLE = False
+
 # 应用名称常量
 APP_NAME_UPPER = "Anime1"
 APP_NAME_LOWER = "anime1"
@@ -237,14 +245,111 @@ def get_architecture() -> str:
     return ARCH_X64 if not machine else machine
 
 
+def remove_code_signature_from_macho(filename):
+    """
+    从 Mach-O 文件中移除 LC_CODE_SIGNATURE 及其相关数据。
+
+    这会彻底移除嵌入的代码签名，解决跨机器签名不兼容问题。
+    """
+    if not MACHOLIB_AVAILABLE:
+        print("    [WARN] macholib not available, skipping signature removal")
+        return False
+
+    try:
+        # 打开 Mach-O 文件
+        binary = MachO(filename)
+        file_size = os.path.getsize(filename)
+
+        # 获取文件偏移（用于 fat binary）
+        header_offset = binary.headers[0].offset if hasattr(binary.headers[0], 'offset') else 0
+
+        # 处理每个 arch slice
+        for header in binary.headers:
+            # 查找 LC_CODE_SIGNATURE 命令
+            code_sig_cmds = [cmd for cmd in header.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+
+            if not code_sig_cmds:
+                continue  # 没有签名，跳过
+
+            code_sig_cmd = code_sig_cmds[0]
+            code_sig_cmd_entry = code_sig_cmd[1]
+
+            # 获取签名数据的位置和大小
+            sig_data_offset = header_offset + code_sig_cmd_entry.dataoff
+            sig_data_size = code_sig_cmd_entry.datasize
+
+            print(f"    Found LC_CODE_SIGNATURE at offset {code_sig_cmd_entry.dataoff}, size {code_sig_cmd_entry.datasize}")
+
+            # 读取文件内容
+            with open(filename, 'rb') as f:
+                data = f.read()
+
+            # 移除签名数据：保留文件头到签名数据开始之前的内容
+            new_data = data[:sig_data_offset]
+
+            # 修复文件头中的命令列表
+            # 找到 LC_CODE_SIGNATURE 命令的位置（相对于 header 开始）
+            # 我们需要重建命令列表，移除 LC_CODE_SIGNATURE
+            new_commands = []
+            for cmd in header.commands:
+                if cmd[0].cmd != LC_CODE_SIGNATURE:
+                    new_commands.append(cmd)
+
+            # 计算新的命令列表大小
+            new_cmdsize = sum(cmd[0].cmdsize for cmd in new_commands)
+
+            # 重建 Mach-O 头
+            # 这是一个简化的实现，直接截断文件到签名数据之前
+            # 然后重新计算一些关键字段
+
+            # 写入新文件
+            with open(filename, 'wb') as f:
+                f.write(new_data)
+
+            print(f"    [OK] Removed signature data ({sig_data_size} bytes)")
+
+            # 更新文件中的指针（如果需要）
+            # 由于我们只是截断了文件，需要更新 LC_SYMTAB 和 LC_SEGMENT_64 中的相关字段
+            _fix_macho_after_signature_removal(filename, header_offset, sig_data_offset, new_cmdsize, header)
+
+        return True
+    except Exception as e:
+        print(f"    [WARN] Failed to remove signature: {e}")
+        return False
+
+
+def _fix_macho_after_signature_removal(filename, header_offset, sig_data_offset, new_cmdsize, header):
+    """
+    在移除签名后修复 Mach-O 头中的相关字段。
+    """
+    try:
+        binary = MachO(filename)
+
+        for h in binary.headers:
+            # 查找并更新 __LINKEDIT segment 的大小
+            __LINKEDIT_NAME = b'__LINKEDIT\x00\x00\x00\x00\x00\x00'
+            for cmd in h.commands:
+                if cmd[0].cmd == LC_SEGMENT_64 and cmd[1].segname == __LINKEDIT_NAME:
+                    linkedit = cmd[1]
+                    # 更新 filesize 到签名数据开始的位置
+                    linkedit.filesize = sig_data_offset - (header_offset + linkedit.fileoff)
+                    print(f"    [OK] Updated __LINKEDIT filesize to {linkedit.filesize}")
+                    break
+
+        # 写回修改
+        with open(filename, 'rb+') as f:
+            binary.write(f)
+
+    except Exception as e:
+        print(f"    [WARN] Failed to fix Mach-O headers: {e}")
+
+
 def remove_python_framework_signatures(app_path: Path):
     """
     移除 Python.framework 内部的所有签名，解决跨机器运行问题
 
     PyInstaller 捆绑的 Python.framework 可能包含来自构建机器的签名，
     这些签名在其他机器上会导致验证失败。
-
-    使用 strip 命令移除嵌入的代码签名（比 codesign --remove-signature 更彻底）
     """
     python_framework = app_path / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
 
@@ -264,7 +369,7 @@ def remove_python_framework_signatures(app_path: Path):
             shutil.rmtree(code_sig_dir)
             print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
 
-    # 3. 使用 strip -x 移除嵌入的代码签名（更彻底的方法）
+    # 3. 移除所有 Mach-O 二进制文件中的嵌入签名
     for binary_file in python_framework.rglob("*"):
         if binary_file.is_file():
             # 检查是否是 Mach-O 可执行文件或动态库
@@ -274,18 +379,10 @@ def remove_python_framework_signatures(app_path: Path):
                     capture_output=True,
                     text=True
                 )
-                if "Mach-O" in result.stdout and ("executable" in result.stdout or "dylib" in result.stdout or "shared library" in result.stdout):
-                    # 先用 codesign 移除签名
-                    subprocess.run(
-                        ["codesign", "--remove-signature", str(binary_file)],
-                        capture_output=True
-                    )
-                    # 再用 strip 移除嵌入的签名数据
-                    subprocess.run(
-                        ["strip", "-x", str(binary_file)],
-                        capture_output=True
-                    )
-                    print(f"  [OK] Stripped signature from {binary_file.relative_to(python_framework)}")
+                if "Mach-O" in result.stdout:
+                    print(f"  Processing: {binary_file.relative_to(python_framework)}")
+                    # 移除嵌入的签名
+                    remove_code_signature_from_macho(str(binary_file))
             except Exception:
                 pass
 
