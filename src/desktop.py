@@ -303,15 +303,27 @@ def _toggle_maximize():
 
 def start_flask_server(port: int, debug: bool = False):
     """Start Flask server in a background thread."""
+    import os
+    # Disable werkzeug reloader to avoid subprocess issues
+    os.environ['WERKZEUG_RUN_MAIN'] = 'disable'
+
     logger.info(f"Starting Flask server on port {port}...")
     app = create_app()
+
     # Configure Flask logging
     flask_logger = logging.getLogger('werkzeug')
     flask_logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
-    # Disable reloader in thread to avoid issues
+    # Disable reloader and use reloader_type to prevent subprocess spawning
     try:
-        app.run(host="127.0.0.1", port=port, debug=debug, threaded=True, use_reloader=False)
+        app.run(
+            host="127.0.0.1",
+            port=port,
+            debug=debug,
+            threaded=True,
+            use_reloader=False,
+            reloader_type='stat',
+        )
     except Exception as e:
         logger.error(f"Flask server error: {e}")
         raise
