@@ -252,27 +252,13 @@ def package_macos(dist_dir: Path, output_dir: Path):
     
     print(MSG_DETECTED_ARCH.format(arch=arch))
     print()
-    
-    # 先对应用进行签名（使用 adhoc 签名，免费方案）
-    print(MSG_SIGNING_APP)
-    sign_script = Path(__file__).parent / SCRIPT_SIGN_APP
-    if sign_script.exists():
-        import subprocess
-        sign_result = subprocess.run(
-            [sys.executable, str(sign_script), str(app_dir)],
-            capture_output=True,
-            text=True
-        )
-        if sign_result.returncode != EXIT_SUCCESS:
-            print(ERROR_SIGN_FAILED.format(error=sign_result.stderr))
-            print(MSG_CONTINUING_WITHOUT_SIGNATURE)
-        else:
-            print(MSG_APP_SIGNED)
-            print()
-    else:
-        print(ERROR_SIGN_SCRIPT_NOT_FOUND)
-        print()
-    
+
+    # 注意：不进行签名，因为 adhoc 签名有跨机器兼容性问题
+    # 用户可以通过 Homebrew 安装，或手动运行 xattr 修复
+    print("[INFO] Skipping signature (adhoc signature has cross-machine compatibility issues)")
+    print("[INFO] Users can install via Homebrew or run xattr manually if needed")
+    print()
+
     # 使用 create_dmg 脚本创建 DMG
     create_dmg_script = Path(__file__).parent / SCRIPT_CREATE_DMG
     if not create_dmg_script.exists():
