@@ -97,6 +97,7 @@ jobs:
         env:
           ANIME1_VERSION: ${{ steps.version.outputs.version }}
         run: bash scripts/build.sh "${{ runner.os }}"
+        shell: bash
 
       - name: Sign macOS app (adhoc signature)
         if: runner.os == 'macOS'
