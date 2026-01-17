@@ -71,6 +71,7 @@ jobs:
           npm run build
           cd ..
           python scripts/inject-vite-assets.py
+          python scripts/cleanup_unicode.py
 
       - name: Install Python dependencies
         run: |
