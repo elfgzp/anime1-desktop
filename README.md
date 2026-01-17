@@ -14,11 +14,9 @@
 
 ## 预览
 
-![首页](screenshots/home-page.png)
+![Anime1 Desktop](screenshots/home-page.png)
 
-![番剧详情](screenshots/anime-detail.png)
-
-更多功能介绍请查看 [产品功能介绍](docs/FEATURES.md)
+查看 [产品功能介绍](docs/FEATURES.md) 了解更多功能。
 
 ## 下载安装
 
