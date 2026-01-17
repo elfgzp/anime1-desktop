@@ -70,7 +70,7 @@ Section "Main Application" SecMain
 
     ; 使用 FilesTree 递归复制整个目录
     SetOutPath "$INSTDIR"
-    File /nonfatal /r "dist\anime1"
+    File /nonfatal /r "..\dist\anime1"
 
     ; 检查 app.ico 是否存在
     IfFileExists "$INSTDIR\app.ico" 0 SkipIcon
