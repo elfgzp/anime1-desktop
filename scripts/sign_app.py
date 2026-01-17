@@ -252,15 +252,16 @@ def sign_app(app_path: Path, bundle_id: str = DEFAULT_BUNDLE_ID) -> bool:
 
 
 def sign_nested_binaries(app_path: Path) -> bool:
-    """签名所有嵌套的二进制文件（Python 解释器、动态库等）"""
+    """签名所有嵌套的 Mach-O 二进制文件（Python 解释器、动态库等）"""
     success = True
+    signed_count = 0
 
-    # 查找所有可执行文件和动态库
+    # 查找所有 Mach-O 可执行文件
     for root, dirs, files in os.walk(str(app_path)):
         for file in files:
             file_path = Path(root) / file
-            # 检查是否是可执行文件或动态库
-            if file.endswith(('.so', '.dylib', '')) or file in ('Python', 'python'):
+            # 检查是否是 Mach-O 可执行文件（排除符号链接和目录）
+            if file_path.is_file() and not file_path.is_symlink():
                 try:
                     # 检查是否是 Mach-O 可执行文件
                     result = subprocess.run(
@@ -281,12 +282,15 @@ def sign_nested_binaries(app_path: Path) -> bool:
                         sign_result = subprocess.run(
                             cmd, capture_output=True, text=True
                         )
-                        if sign_result.returncode != 0:
+                        if sign_result.returncode == 0:
+                            signed_count += 1
+                        else:
                             print(f"  [WARN] Failed to sign: {file_path.relative_to(app_path)}")
                             success = False
                 except Exception:
                     pass  # 忽略不重要的文件
 
+    print(f"  [OK] Signed {signed_count} binaries")
     return success
 
 
