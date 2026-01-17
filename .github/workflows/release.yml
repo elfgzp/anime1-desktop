@@ -100,24 +100,11 @@ jobs:
         run: bash scripts/build.sh "${{ runner.os }}"
         shell: bash
 
-      - name: Sign macOS app (adhoc signature)
-        if: runner.os == 'macOS'
-        run: |
-          if [ -d "dist/Anime1.app" ]; then
-            python scripts/sign_app.py dist/Anime1.app
-
-            # 验证签名
-            echo ""
-            echo "=== Verifying signature ==="
-            if codesign --verify --verbose=deep dist/Anime1.app 2>&1; then
-              echo "✓ Signature verified successfully!"
-            else
-              echo "✗ Signature verification failed"
-              codesign -dvvv dist/Anime1.app 2>&1 | head -10
-            fi
-          else
-            echo "Warning: Anime1.app not found, skipping signature"
-          fi
+      # macOS: 不签名，直接分发
+      # 由于 adhoc 签名有 Team ID 问题，不如让用户自己处理
+      # 用户可以通过以下方式安装：
+      # 1. brew tap anime1-desktop/tap && brew install --cask anime1
+      # 2. 或下载 DMG 后运行修复脚本
 
       - name: Create Windows installer (NSIS)
         if: runner.os == 'Windows'
@@ -203,9 +190,18 @@ jobs:
 
             ### 安装说明
 
+            - **macOS (推荐)**: 使用 Homebrew 安装
+              ```bash
+              brew tap anime1-desktop/tap
+              brew install --cask anime1
+              ```
+
+            - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1.app 拖拽到应用程序文件夹
+
             - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1.exe
+
             - **Windows 安装包**: 双击运行 setup.exe，按照向导安装
-            - **macOS**: 根据你的 Mac 架构选择对应的版本，双击 DMG 文件挂载，将 Anime1.app 拖拽到应用程序文件夹
+
             - **Linux**: 根据你的系统架构选择对应的版本，解压 tar.gz 文件，添加执行权限后运行 `tar -xzf anime1-linux-*.tar.gz && chmod +x Anime1 && ./Anime1`
 
             ### 变更日志
