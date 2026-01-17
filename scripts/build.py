@@ -132,7 +132,7 @@ def generate_windows_icon():
 
 
 def generate_macos_icon():
-    """Generate macOS ICNS from PNG."""
+    """Generate macOS ICNS from PNG using iconutil (native macOS tool)."""
     root = get_project_root()
     png_path = root / "static" / "favicon.png"
     icns_path = root / "static" / "app.icns"
@@ -141,36 +141,61 @@ def generate_macos_icon():
         print(f"[WARN] Source PNG not found: {png_path}")
         return False
 
+    # Use system iconutil for proper ICNS format
     try:
         from PIL import Image
         img = Image.open(png_path)
 
-        # First, upscale to 1024x1024 if smaller (for better quality)
-        if img.size[0] < 1024:
-            img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+        # Create temporary iconset directory
+        iconset_path = root / "static" / "app.iconset"
+        if iconset_path.exists():
+            shutil.rmtree(iconset_path)
+        iconset_path.mkdir(parents=True, exist_ok=True)
 
-        # macOS icons: 256, 512, 1024, 2048 (2048 is for @2x Retina)
-        sizes = [256, 512, 1024]
-        img_list = []
+        # Generate standard macOS icon sizes
+        sizes = {
+            'icon_16x16.png': (16, 16),
+            'icon_32x32.png': (32, 32),
+            'icon_64x64.png': (64, 64),
+            'icon_128x128.png': (128, 128),
+            'icon_256x256.png': (256, 256),
+            'icon_512x512.png': (512, 512),
+        }
 
-        for size in sizes:
-            if size <= img.size[0]:
-                resized = img.resize((size, size), Image.Resampling.LANCZOS)
-                img_list.append(resized)
+        for name, size in sizes.items():
+            resized = img.resize(size, Image.Resampling.LANCZOS)
+            resized.save(iconset_path / name)
 
-        seen = set()
-        unique_list = []
-        for im in img_list:
-            if im.size not in seen:
-                seen.add(im.size)
-                unique_list.append(im)
+        # Add @2x versions for Retina
+        retina_sizes = {
+            'icon_16x16@2x.png': (32, 32),
+            'icon_32x32@2x.png': (64, 64),
+            'icon_128x128@2x.png': (256, 256),
+            'icon_256x256@2x.png': (512, 512),
+            'icon_512x512@2x.png': (1024, 1024),
+        }
 
-        icns_path.parent.mkdir(parents=True, exist_ok=True)
-        img.save(icns_path, format='ICNS', sizes=[im.size for im in unique_list])
-        print(f"[OK] Generated macOS ICNS: {icns_path}")
-        return True
+        for name, size in retina_sizes.items():
+            resized = img.resize(size, Image.Resampling.LANCZOS)
+            resized.save(iconset_path / name)
+
+        # Convert iconset to ICNS using native tool
+        result = subprocess.run(
+            ['iconutil', '--convert', 'icns', '--output', str(icns_path), str(iconset_path)],
+            capture_output=True, text=True
+        )
+
+        # Clean up iconset
+        shutil.rmtree(iconset_path)
+
+        if result.returncode == 0 and icns_path.exists():
+            print(f"[OK] Generated macOS ICNS: {icns_path}")
+            return True
+        else:
+            print(f"[WARN] iconutil failed: {result.stderr}")
+            raise Exception("iconutil failed")
     except Exception as e:
-        print(f"[WARN] Failed to generate ICNS: {e}")
+        print(f"[WARN] Failed to generate ICNS with iconutil: {e}")
         return False
 
 
@@ -709,7 +734,7 @@ def run_pyinstaller(args):
     # Icon
     icon_path = get_icon_path(root)
     if icon_path:
-        if sys.platform == "darwin" and not args.onefile:
+        if sys.platform == "darwin":
             cmd.extend(["--icon", icon_path])
         elif sys.platform == "win32":
             cmd.extend(["--icon", icon_path])
@@ -767,7 +792,7 @@ def run_pyinstaller(args):
     print(f"{'='*60}")
 
     # Post-build actions based on platform
-    if sys.platform == "darwin" and not args.onefile:
+    if sys.platform == "darwin":
         app_path = dist_path / "Anime1.app"
         if app_path.exists():
             fix_macos_app_info_plist(app_path)
