@@ -25,7 +25,7 @@ Name "${APPNAME}"
 Caption "${APPNAME} v${VERSIONMAJOR}.${VERSIONMINOR} - 安装向导"
 OutFile "release\anime1-windows-x64-setup.exe"
 InstallDir "${INSTDIR}"
-InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir" "${INSTDIR}"
+InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 ShowInstDetails show
 ShowUnInstDetails show
 
