@@ -42,6 +42,12 @@ build/
 dist/
 release/
 
+# Version file (auto-generated during build)
+src/_version.txt
+
+# Test environments
+.test-venv/
+
 # Logs
 *.log
 
