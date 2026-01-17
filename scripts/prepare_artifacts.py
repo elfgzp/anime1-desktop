@@ -40,6 +40,7 @@ ARCH_ALIASES_ARM64 = [ARCH_ARM64, ARCH_AARCH64]
 
 # 输出文件名模板
 OUTPUT_WINDOWS_X64 = f"{APP_NAME_LOWER}-windows-{ARCH_X64}{EXT_ZIP}"
+OUTPUT_WINDOWS_INSTALLER = f"{APP_NAME_LOWER}-windows-{ARCH_X64}-setup.exe"
 OUTPUT_MACOS_ARM64 = f"{APP_NAME_LOWER}-macos-{ARCH_ARM64}{EXT_DMG}"
 OUTPUT_MACOS_X64 = f"{APP_NAME_LOWER}-macos-{ARCH_X64}{EXT_DMG}"
 OUTPUT_LINUX_ARM64 = f"{APP_NAME_LOWER}-linux-{ARCH_ARM64}{EXT_TAR_GZ}"
@@ -160,14 +161,22 @@ def package_windows(dist_dir: Path, output_dir: Path):
         print(ERROR_NO_EXE_FOUND.format(dist_dir=dist_dir))
         print(ERROR_FILES_IN_DIST.format(files=list(dist_dir.iterdir())))
         sys.exit(1)
-    
+
+    # 打包 zip（便携版）
     output_file = output_dir / OUTPUT_WINDOWS_X64
     with zipfile.ZipFile(output_file, ZIP_MODE_WRITE, ZIP_COMPRESSION_DEFLATED) as zf:
         zf.write(exe_file, exe_file.name)
-    
+
     size_mb = output_file.stat().st_size / BYTES_PER_MB
     print(MSG_WINDOWS_PACKAGED.format(output_file=output_file))
     print(MSG_SIZE_MB.format(size=size_mb))
+
+    # 检查是否有安装包
+    installer_file = output_dir / OUTPUT_WINDOWS_INSTALLER
+    if installer_file.exists():
+        print(f"[OK] Windows installer included: {OUTPUT_WINDOWS_INSTALLER}")
+        installer_size = installer_file.stat().st_size / BYTES_PER_MB
+        print(f"     Size: {installer_size:.1f} MB")
 
 
 def get_architecture() -> str:

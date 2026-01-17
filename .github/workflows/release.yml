@@ -105,6 +105,18 @@ jobs:
             echo "Warning: Anime1.app not found, skipping signature"
           fi
 
+      - name: Create Windows installer (NSIS)
+        if: runner.os == 'Windows'
+        run: |
+          # Install NSIS
+          choco install nsis -y || echo "NSIS installation may have failed, trying anyway"
+
+          # Generate Windows icon
+          python scripts/generate_icons.py
+
+          # Create installer
+          python scripts/create_windows_installer.py
+
       - name: Prepare artifacts
         env:
           ARCH: ${{ matrix.arch }}
@@ -163,23 +175,25 @@ jobs:
           name: Release ${{ steps.tag.outputs.tag_name }}
           body: |
             ## Anime1 Desktop ${{ steps.tag.outputs.tag_name }}
-            
+
             ### 下载
-            
-            - **Windows (x64)**: `anime1-windows-x64.zip` (解压后运行 Anime1.exe)
+
+            - **Windows (x64)**: `anime1-windows-x64.zip` (便携版，解压后运行 Anime1.exe)
+            - **Windows (x64) 安装包**: `anime1-windows-x64-setup.exe` (安装程序)
             - **macOS (Intel)**: `anime1-macos-x64.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
             - **macOS (Apple Silicon)**: `anime1-macos-arm64.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
             - **Linux (x64)**: `anime1-linux-x64.tar.gz` (解压后运行可执行文件)
             - **Linux (ARM64)**: `anime1-linux-arm64.tar.gz` (解压后运行可执行文件)
-            
+
             ### 安装说明
-            
-            - **Windows**: 解压 zip 文件，运行其中的 Anime1.exe
+
+            - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1.exe
+            - **Windows 安装包**: 双击运行 setup.exe，按照向导安装
             - **macOS**: 根据你的 Mac 架构选择对应的版本，双击 DMG 文件挂载，将 Anime1.app 拖拽到应用程序文件夹
             - **Linux**: 根据你的系统架构选择对应的版本，解压 tar.gz 文件，添加执行权限后运行 `tar -xzf anime1-linux-*.tar.gz && chmod +x Anime1 && ./Anime1`
-            
+
             ### 变更日志
-            
+
             ${{ steps.changelog.outputs.changelog }}
             
             ---
