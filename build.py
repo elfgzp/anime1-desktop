@@ -148,8 +148,6 @@ def run_pyinstaller(args):
         "-m", "PyInstaller",
         "--clean",
         "--noconfirm",
-        # 禁用 PyInstaller 的自动签名，我们会手动签名
-        "--osx-sign=False",
         f"--distpath={dist_path}",
         f"--workpath={work_path}",
     ]

@@ -96,6 +96,7 @@ jobs:
       - name: Build application
         env:
           ANIME1_VERSION: ${{ steps.version.outputs.version }}
+          PYINST_SIGN_BINARY: "no"
         run: bash scripts/build.sh "${{ runner.os }}"
         shell: bash
 
