@@ -1,0 +1,48 @@
+name: Update Homebrew Tap
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-tap:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.actor }}/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Get release info
+        id: release
+        run: |
+          echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "tag=$GITHUB_REF" >> $GITHUB_OUTPUT
+
+      - name: Download DMG for SHA256
+        id: download
+        run: |
+          DMG_URL="https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF#refs/tags/v}}/anime1-macos-${GITHUB_REF#refs/tags/v}.dmg"
+          curl -L -o anime1.dmg "$DMG_URL"
+          echo "sha256=$(sha256sum anime1.dmg | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Update cask file
+        run: |
+          cd homebrew-tap
+          sed -i "s/version \".*\"/version \"${GITHUB_REF#refs/tags/v}\"/" Casks/anime1.rb
+          sed -i "s/sha256 :no_check/sha256 \"${{ steps.download.outputs.sha256 }}\"/" Casks/anime1.rb
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: homebrew-tap
+          commit-message: "Update anime1 to v${GITHUB_REF#refs/tags/v}"
+          title: "Update anime1 to v${GITHUB_REF#refs/tags/v}"
+          body: |
+            Update anime1 cask to v${GITHUB_REF#refs/tags/v}
+          branch: update/anime1
+          delete-branch: true
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
