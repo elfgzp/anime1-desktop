@@ -11,6 +11,7 @@ import os
 import sys
 import platform
 import shutil
+import subprocess
 import zipfile
 import tarfile
 from pathlib import Path
@@ -236,6 +237,54 @@ def get_architecture() -> str:
     return ARCH_X64 if not machine else machine
 
 
+def remove_python_framework_signatures(app_path: Path):
+    """
+    移除 Python.framework 内部的所有签名，解决跨机器运行问题
+
+    PyInstaller 捆绑的 Python.framework 可能包含来自构建机器的签名，
+    这些签名在其他机器上会导致验证失败。
+    """
+    python_framework = app_path / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
+
+    if not python_framework.exists():
+        print("  [INFO] No Python.framework found, skipping")
+        return
+
+    # 1. 移除 _CodeSignature 目录
+    code_sig_dir = python_framework / "_CodeSignature"
+    if code_sig_dir.exists():
+        shutil.rmtree(code_sig_dir)
+        print("  [OK] Removed _CodeSignature directory")
+
+    # 2. 移除 Python 二进制文件的签名
+    python_binary = python_framework / "Python"
+    if python_binary.exists():
+        subprocess.run(
+            ["codesign", "--remove-signature", str(python_binary)],
+            capture_output=True
+        )
+        print("  [OK] Removed Python binary signature")
+
+    # 3. 移除 libpython*.dylib 的签名
+    for lib_file in python_framework.glob("libpython*.dylib"):
+        if lib_file.is_file():
+            subprocess.run(
+                ["codesign", "--remove-signature", str(lib_file)],
+                capture_output=True
+            )
+            print(f"  [OK] Removed signature from {lib_file.name}")
+
+    # 4. 移除其他可能有签名的二进制文件
+    for lib_file in python_framework.glob("lib/*.so") + python_framework.glob("lib/*.dylib"):
+        if lib_file.is_file():
+            subprocess.run(
+                ["codesign", "--remove-signature", str(lib_file)],
+                capture_output=True
+            )
+
+    print("  [OK] Python.framework signatures cleaned")
+
+
 def package_macos(dist_dir: Path, output_dir: Path):
     """打包 macOS 构建产物为 DMG"""
     app_dir = find_app_dir(dist_dir)
@@ -272,9 +321,22 @@ def package_macos(dist_dir: Path, output_dir: Path):
     else:
         print(f"[WARN] Fix script not found: {fix_script_src}")
 
-    # 注意：不进行签名，因为 adhoc 签名有跨机器兼容性问题
-    print("[INFO] Skipping signature (adhoc signature has cross-machine compatibility issues)")
+    # 移除 Python.framework 内部的所有签名，解决跨机器运行问题
+    print("[INFO] Removing Python.framework internal signatures...")
+    remove_python_framework_signatures(app_dir)
     print()
+
+    # 使用 --deep 重新签名整个应用
+    print("[INFO] Re-signing app with adhoc signature...")
+    sign_result = subprocess.run(
+        ["codesign", "--force", "--sign", "-", "--deep", "--options", "runtime", "--timestamp", str(app_dir)],
+        capture_output=True,
+        text=True
+    )
+    if sign_result.returncode == 0:
+        print("  [OK] App signed successfully")
+    else:
+        print(f"  [WARN] Signing: {sign_result.stderr}")
 
     # 使用 create_dmg 脚本创建 DMG
     create_dmg_script = Path(__file__).parent / SCRIPT_CREATE_DMG
@@ -282,7 +344,6 @@ def package_macos(dist_dir: Path, output_dir: Path):
         print(ERROR_CREATE_DMG_NOT_FOUND.format(path=create_dmg_script))
         sys.exit(1)
 
-    import subprocess
     result = subprocess.run(
         [sys.executable, str(create_dmg_script), str(app_dir), str(output_file)],
         capture_output=True,
