@@ -187,14 +187,14 @@ dmg: build
 	@if [ -d "$(DIST_DIR)/Anime1.app" ]; then \
 		echo "Creating DMG..."; \
 		create-dmg \
-			--volname "Anime1 Cover Browser" \
+			--volname "Anime1" \
 			--volicon "" \
 			--window-pos 200 200 \
 			--window-size 600 400 \
 			--app-drop-link 400 200 \
-			"$(DIST_DIR)/Anime1 Cover Browser.dmg" \
+			"$(DIST_DIR)/Anime1.dmg" \
 			"$(DIST_DIR)/Anime1.app"; \
-		echo "DMG created: $(DIST_DIR)/Anime1 Cover Browser.dmg"; \
+		echo "DMG created: $(DIST_DIR)/Anime1.dmg"; \
 	else \
 		echo "Error: Anime1.app not found. Run 'make build' first."; \
 	fi
