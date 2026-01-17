@@ -4,6 +4,23 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+def _run_subprocess(args, **kwargs):
+    """Run subprocess with CREATE_NO_WINDOW flag on Windows to avoid terminal flash.
+
+    Args:
+        args: Command arguments
+        **kwargs: Additional arguments for subprocess.run
+
+    Returns:
+        subprocess.CompletedProcess result
+    """
+    # On Windows, use CREATE_NO_WINDOW to avoid terminal flash
+    if sys.platform == "win32":
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    return subprocess.run(args, **kwargs)
+
+
 from .constants import (
     ENV_VERSION,
     VERSION_DEV,
@@ -60,7 +77,7 @@ def get_git_version() -> str:
         
         # Try to get the latest tag
         try:
-            result = subprocess.run(
+            result = _run_subprocess(
                 [GIT_COMMAND, GIT_DESCRIBE_CMD, GIT_DESCRIBE_TAGS_FLAG, GIT_DESCRIBE_ABBREV_FLAG],
                 cwd=project_root,
                 capture_output=True,
@@ -78,7 +95,7 @@ def get_git_version() -> str:
         
         # If no tag, try to get commit id
         try:
-            result = subprocess.run(
+            result = _run_subprocess(
                 [GIT_COMMAND, GIT_REV_PARSE_CMD, GIT_REV_PARSE_SHORT_FLAG, GIT_HEAD_REF],
                 cwd=project_root,
                 capture_output=True,
@@ -149,7 +166,7 @@ def get_window_title() -> str:
         commit_id = None
         try:
             project_root = Path(__file__).parent.parent.parent
-            result = subprocess.run(
+            result = _run_subprocess(
                 [GIT_COMMAND, GIT_REV_PARSE_CMD, GIT_REV_PARSE_SHORT_FLAG, GIT_HEAD_REF],
                 cwd=project_root,
                 capture_output=True,

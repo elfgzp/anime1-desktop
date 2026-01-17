@@ -198,6 +198,7 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to run on")
     parser.add_argument("--host", default=DEFAULT_HOST, help="Host to bind to")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--dev", action="store_true", help="Development mode (use Vite dev server)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open browser")
 
     args = parser.parse_args()
@@ -216,6 +217,8 @@ def main():
     print("")
 
     app = create_app()
+    # 设置开发模式（用于模板中判断是否使用 Vite dev server）
+    app.config['DEV'] = args.dev
 
     try:
         app.run(

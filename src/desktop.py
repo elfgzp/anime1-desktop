@@ -454,9 +454,12 @@ def main():
             )
             logger.info("JS API methods exposed")
 
-            # Start webview (blocking)
-            logger.info("Starting webview...")
-            webview.start(debug=args.debug)
+            # Start webview (blocking) - 默认开启 debug 模式
+            # 强制启用 DevTools（适用于所有平台）
+            os.environ['PYWEBVIEW_DEBUG'] = '1'
+            os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--auto-open-devtools-for-tabs'
+            logger.info("Starting webview with DevTools enabled...")
+            webview.start(debug=True)
             logger.info("Webview closed")
         except Exception as e:
             logger.error(f"Webview error: {e}")
@@ -502,7 +505,7 @@ def main():
                     height=400,
                     resizable=False,
                 )
-                webview.start(func=None, debug=False)
+                webview.start(func=None, debug=True)
             except Exception:
                 print(f"\n[ERROR] 启动失败: {e}")
                 print(f"[ERROR] 日志文件: {LOG_FILE}\n")

@@ -10,8 +10,11 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-MANIFEST_PATH = PROJECT_ROOT / "static" / "dist" / "manifest.json"
+STATIC_DIST = PROJECT_ROOT / "static" / "dist"
 TEMPLATE_PATH = PROJECT_ROOT / "templates" / "index.html"
+
+# Vite 5 生成 manifest.json 在 .vite/ 目录下
+MANIFEST_PATH = STATIC_DIST / ".vite" / "manifest.json"
 
 
 def inject_assets():
@@ -84,7 +87,7 @@ def inject_assets():
     with open(TEMPLATE_PATH, 'w', encoding='utf-8') as f:
         f.write(template_content)
     
-    print(f"✓ Injected {len(css_files)} CSS files and {len(js_files)} JS files into template")
+    print(f"[OK] Injected {len(css_files)} CSS files and {len(js_files)} JS files into template")
 
 
 if __name__ == "__main__":

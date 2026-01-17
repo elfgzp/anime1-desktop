@@ -32,13 +32,13 @@ def get_project_root() -> Path:
 
 def extract_version() -> str:
     """Extract version from git tag or commit id.
-    
+
     Returns:
         Version string from git tag (without 'v' prefix) or short commit id.
         Falls back to 'dev' if git is not available.
     """
     root = get_project_root()
-    
+
     # Try to get the latest tag
     try:
         result = subprocess.run(
@@ -56,7 +56,7 @@ def extract_version() -> str:
             return version
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
-    
+
     # If no tag, try to get commit id
     try:
         result = subprocess.run(
@@ -72,7 +72,7 @@ def extract_version() -> str:
             return f"dev-{commit_id}"
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
-    
+
     # Fallback to 'dev' if git is not available
     return "dev"
 
@@ -85,6 +85,131 @@ def clean_dist():
         shutil.rmtree(dist_path)
     print("[CLEAN] Dist folder cleaned.")
     print("")
+
+
+def generate_icons():
+    """Generate platform-specific icons."""
+    root = get_project_root()
+
+    # Windows ICO
+    if sys.platform == "win32":
+        png_path = root / "static" / "favicon.png"
+        ico_path = root / "static" / "app.ico"
+
+        if not png_path.exists():
+            print(f"[WARN] Source PNG not found: {png_path}")
+            return False
+
+        try:
+            from PIL import Image
+            img = Image.open(png_path)
+            sizes = [16, 32, 48, 64, 128, 256]
+            img_list = []
+
+            for size in sizes:
+                if size <= img.size[0]:
+                    resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                    img_list.append(resized)
+
+            # Remove duplicates
+            seen = set()
+            unique_list = []
+            for im in img_list:
+                if im.size not in seen:
+                    seen.add(im.size)
+                    unique_list.append(im)
+
+            ico_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(ico_path, format='ICO', sizes=[im.size for im in unique_list])
+            print(f"[OK] Generated Windows ICO: {ico_path}")
+            return True
+        except Exception as e:
+            print(f"[WARN] Failed to generate ICO: {e}")
+            return False
+
+    return True
+
+
+def check_npm_available() -> bool:
+    """Check if npm is available."""
+    return shutil.which("npm") is not None
+
+
+def build_frontend():
+    """Build frontend and copy to static/dist."""
+    root = get_project_root()
+    frontend_path = root / "frontend"
+    static_dist = root / "static" / "dist"
+
+    # Check npm
+    if not check_npm_available():
+        print("[WARN] npm not found, skipping frontend build")
+        print("[INFO] Make sure to run 'npm install && npm run build' in frontend/ directory first")
+        return False
+
+    # Use shell=True on Windows to find npm
+    use_shell = sys.platform == "win32"
+    # Common subprocess options for cross-platform compatibility
+    subprocess_kwargs = {
+        "cwd": frontend_path,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "shell": use_shell
+    }
+
+    # Install frontend dependencies
+    print("[BUILD] Installing frontend dependencies...")
+    result = subprocess.run("npm install", **subprocess_kwargs)
+    if result.returncode != 0:
+        print(f"[ERROR] npm install failed: {result.stderr}")
+        return False
+    print("[OK] Frontend dependencies installed")
+
+    # Build frontend
+    print("[BUILD] Building frontend...")
+    result = subprocess.run("npm run build", **subprocess_kwargs)
+    if result.returncode != 0:
+        print(f"[ERROR] npm run build failed: {result.stderr}")
+        return False
+    print("[OK] Frontend built")
+
+    # Ensure static/dist exists
+    static_dist.mkdir(parents=True, exist_ok=True)
+
+    # Copy frontend/dist to static/dist
+    print(f"[BUILD] Copying frontend build to {static_dist}...")
+    frontend_dist = frontend_path / "dist"
+    if not frontend_dist.exists():
+        print(f"[ERROR] Frontend dist not found: {frontend_dist}")
+        return False
+
+    # Clean old static/dist content
+    if static_dist.exists():
+        shutil.rmtree(static_dist)
+
+    # Copy
+    shutil.copytree(frontend_dist, static_dist)
+    print("[OK] Frontend build copied to static/dist")
+
+    # Inject Vite assets into template
+    print("[BUILD] Injecting Vite assets...")
+    inject_script = root / "scripts" / "inject-vite-assets.py"
+    if inject_script.exists():
+        result = subprocess.run(
+            [sys.executable, str(inject_script)],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(f"[WARN] Failed to inject Vite assets: {result.stderr}")
+        else:
+            print("[OK] Vite assets injected")
+    else:
+        print(f"[WARN] Inject script not found: {inject_script}")
+
+    return True
 
 
 def get_icon_path(root: Path) -> str:
@@ -134,7 +259,7 @@ def run_pyinstaller(args):
     version = extract_version()
     os.environ["ANIME1_VERSION"] = version
     print(f"[BUILD] Version: {version}")
-    
+
     # Create version file for frozen executables
     version_file = root / "src" / "_version.txt"
     version_file.write_text(version, encoding='utf-8')
@@ -163,7 +288,7 @@ def run_pyinstaller(args):
         cmd.append("--onedir")
         print("[BUILD] Mode: directory bundle (onedir)")
 
-    # Debug mode
+    # Debug mode (only enable when explicitly requested)
     if args.debug:
         cmd.append("--debug=all")
         print("[BUILD] Debug mode: enabled")
@@ -207,17 +332,26 @@ def run_pyinstaller(args):
         print("[BUILD] Code signing disabled")
 
     # Hidden imports for pywebview and dependencies
+    # Use --collect-all for modules with complex dependencies (flask_cors, pywebview)
     hidden_imports = [
-        "flask", "flask.templating", "jinja2", "markupsafe", "werkzeug",
+        "jinja2", "markupsafe", "werkzeug",
         "requests", "requests.utils", "requests.auth",
         "urllib3", "urllib3.util", "urllib3.connection",
         "beautifulsoup4", "soupsieve", "bs4", "bs4.builder",
-        "pywebview", "pywebview.guarded_encodings", "pywebview.util", "pywebview.http",
         "hanziconv",
         "threading", "socket", "webbrowser", "argparse", "json", "click",
     ]
     for imp in hidden_imports:
         cmd.extend(["--hidden-import", imp])
+
+    # Use --collect-all for flask_cors and flask (they have complex dependencies)
+    for imp in ["flask_cors", "flask"]:
+        cmd.extend(["--collect-all", imp])
+
+    # Add hooks directory for custom PyInstaller hooks
+    hooks_path = root / "hooks"
+    if hooks_path.exists():
+        cmd.extend([f"--additional-hooks-dir={hooks_path}"])
 
     # Exclude unnecessary modules to reduce size
     excludes = ["tkinter", "test", "unittest", "pydoc", "doctest", "pdb"]
@@ -231,7 +365,7 @@ def run_pyinstaller(args):
         (str(root / "src"), "src"),
         (str(root / "distInfo.plist"), "."),
     ]
-    
+
     # Add frontend build output (if exists)
     frontend_dist = root / "static" / "dist"
     if frontend_dist.exists():
@@ -240,7 +374,7 @@ def run_pyinstaller(args):
     else:
         print(f"[WARNING] Frontend build not found at {frontend_dist}")
         print("[WARNING] Make sure to run 'npm run build' in frontend/ directory first")
-    
+
     # Ensure version file is included (if it exists)
     if version_file.exists():
         # For onedir, include in src directory
@@ -259,9 +393,33 @@ def run_pyinstaller(args):
     print(f"\n[COMMAND] {' '.join(cmd[:3])} ... {' '.join(cmd[-3:])}")
     print("")
 
-    result = subprocess.run(cmd)
+    # Set environment to handle encoding issues on Windows
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    if sys.platform == "win32":
+        env['PYTHONUTF8'] = '0'  # Disable UTF-8 mode on Windows to avoid conflicts
 
-    if result.returncode == 0:
+    print("[DEBUG] Running PyInstaller...")
+    result = subprocess.run(cmd, env=env)
+    print(f"[DEBUG] PyInstaller finished with code: {result.returncode}")
+
+    # Check if build succeeded by verifying output file exists
+    # PyInstaller may return non-zero exit code due to ERROR messages even on successful build
+    exe_exists = False
+    if sys.platform == "win32" and args.onefile:
+        exe_path = dist_path / "anime1.exe"
+        exe_exists = exe_path.exists()
+    elif sys.platform == "darwin" and args.onefile:
+        exe_path = dist_path / "anime1"
+        exe_exists = exe_path.exists()
+    elif sys.platform == "linux" and args.onefile:
+        exe_path = dist_path / "anime1"
+        exe_exists = exe_path.exists()
+    elif sys.platform == "darwin" and not args.onefile:
+        exe_path = dist_path / "Anime1.app"
+        exe_exists = exe_path.exists()
+
+    if exe_exists or result.returncode == 0:
         print(f"\n{'='*60}")
         print("[SUCCESS] Build completed!")
         print(f"{'='*60}")
@@ -295,9 +453,11 @@ def run_pyinstaller(args):
                 print(f"  Size: {get_size(exe_path)}")
 
         print("\n[DONE] Ready for distribution!")
-    else:
-        print("\n[ERROR] Build failed!")
+    elif not exe_exists:
+        print("\n[ERROR] Build failed! Output file not found.")
         sys.exit(1)
+    else:
+        print("\n[WARNING] Build completed with warnings but output file was created.")
 
 
 def get_size(path: Path) -> str:
@@ -373,6 +533,123 @@ def fix_macos_app_icon(app_path: Path, icon_path: str):
         print(f"[WARN] Could not copy icon: {e}")
 
 
+def generate_nsis_script(app_dir: Path, project_root: Path) -> str:
+    """Generate NSIS script for Windows installer."""
+    app_dir_rel = str(app_dir.relative_to(project_root)).replace('\\', '/')
+
+    nsis_template = '''; Anime1 Desktop Windows Installer (NSIS)
+; Auto-generated by build.py
+
+SetCompressor /SOLID lzma
+
+!define APPNAME "Anime1"
+!define COMPANYNAME "Anime1"
+!define DESCRIPTION "Anime1 Desktop - Anime Browser"
+!define VERSIONMAJOR 0
+!define VERSIONMINOR 1
+!define INSTALLSIZE 120000
+!define INSTDIR "$PROGRAMFILES\\${APPNAME}"
+
+Name "${APPNAME}"
+Caption "${APPNAME} v${VERSIONMAJOR}.${VERSIONMINOR} - Installation Wizard"
+OutFile "${SRCDIR}\\\\release\\\\anime1-windows-x64-setup.exe"
+InstallDir "${INSTDIR}"
+InstallDirRegKey HKLM "Software\\${COMPANYNAME}\\${APPNAME}" "InstallDir"
+ShowInstDetails show
+ShowUnInstDetails show
+
+VIProductVersion "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
+VIAddVersionKey /LANG=2052 "ProductName" "${APPNAME}"
+VIAddVersionKey /LANG=2052 "CompanyName" "${COMPANYNAME}"
+VIAddVersionKey /LANG=2052 "FileDescription" "${DESCRIPTION}"
+VIAddVersionKey /LANG=2052 "FileVersion" "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
+VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2024 ${COMPANYNAME}. All rights reserved."
+
+!include LogicLib.nsh
+
+Function .onInit
+    InitPluginsDir
+FunctionEnd
+
+Page directory
+Page instfiles
+
+UninstPage uninstConfirm
+UninstPage instfiles
+
+Section "Main Application" SecMain
+    SectionIn RO
+
+    SetOutPath "$INSTDIR"
+    File /r "${SRCDIR}\\${APPDIR}\\*"
+
+    IfFileExists "$INSTDIR\\app.ico" 0 SkipIcon
+
+    CreateDirectory "$SMPROGRAMS\\${APPNAME}"
+    CreateShortCut "$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk" "$INSTDIR\\Anime1.exe" "" "$INSTDIR\\app.ico" 0
+    CreateShortCut "$DESKTOP\\${APPNAME}.lnk" "$INSTDIR\\Anime1.exe" "" "$INSTDIR\\app.ico" 0
+    Goto AfterShortcuts
+
+SkipIcon:
+    CreateDirectory "$SMPROGRAMS\\${APPNAME}"
+    CreateShortCut "$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk" "$INSTDIR\\Anime1.exe"
+    CreateShortCut "$DESKTOP\\${APPNAME}.lnk" "$INSTDIR\\Anime1.exe"
+
+AfterShortcuts:
+    WriteUninstaller "$INSTDIR\\Uninstall.exe"
+
+    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "DisplayName" "${APPNAME}"
+    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "UninstallString" '"$INSTDIR\\Uninstall.exe"'
+    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "InstallLocation" "$INSTDIR"
+    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "DisplayIcon" "$INSTDIR\\app.ico"
+    WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "Publisher" "${COMPANYNAME}"
+    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "VersionMajor" ${VERSIONMAJOR}
+    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "VersionMinor" ${VERSIONMINOR}
+    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "NoModify" 1
+    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "NoRepair" 1
+    WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}" \\
+                     "EstimatedSize" ${INSTALLSIZE}
+
+    WriteRegStr HKLM "Software\\${COMPANYNAME}\\${APPNAME}" \\
+                     "InstallDir" "$INSTDIR"
+    WriteRegStr HKLM "Software\\${COMPANYNAME}\\${APPNAME}" \\
+                     "Version" "${VERSIONMAJOR}.${VERSIONMINOR}"
+
+    SetAutoClose true
+
+SectionEnd
+
+Section "Uninstall"
+
+    Delete "$SMPROGRAMS\\${APPNAME}\\${APPNAME}.lnk"
+    RMDir "$SMPROGRAMS\\${APPNAME}"
+    Delete "$DESKTOP\\${APPNAME}.lnk"
+
+    Delete "$INSTDIR\\*.*"
+    RMDir /r "$INSTDIR"
+
+    DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPNAME}"
+    DeleteRegKey HKLM "Software\\${COMPANYNAME}\\${APPNAME}"
+
+    SetAutoClose true
+
+SectionEnd
+'''
+    src_dir = str(project_root).replace('\\', '/')
+    nsis_script = nsis_template.replace('${SRCDIR}', src_dir)
+    nsis_script = nsis_script.replace('${APPDIR}', app_dir_rel)
+    return nsis_script
+
+
 def verify_dependencies():
     """Check if required packages are installed."""
     print("[VERIFY] Checking dependencies...")
@@ -399,6 +676,94 @@ def verify_dependencies():
     print("")
 
 
+def create_installer():
+    """Create Windows installer (NSIS) and prepare release files."""
+    if sys.platform != "win32":
+        print("[SKIP] NSIS installer is only for Windows")
+        return
+
+    root = get_project_root()
+    dist_path = root / "dist"
+    release_path = root / "release"
+
+    # Find the EXE file
+    exe_path = dist_path / "anime1.exe"
+    if not exe_path.exists():
+        exe_path = dist_path / "Anime1.exe"
+    if not exe_path.exists():
+        print("[ERROR] EXE file not found in dist folder")
+        return
+
+    print("\n[INSTALLER] Preparing release files...")
+
+    # Create release directory
+    release_path.mkdir(parents=True, exist_ok=True)
+
+    # Copy EXE to release
+    exe_dst = release_path / exe_path.name
+    shutil.copy2(exe_path, exe_dst)
+    print(f"[OK] Copied: {exe_path.name} -> release/")
+
+    # Check for NSIS
+    import shutil as shutil_module
+    nsis_paths = [
+        r"C:\Program Files (x86)\NSIS\makensis.exe",
+        r"C:\Program Files\NSIS\makensis.exe",
+    ]
+    makensis_path = None
+    for path in nsis_paths:
+        if Path(path).exists():
+            makensis_path = path
+            print(f"[OK] NSIS found: {makensis_path}")
+            break
+
+    if not makensis_path:
+        makensis_path = shutil_module.which("makensis")
+        if makensis_path:
+            print(f"[OK] NSIS found: {makensis_path}")
+
+    if not makensis_path:
+        print("[WARN] NSIS not found, skipping installer")
+        print("[INFO] Install with: choco install nsis")
+        return
+
+    # Create app.ico in dist folder for NSIS
+    ico_src = root / "static" / "app.ico"
+    ico_dst = dist_path / "app.ico"
+    if ico_src.exists() and not ico_dst.exists():
+        shutil.copy2(ico_src, ico_dst)
+        print(f"[OK] Copied app.ico to dist folder")
+
+    # Generate NSIS script
+    nsis_script = generate_nsis_script(dist_path, root)
+    nsis_script_path = root / "scripts" / "installer_temp.nsi"
+    nsis_script_path.write_text(nsis_script, encoding='utf-8')
+    print(f"[OK] Generated NSIS script")
+
+    # Run NSIS
+    cmd = [makensis_path, str(nsis_script_path)]
+    print(f"[BUILD] Running NSIS...")
+    result = subprocess.run(cmd, cwd=str(root))
+
+    # Clean up temp script
+    if nsis_script_path.exists():
+        nsis_script_path.unlink()
+
+    if result.returncode == 0:
+        installer_path = release_path / "anime1-windows-x64-setup.exe"
+        if installer_path.exists():
+            size = installer_path.stat().st_size / (1024 * 1024)
+            print(f"[OK] Installer created: anime1-windows-x64-setup.exe ({size:.1f} MB)")
+    else:
+        print("[ERROR] NSIS failed to create installer")
+
+    # Cleanup build directory
+    build_path = root / "build"
+    if build_path.exists():
+        shutil.rmtree(build_path)
+        print("[OK] Cleaned up build directory")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Build Anime1 desktop application"
@@ -417,6 +782,14 @@ def main():
         action="store_true",
         help="Build CLI version that opens in browser (no window)",
     )
+    parser.add_argument(
+        "--build-frontend", action="store_true",
+        help="Build frontend before building the app"
+    )
+    parser.add_argument(
+        "--installer", action="store_true",
+        help="Create installer package (NSIS on Windows, DMG on macOS)"
+    )
 
     args = parser.parse_args()
 
@@ -430,7 +803,29 @@ def main():
     if args.clean:
         clean_dist()
 
+    # Generate icons (Windows only)
+    if sys.platform == "win32":
+        print("[BUILD] Generating Windows icons...")
+        generate_icons()
+
+    # Build frontend if requested
+    if args.build_frontend:
+        print("\n[FRONTEND] Building frontend...")
+        if not build_frontend():
+            print("[ERROR] Frontend build failed!")
+            sys.exit(1)
+        print("")
+
     run_pyinstaller(args)
+
+    # Create installer if requested
+    if args.installer:
+        if sys.platform == "win32":
+            create_installer()
+        elif sys.platform == "darwin":
+            print("[SKIP] macOS installer creation not implemented yet")
+        else:
+            print("[SKIP] Linux installer creation not implemented yet")
 
 
 if __name__ == "__main__":
