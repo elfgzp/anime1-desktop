@@ -243,6 +243,8 @@ def remove_python_framework_signatures(app_path: Path):
 
     PyInstaller 捆绑的 Python.framework 可能包含来自构建机器的签名，
     这些签名在其他机器上会导致验证失败。
+
+    使用 strip 命令移除嵌入的代码签名（比 codesign --remove-signature 更彻底）
     """
     python_framework = app_path / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
 
@@ -262,21 +264,28 @@ def remove_python_framework_signatures(app_path: Path):
             shutil.rmtree(code_sig_dir)
             print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
 
-    # 3. 使用 codesign --remove-signature 移除所有二进制文件的签名
+    # 3. 使用 strip -x 移除嵌入的代码签名（更彻底的方法）
     for binary_file in python_framework.rglob("*"):
         if binary_file.is_file():
-            # 检查是否是 Mach-O 文件
+            # 检查是否是 Mach-O 可执行文件或动态库
             try:
                 result = subprocess.run(
                     ["file", str(binary_file)],
                     capture_output=True,
                     text=True
                 )
-                if "Mach-O" in result.stdout:
+                if "Mach-O" in result.stdout and ("executable" in result.stdout or "dylib" in result.stdout or "shared library" in result.stdout):
+                    # 先用 codesign 移除签名
                     subprocess.run(
                         ["codesign", "--remove-signature", str(binary_file)],
                         capture_output=True
                     )
+                    # 再用 strip 移除嵌入的签名数据
+                    subprocess.run(
+                        ["strip", "-x", str(binary_file)],
+                        capture_output=True
+                    )
+                    print(f"  [OK] Stripped signature from {binary_file.relative_to(python_framework)}")
             except Exception:
                 pass
 
