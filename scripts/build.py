@@ -540,6 +540,14 @@ USE_SHELL = sys.platform == "win32"
 
 def run_subprocess(cmd, cwd=None, timeout=300, check=True):
     """Run subprocess with consistent settings (handles Windows shell=True and UTF-8 encoding)."""
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+
+    # Windows cmd 需要 chcp 65001 才能输出 UTF-8
+    if sys.platform == "win32" and USE_SHELL:
+        # 通过 shell 执行时，先切换编码
+        cmd = f"chcp 65001 && {' '.join(cmd)}"
+
     return subprocess.run(
         cmd,
         cwd=cwd,
@@ -549,6 +557,8 @@ def run_subprocess(cmd, cwd=None, timeout=300, check=True):
         shell=USE_SHELL,
         check=check,
         encoding='utf-8',
+        errors='replace',
+        env=env,
     )
 
 
