@@ -44,7 +44,7 @@ print_header() {
 
 # 打印成功
 print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
+    echo -e "${GREEN}[OK] $1${NC}"
 }
 
 # 打印错误

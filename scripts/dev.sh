@@ -22,7 +22,7 @@ if [ ! -d "frontend/node_modules" ]; then
     exit 1
 fi
 
-echo "✓ 依赖检查通过"
+echo "[OK] Dependency check passed"
 echo ""
 
 printf "=%.0s" {1..60} && echo ""

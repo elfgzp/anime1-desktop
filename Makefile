@@ -250,12 +250,12 @@ trigger-workflow:
 	@echo "Trying multiple authentication methods..."
 	@(source ~/.zshrc 2>/dev/null || true; \
 	if GH_TOKEN=$$(gh auth token -h github.com 2>/dev/null) gh workflow run "$(WORKFLOW)" --ref main 2>/dev/null; then \
-		echo "✓ Workflow triggered successfully (using gh auth token)"; \
+		echo "Workflow triggered successfully (using gh auth token)"; \
 	elif [ -n "$$(gh auth token -h github.com 2>/dev/null)" ] && \
 	     GH_TOKEN=$$(source ~/.zshrc 2>/dev/null || true; gh auth token -h github.com) gh workflow run "$(WORKFLOW)" --ref main 2>/dev/null; then \
-		echo "✓ Workflow triggered successfully (using keyring token)"; \
+		echo "Workflow triggered successfully (using keyring token)"; \
 	elif gh workflow run "$(WORKFLOW)" --ref main 2>/dev/null; then \
-		echo "✓ Workflow triggered successfully"; \
+		echo "Workflow triggered successfully"; \
 	else \
 		echo "Error: Failed to trigger workflow. Please check:"; \
 		echo "  1. GitHub CLI is authenticated: gh auth status"; \
@@ -266,7 +266,7 @@ trigger-workflow:
 test-gh-auth:
 	@echo "检查 GitHub CLI 认证状态..."
 	@gh auth status || (echo "未登录，请运行: gh auth login --scopes workflow" && exit 1)
-	@echo "✓ GitHub CLI 已登录"
+	@echo "GitHub CLI is logged in"
 
 verify-scripts:
 	@echo "验证所有 workflow 相关脚本..."
