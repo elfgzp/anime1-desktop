@@ -10,7 +10,7 @@ from pathlib import Path
 def remove_unicode_from_js(file_path: Path):
     """移除 JavaScript 文件中的 Unicode 符号字符"""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
 
         original_content = content
@@ -37,27 +37,50 @@ def remove_unicode_from_js(file_path: Path):
         return False
 
 
-def process_static_directory(static_dir: Path):
-    """处理 static 目录中的所有 JS 文件"""
-    if not static_dir.exists():
-        print(f"[WARN] Static directory not found: {static_dir}")
-        return
+def process_directory(directory: Path, pattern: str = "*.js"):
+    """处理目录中的所有匹配文件"""
+    if not directory.exists():
+        print(f"[WARN] Directory not found: {directory}")
+        return 0
 
-    js_files = list(static_dir.rglob("*.js"))
+    files = list(directory.rglob(pattern))
 
-    print(f"[INFO] Found {len(js_files)} JavaScript files in {static_dir}")
+    print(f"[INFO] Found {len(files)} {pattern} files in {directory}")
 
-    for js_file in js_files:
-        remove_unicode_from_js(js_file)
+    count = 0
+    for js_file in files:
+        if remove_unicode_from_js(js_file):
+            count += 1
+
+    return count
 
 
 def main():
     project_root = Path(__file__).parent.parent
-    static_dir = project_root / "static"
 
+    # 处理 static 目录
+    static_dir = project_root / "static"
     print(f"[INFO] Processing static directory: {static_dir}")
-    process_static_directory(static_dir)
-    print("[OK] Unicode cleanup complete")
+    static_count = process_directory(static_dir, "*.js")
+
+    # 处理 frontend/node_modules (如果存在)
+    frontend_modules = project_root / "frontend" / "node_modules"
+    if frontend_modules.exists():
+        print(f"[INFO] Processing node_modules: {frontend_modules}")
+        # 只处理 video.js 和 hls.js 相关文件
+        video_js_files = list(frontend_modules.rglob("video.js/**/*.js"))
+        hls_js_files = list(frontend_modules.rglob("hls.js/**/*.js"))
+        videojs_dirs = list((frontend_modules / "video.js").glob("*"))
+        for d in videojs_dirs:
+            if d.is_dir() and d.name not in ['dist', 'es', 'src']:
+                video_js_files.extend(list(d.rglob("*.js")))
+        modules_count = process_directory(frontend_modules, "*.js")
+        print(f"[INFO] Cleaned {modules_count} files in node_modules")
+    else:
+        print(f"[INFO] No node_modules found at {frontend_modules}")
+
+    total = static_count
+    print(f"[OK] Unicode cleanup complete. Total files processed: {total}")
 
 
 if __name__ == "__main__":
