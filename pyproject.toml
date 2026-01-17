@@ -12,12 +12,15 @@ dependencies = [
     "pillow>=10.0.0",
     "hanziconv>=0.3.2",
     "peewee>=3.17.0",
-    "pyobjc-framework-WebKit>=9.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+]
+# macOS 专有依赖
+macos = [
+    "pyobjc-framework-WebKit>=9.0",
 ]
 
 [project.scripts]
