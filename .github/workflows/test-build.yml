@@ -85,12 +85,16 @@ jobs:
           path: release/
           retention-days: 7
 
-      - name: Show build results
+      - name: Show build results (Unix)
+        if: runner.os != 'Windows'
         run: |
           echo "Build completed for ${{ runner.os }}-${{ matrix.arch }}"
           echo "Artifacts:"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            dir release\ || echo "No artifacts found"
-          else
-            ls -lh release/ || echo "No artifacts found"
-          fi
+          ls -lh release/ || echo "No artifacts found"
+
+      - name: Show build results (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "Build completed for ${{ runner.os }}-${{ matrix.arch }}"
+          echo "Artifacts:"
+          dir release\ 2>nul || echo "No artifacts found"
