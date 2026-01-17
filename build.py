@@ -284,6 +284,36 @@ def get_size(path: Path) -> str:
     return f"{size:.1f} TB"
 
 
+def fix_macos_app_info_plist(app_path: Path):
+    """Fix macOS app bundle Info.plist to show proper menu bar name."""
+    info_plist_path = app_path / "Contents" / "Info.plist"
+    if not info_plist_path.exists():
+        print(f"[WARN] Info.plist not found: {info_plist_path}")
+        return
+
+    try:
+        # Read the Info.plist
+        with open(info_plist_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Update CFBundleName and CFBundleDisplayName to show properly in menu bar
+        # If not already set, set CFBundleDisplayName to "Anime1"
+        if 'CFBundleDisplayName' not in content:
+            # Find the position after CFBundleName and add CFBundleDisplayName
+            content = content.replace(
+                '<key>CFBundleName</key>',
+                '<key>CFBundleDisplayName</key>\n\t<string>Anime1</string>\n\t<key>CFBundleName</key>'
+            )
+
+        # Write back
+        with open(info_plist_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        print(f"[BUILD] Updated Info.plist for proper menu bar name")
+    except Exception as e:
+        print(f"[WARN] Failed to update Info.plist: {e}")
+
+
 def fix_macos_app_icon(app_path: Path, icon_path: str):
     """Fix macOS app bundle icon by copying icon file to Resources."""
     if not icon_path:
