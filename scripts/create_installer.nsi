@@ -71,8 +71,8 @@ Section "Main Application" SecMain
     ; 设置输出路径
     SetOutPath "$INSTDIR"
 
-    ; 复制整个应用目录
-    File /r "dist\anime1\*.*"
+    ; 复制整个应用目录 (使用通配符)
+    File /r "dist\anime1\*"
 
     ; 检查 app.ico 是否存在
     IfFileExists "$INSTDIR\app.ico" 0 SkipIcon
