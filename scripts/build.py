@@ -188,39 +188,46 @@ def fix_macos_app_info_plist(app_path: Path):
                 '<key>CFBundleDisplayName</key>\n\t<string>Anime1</string>\n\t<key>CFBundleName</key>'
             )
 
+        # Add icon file reference if not present
+        if 'CFBundleIconFile' not in content:
+            content = content.replace(
+                '<key>CFBundleDisplayName</key>',
+                '<key>CFBundleIconFile</key>\n\t<string>app.icns</string>\n\t<key>CFBundleDisplayName</key>'
+            )
+
         with open(info_plist_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
-        print(f"[BUILD] Updated Info.plist for proper menu bar name")
+        print(f"[BUILD] Updated Info.plist for proper menu bar name and icon")
     except Exception as e:
         print(f"[WARN] Failed to update Info.plist: {e}")
 
 
 def fix_macos_app_icon(app_path: Path, icon_path: str):
     """Copy icon to macOS app bundle."""
-    if not icon_path:
-        print(f"[WARN] No icon file found")
-        return
-
-    icon_file = Path(icon_path).name
-    icon_src = Path(icon_path)
     resources_path = app_path / "Contents" / "Resources"
 
     if not resources_path.exists():
         print(f"[WARN] Resources path not found: {resources_path}")
         return
 
-    try:
-        icon_dst = resources_path / icon_file
-        shutil.copy2(icon_src, icon_dst)
-        print(f"[BUILD] Copied icon to app bundle: {icon_file}")
+    # First, generate ICNS if it doesn't exist
+    root = get_project_root()
+    icns_path = root / "static" / "app.icns"
+    if not icns_path.exists():
+        generate_macos_icon()
 
-        if icon_file.endswith('.png') and icon_file != 'app.icns':
-            icns_dst = resources_path / "app.icns"
-            shutil.copy2(icon_src, icns_dst)
-            print(f"[BUILD] Created app.icns from PNG")
-    except Exception as e:
-        print(f"[WARN] Could not copy icon: {e}")
+    # Copy the ICNS file
+    icns_src = root / "static" / "app.icns"
+    if icns_src.exists():
+        try:
+            icon_dst = resources_path / "app.icns"
+            shutil.copy2(icns_src, icon_dst)
+            print(f"[BUILD] Copied app.icns to app bundle")
+        except Exception as e:
+            print(f"[WARN] Could not copy app.icns: {e}")
+    else:
+        print(f"[WARN] ICNS file not found: {icns_src}")
 
 
 def create_macos_dmg(app_path: Path, version: str):

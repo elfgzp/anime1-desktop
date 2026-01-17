@@ -82,6 +82,8 @@ def create_dmg(app_path: Path, output_path: Path, app_name: str = "Anime1") -> b
         '--window-pos', '200', '120',
         '--window-size', '800', '500',
         '--icon-size', '100',
+        '--icon', f'{app_name}.app', '150', '150',
+        '--app-drop-link', '350', '150',
         str(output_path),
         str(app_path)
     ]

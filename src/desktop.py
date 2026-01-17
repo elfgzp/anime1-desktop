@@ -330,13 +330,18 @@ def start_flask_server_subprocess(port: int):
     env = os.environ.copy()
     env['WERKZEUG_RUN_MAIN'] = 'false'
 
+    # Only set creationflags and startupinfo on Windows
+    kwargs = {}
+    if sys.platform == 'win32':
+        kwargs['creationflags'] = creation_flags
+        kwargs['startupinfo'] = startupinfo
+
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
-        creationflags=creation_flags,
-        startupinfo=startupinfo
+        **kwargs
     )
 
     return proc
