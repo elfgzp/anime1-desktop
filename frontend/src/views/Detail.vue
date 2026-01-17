@@ -25,9 +25,6 @@
             <div v-else class="sidebar-cover-placeholder">
               <el-icon :size="40"><Picture /></el-icon>
             </div>
-          </div>
-
-          <div class="sidebar-info">
             <!-- 收藏按钮 -->
             <el-button
               :icon="isFavorite ? StarFilled : Star"
@@ -37,15 +34,18 @@
               :loading="favoriteLoading"
               @click="toggleFavorite"
             />
+          </div>
 
+          <div class="sidebar-info" v-if="loadingTitle">
+            <div class="sidebar-loading">
+              <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+              <span>加载中...</span>
+            </div>
+          </div>
+          <div v-else class="sidebar-info">
             <!-- 标题 -->
             <div class="sidebar-title">
-              <el-skeleton v-if="loadingTitle" style="width: 80%" animated>
-                <template #template>
-                  <el-skeleton-item variant="text" style="width: 100%" />
-                </template>
-              </el-skeleton>
-              <span v-else-if="animeData?.anime?.title">{{ animeData.anime.title }}</span>
+              <span v-if="animeData?.anime?.title">{{ animeData.anime.title }}</span>
               <span v-else class="text-placeholder">加载中...</span>
             </div>
 
@@ -53,39 +53,19 @@
             <div class="sidebar-meta">
               <div class="meta-item">
                 <span class="meta-label">年份</span>
-                <el-skeleton v-if="loadingTitle" style="width: 60%" animated>
-                  <template #template>
-                    <el-skeleton-item variant="text" style="width: 100%" />
-                  </template>
-                </el-skeleton>
-                <span class="meta-value" v-else>{{ animeData?.anime?.year || '-' }}</span>
+                <span class="meta-value">{{ animeData?.anime?.year || '-' }}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">季度</span>
-                <el-skeleton v-if="loadingTitle" style="width: 60%" animated>
-                  <template #template>
-                    <el-skeleton-item variant="text" style="width: 100%" />
-                  </template>
-                </el-skeleton>
-                <span class="meta-value" v-else>{{ animeData?.anime?.season || '-' }}</span>
+                <span class="meta-value">{{ animeData?.anime?.season || '-' }}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">字幕</span>
-                <el-skeleton v-if="loadingTitle" style="width: 60%" animated>
-                  <template #template>
-                    <el-skeleton-item variant="text" style="width: 100%" />
-                  </template>
-                </el-skeleton>
-                <span class="meta-value" v-else>{{ animeData?.anime?.subtitle_group || '-' }}</span>
+                <span class="meta-value">{{ animeData?.anime?.subtitle_group || '-' }}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">更新</span>
-                <el-skeleton v-if="loadingEpisodes" style="width: 80%" animated>
-                  <template #template>
-                    <el-skeleton-item variant="text" style="width: 100%" />
-                  </template>
-                </el-skeleton>
-                <span class="meta-value" v-else>
+                <span class="meta-value">
                   {{ (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无更新' }}
                 </span>
               </div>
@@ -93,25 +73,56 @@
 
             <!-- Bangumi 番剧信息 -->
             <div class="bangumi-info" v-if="bangumiInfo">
+              <!-- 评分和排名 -->
               <div class="bangumi-rating" v-if="bangumiInfo.rating">
                 <span class="rating-value">{{ bangumiInfo.rating.toFixed(1) }}</span>
                 <span class="rating-label">分</span>
                 <span v-if="bangumiInfo.rank" class="rank-value">#{{ bangumiInfo.rank }}</span>
               </div>
+              <!-- 日期和类型标签 -->
               <div class="bangumi-tags" v-if="bangumiInfo.date || bangumiInfo.type">
                 <span v-if="bangumiInfo.date" class="meta-tag">{{ bangumiInfo.date }}</span>
                 <span v-if="bangumiInfo.type" class="meta-tag">{{ bangumiInfo.type }}</span>
               </div>
+              <!-- 简介 -->
               <div class="bangumi-summary" v-if="bangumiInfo.summary">
-                <div class="summary-text">{{ truncateText(bangumiInfo.summary, 100) }}</div>
-                <el-link v-if="bangumiInfo.summary.length > 100" :href="bangumiInfo.subject_url" target="_blank" class="more-link">
-                  查看更多
+                <div class="summary-header">简介</div>
+                <div class="summary-content" :class="{ expanded: summaryExpanded }">
+                  {{ summaryExpanded ? bangumiInfo.summary : truncateText(bangumiInfo.summary, 150) }}
+                </div>
+                <el-link v-if="bangumiInfo.summary.length > 150" @click="summaryExpanded = !summaryExpanded" class="more-link">
+                  {{ summaryExpanded ? '收起' : '展开' }}
+                </el-link>
+                <el-link :href="bangumiInfo.subject_url" target="_blank" class="more-link">
+                  在 Bangumi 查看
                 </el-link>
               </div>
+              <!--  genres -->
+              <div class="bangumi-genres" v-if="bangumiInfo.genres?.length">
+                <div class="genres-label">类型</div>
+                <div class="genres-list">
+                  <span v-for="(genre, idx) in bangumiInfo.genres" :key="idx" class="genre-tag">
+                    {{ genre }}
+                  </span>
+                </div>
+              </div>
+              <!-- 制作人员 -->
               <div class="bangumi-staff" v-if="bangumiInfo.staff?.length">
-                <span v-for="(item, idx) in bangumiInfo.staff.slice(0, 2)" :key="idx" class="staff-item">
-                  {{ item.role }}: {{ item.name }}
-                </span>
+                <div class="staff-label">制作</div>
+                <div class="staff-list">
+                  <span v-for="(item, idx) in bangumiInfo.staff.slice(0, 5)" :key="idx" class="staff-item">
+                    {{ item.role }}: {{ item.name }}
+                  </span>
+                </div>
+              </div>
+              <!-- 声优 -->
+              <div class="bangumi-cast" v-if="bangumiInfo.cast?.length">
+                <div class="cast-label">声优</div>
+                <div class="cast-list">
+                  <span v-for="(item, idx) in bangumiInfo.cast.slice(0, 5)" :key="idx" class="cast-item">
+                    {{ item.name }}
+                  </span>
+                </div>
               </div>
             </div>
             <!-- Bangumi 加载中 -->
@@ -130,12 +141,7 @@
           <template #header>
             <div class="video-header">
               <div class="video-title">
-                <el-skeleton v-if="!animeData?.episodes?.length && !pwEpisodesLoading" style="width: 150px" animated>
-                  <template #template>
-                    <el-skeleton-item variant="text" style="width: 100%" />
-                  </template>
-                </el-skeleton>
-                <span v-else-if="currentEpisode">{{ `第 ${currentEpisode.episode} 话` }}</span>
+                <span v-if="currentEpisode">{{ `第 ${currentEpisode.episode} 话` }}</span>
                 <span v-else>选择剧集观看</span>
               </div>
               <div class="video-meta">
@@ -144,6 +150,13 @@
             </div>
           </template>
           <div class="video-container">
+            <!-- 加载中动画（不阻挡点击） -->
+            <div v-if="pwEpisodesLoading" class="video-loading-overlay">
+              <div class="video-loading-spinner">
+                <el-icon class="is-loading" :size="40"><Loading /></el-icon>
+                <span>正在加载剧集...</span>
+              </div>
+            </div>
             <!-- Loading overlay -->
             <div v-if="videoLoading" class="video-loading">
               <el-icon class="is-loading" :size="50"><Loading /></el-icon>
@@ -194,13 +207,8 @@
               @error="onPlayerError"
               @timeupdate="onTimeUpdate"
             />
-            <!-- 视频播放器骨架屏 / 加载中 -->
-            <div v-else-if="pwEpisodesLoading" class="video-placeholder loading">
-              <el-icon class="is-loading" :size="60"><Loading /></el-icon>
-              <div>正在加载剧集信息...</div>
-            </div>
             <!-- 加载失败 -->
-            <div v-else-if="pwEpisodesLoadError && !pwEpisodes.length" class="video-placeholder">
+            <div v-if="pwEpisodesLoadError && !pwEpisodes.length && !pwEpisodesLoading" class="video-placeholder">
               <el-icon :size="60"><Warning /></el-icon>
               <div>加载失败，请检查网络后重试</div>
               <el-button type="primary" style="margin-top: 16px;" @click="retryLoadEpisodes">
@@ -208,11 +216,11 @@
               </el-button>
             </div>
             <!-- 视频还未上架（真正没有剧集） -->
-            <div v-else-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && pwEpisodesLoadComplete" class="video-placeholder">
+            <div v-else-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && pwEpisodesLoadComplete && !pwEpisodesLoading" class="video-placeholder">
               <el-icon :size="60"><VideoCamera /></el-icon>
               <div>视频还未上架，请等待更新</div>
             </div>
-            <div v-else class="video-placeholder">
+            <div v-else-if="!pwEpisodesLoading" class="video-placeholder">
               <el-icon :size="60"><VideoPlay /></el-icon>
             </div>
           </div>
@@ -223,27 +231,21 @@
           <template #header>
             <div class="section-title">
               <span>全部剧集</span>
-              <el-skeleton v-if="!animeData?.episodes && !pwEpisodesLoading" style="width: 100px; display: inline-block" animated>
-                <template #template>
-                  <el-skeleton-item variant="text" style="width: 100%" />
-                </template>
-              </el-skeleton>
-              <span class="total-episodes" v-else>
+              <span class="total-episodes">
                 {{ (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无剧集' }}
               </span>
             </div>
           </template>
 
-          <!-- 剧集加载中 -->
-          <div v-if="pwEpisodesLoading" class="episode-grid loading">
-            <div v-for="n in 12" :key="n" class="episode-card skeleton-episode">
-              <el-skeleton variant="text" style="width: 60%" />
-              <el-skeleton variant="text" style="width: 40%; margin-top: 8px" />
-            </div>
-          </div>
-
           <!-- 剧集列表 -->
-          <div v-else class="episode-grid">
+          <div class="episode-grid">
+            <!-- 加载中动画（不阻挡点击） -->
+            <div v-if="pwEpisodesLoading" class="loading-episodes">
+              <div class="loading-spinner">
+                <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+                <span>正在加载剧集...</span>
+              </div>
+            </div>
             <div
               v-for="(ep, idx) in (animeData?.episodes || pwEpisodes)"
               :key="idx"
@@ -256,7 +258,7 @@
               <div class="episode-card-date">{{ ep.date }}</div>
             </div>
             <el-empty
-              v-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodesLoading"
+              v-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && !pwEpisodesLoading"
               :description="UI_TEXT.NO_EPISODES"
               :image-size="80"
             />
@@ -312,6 +314,7 @@ const favoriteLoading = ref(false)
 const videoPlayerRef = ref(null)
 const bangumiInfo = ref(null)
 const bangumiLoading = ref(true)
+const summaryExpanded = ref(false)  // 简介展开状态
 const episodeProgressMap = ref({})
 const saveTimer = ref(null)
 const lastSavedTime = ref(0)
@@ -1009,7 +1012,6 @@ onUnmounted(() => {
   flex-direction: column;
   position: sticky;
   top: 70px;
-  max-height: calc(100vh - 110px);
   align-self: flex-start;
   /* 确保 sticky 计算正确 */
   will-change: transform;
@@ -1019,6 +1021,30 @@ onUnmounted(() => {
   padding: 15px;
   border-bottom: 1px solid var(--el-border-color);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.15) 0%, rgba(255, 107, 157, 0.15) 100%);
+  overflow-y: auto;
+  max-height: calc(100vh - 110px);
+  /* 平滑滚动 */
+  scroll-behavior: smooth;
+  /* 自定义滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color) transparent;
+}
+
+.sidebar-header::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-header::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-header::-webkit-scrollbar-thumb {
+  background-color: var(--el-border-color);
+  border-radius: 3px;
+}
+
+.sidebar-header::-webkit-scrollbar-thumb:hover {
+  background-color: var(--el-text-color-secondary);
 }
 
 .episode-sidebar {
@@ -1061,22 +1087,49 @@ onUnmounted(() => {
 
 .sidebar-info {
   position: relative;
+  padding: 15px;
 }
 
 .detail-favorite-btn {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 32px;
-  height: 32px;
-  background: rgba(0, 0, 0, 0.6);
-  border: none;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  background: rgba(124, 92, 255, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(4px);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 92, 255, 0.4);
+  transition: all 0.3s;
+  z-index: 20;
+}
+
+.detail-favorite-btn:hover {
+  background: rgba(124, 92, 255, 1);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.6);
 }
 
 .detail-favorite-btn.active {
-  background: rgba(255, 107, 157, 0.8);
-  color: #fff;
+  background: rgba(255, 107, 157, 0.95);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 2px 8px rgba(255, 107, 157, 0.5);
+}
+
+.sidebar-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 0.9rem;
+}
+
+.sidebar-loading .is-loading {
+  color: var(--el-color-primary);
 }
 
 .sidebar-title {
@@ -1171,36 +1224,103 @@ onUnmounted(() => {
 }
 
 .bangumi-summary {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   line-height: 1.6;
 }
 
-.summary-text {
+.summary-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.summary-content {
   font-size: 0.8rem;
   color: var(--el-text-color-primary);
   text-align: justify;
+  max-height: 80px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.summary-content.expanded {
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color) transparent;
+}
+
+.summary-content.expanded::-webkit-scrollbar {
+  width: 4px;
+}
+
+.summary-content.expanded::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.summary-content.expanded::-webkit-scrollbar-thumb {
+  background-color: var(--el-border-color);
+  border-radius: 2px;
+}
+
+.summary-content.expanded::-webkit-scrollbar-thumb:hover {
+  background-color: var(--el-text-color-secondary);
 }
 
 .more-link {
   font-size: 0.75rem;
-  margin-top: 4px;
+  margin-top: 6px;
+  margin-right: 12px;
 }
 
-.bangumi-staff {
+.bangumi-genres {
+  margin-bottom: 10px;
+}
+
+.genres-label, .staff-label, .cast-label {
   font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+
+.genres-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.genre-tag {
+  padding: 2px 8px;
+  background: var(--el-fill-color);
+  border-radius: 8px;
+  font-size: 0.7rem;
   color: var(--el-text-color-secondary);
 }
 
-.staff-item {
+.bangumi-staff, .bangumi-cast {
+  font-size: 0.75rem;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.staff-list, .cast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.staff-item, .cast-item {
   display: block;
-  margin-bottom: 4px;
+  line-height: 1.4;
 }
 
 .staff-item .staff-role {
   color: var(--el-text-secondary);
 }
 
-.staff-item .staff-name {
+.staff-item .staff-name, .cast-item {
   color: var(--el-text-color-primary);
   margin-left: 4px;
 }
@@ -1240,7 +1360,6 @@ onUnmounted(() => {
   aspect-ratio: 16/9;
   background: #000;
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .video-loading {
@@ -1255,6 +1374,32 @@ onUnmounted(() => {
   justify-content: center;
   color: var(--el-text-color-secondary);
   gap: 15px;
+  z-index: 30;
+}
+
+.video-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.video-loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 30px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 12px;
+  color: var(--el-text-color-primary);
+  font-size: 0.9rem;
 }
 
 .loading-text {
@@ -1365,10 +1510,28 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px;
+  min-height: 60px;
 }
 
 .episode-grid.loading {
   opacity: 0.7;
+}
+
+.loading-episodes {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 0.9rem;
 }
 
 .episode-card.skeleton-episode {

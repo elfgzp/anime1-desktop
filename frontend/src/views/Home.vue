@@ -20,11 +20,8 @@
       </div>
     </el-card>
 
-    <!-- 加载中 -->
-    <el-skeleton v-if="loading" :rows="10" animated />
-
     <!-- 番剧网格 -->
-    <div v-else-if="animeList.length > 0" class="anime-grid">
+    <div v-if="animeList.length > 0 || loading" class="anime-grid" v-loading="loading" element-loading-text="正在加载番剧..." element-loading-spinner="动漫loading">
       <el-card
         v-for="anime in animeList"
         :key="anime.id"
@@ -33,7 +30,7 @@
         :body-style="{ padding: '0' }"
       >
         <router-link :to="ROUTES.ANIME_DETAIL(anime.id)" class="card-link">
-          <div class="card-cover" :class="{ 'cover-loading': !anime.cover_url && !anime._coverFailed }">
+          <div class="card-cover" :class="{ 'cover-loading': !anime.cover_url && !anime._coverFailed && loading }">
             <el-image
               v-if="anime.cover_url"
               :src="anime.cover_url"
@@ -400,20 +397,25 @@ onMounted(() => {
   right: 8px;
   width: 32px;
   height: 32px;
-  background: rgba(0, 0, 0, 0.6);
-  border: none;
+  background: rgba(124, 92, 255, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(4px);
   z-index: 10;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 92, 255, 0.4);
+  transition: all 0.3s;
 }
 
 .favorite-btn:hover {
-  background: rgba(0, 0, 0, 0.8);
-  transform: scale(1.1);
+  background: rgba(124, 92, 255, 1);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.6);
 }
 
 .favorite-btn.active {
-  background: rgba(255, 107, 157, 0.8);
-  color: #fff;
+  background: rgba(255, 107, 157, 0.95);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 2px 8px rgba(255, 107, 157, 0.5);
 }
 
 .pagination {

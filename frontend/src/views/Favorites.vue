@@ -240,16 +240,19 @@ onMounted(() => {
   right: 8px;
   width: 32px;
   height: 32px;
-  background: rgba(255, 107, 157, 0.8);
-  border: none;
+  background: rgba(255, 107, 157, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(4px);
   z-index: 10;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 107, 157, 0.4);
+  transition: all 0.3s;
 }
 
 .favorite-btn:hover {
   background: rgba(255, 107, 157, 1);
-  transform: scale(1.1);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(255, 107, 157, 0.6);
 }
 
 @media (max-width: 768px) {

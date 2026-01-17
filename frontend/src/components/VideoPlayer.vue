@@ -216,6 +216,8 @@ defineExpose({
   border-radius: 8px;
   overflow: hidden;
   background: #000;
+  position: relative;
+  z-index: 10;
 }
 
 /* 自定义 video.js 主题 */
@@ -236,6 +238,7 @@ defineExpose({
 /* 控制栏样式 */
 .video-js .vjs-control-bar {
   background-color: rgba(0, 0, 0, 0.7);
+  z-index: 20;
 }
 
 .video-js .vjs-slider {

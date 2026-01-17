@@ -5,17 +5,21 @@ import { resolve } from 'path'
 // Get Flask port from environment variable (set by dev.py)
 const flaskPort = process.env.FLASK_PORT || 5172
 
+// Resolve paths from the project root
+const pathResolve = (dir) => resolve(__dirname, dir)
+
 export default defineConfig({
   plugins: [vue()],
-  root: 'frontend',
+  // Use absolute paths relative to this config file location
+  root: pathResolve('frontend'),
   build: {
-    outDir: '../static/dist',
+    outDir: pathResolve('static/dist'),
     emptyOutDir: true,
     // Generate manifest for asset mapping
     manifest: true,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'frontend/index.html')
+        main: pathResolve('frontend/index.html')
       },
       output: {
         // Use consistent naming for easier template reference
