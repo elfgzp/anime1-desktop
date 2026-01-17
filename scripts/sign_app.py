@@ -8,6 +8,8 @@ macOS 应用签名脚本（免费方案 - adhoc 签名）
 使用方法:
     python scripts/sign_app.py dist/Anime1.app
 """
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +31,7 @@ CODESIGN_VERIFY_FLAG = "--verify"
 CODESIGN_VERBOSE_FLAG = "--verbose"
 CODESIGN_DETAIL_VERBOSE_FLAG = "-dv"
 CODESIGN_VERBOSE_LEVEL = "4"
+CODESIGN_REMOVE_SIGNATURE_FLAG = "--remove-signature"
 
 # 命令行参数索引
 ARG_APP_PATH_INDEX = 1
@@ -67,6 +70,49 @@ ERROR_USAGE = "Usage: python scripts/sign_app.py <app_path> [bundle_id]"
 ERROR_EXAMPLE = "Example: python scripts/sign_app.py dist/Anime1.app"
 
 
+def remove_all_signatures(app_path: Path) -> bool:
+    """移除应用及其所有组件的现有签名"""
+    print("[STEP 0] Removing existing signatures...")
+
+    # 先移除主应用的签名
+    try:
+        result = subprocess.run(
+            [CODESIGN_COMMAND, CODESIGN_REMOVE_SIGNATURE_FLAG, str(app_path)],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print("  [OK] Removed main app signature")
+        else:
+            print(f"  [INFO] {result.stderr}")
+    except Exception as e:
+        print(f"  [WARN] Could not remove main signature: {e}")
+
+    # 递归移除所有框架和二进制文件的签名
+    import os
+    for root, dirs, files in os.walk(str(app_path)):
+        # 查找 CodeSignature 目录并删除
+        for d in dirs:
+            if d == "CodeSignature":
+                code_sig_path = Path(root) / d
+                try:
+                    shutil.rmtree(code_sig_path)
+                    print(f"  [OK] Removed CodeSignature: {code_sig_path.relative_to(app_path)}")
+                except Exception as e:
+                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
+
+        # 查找 _CodeSignature 目录并删除（Python framework 使用这个）
+        for d in dirs:
+            if d == "_CodeSignature":
+                code_sig_path = Path(root) / d
+                try:
+                    shutil.rmtree(code_sig_path)
+                    print(f"  [OK] Removed _CodeSignature: {code_sig_path.relative_to(app_path)}")
+                except Exception as e:
+                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
+
+    return True
+
+
 def sign_app(app_path: Path, bundle_id: str = DEFAULT_BUNDLE_ID) -> bool:
     """
     对 macOS 应用进行 adhoc 签名
@@ -90,6 +136,9 @@ def sign_app(app_path: Path, bundle_id: str = DEFAULT_BUNDLE_ID) -> bool:
     print(MSG_BUNDLE_ID.format(bundle_id=bundle_id))
     print(MSG_SIGNING_METHOD)
     print()
+
+    # 步骤 0: 先移除所有现有签名（解决 Team ID 不匹配问题）
+    remove_all_signatures(app_path)
 
     # 步骤 1: 先签名所有嵌套的二进制文件和框架
     print("[STEP 1] Signing nested binaries and frameworks...")
@@ -206,8 +255,7 @@ def sign_nested_binaries(app_path: Path) -> bool:
     """签名所有嵌套的二进制文件（Python 解释器、动态库等）"""
     success = True
 
-    # 查找所有可执行文件和动态库 - 使用 os.walk() 兼容 Python 3.11
-    import os
+    # 查找所有可执行文件和动态库
     for root, dirs, files in os.walk(str(app_path)):
         for file in files:
             file_path = Path(root) / file
