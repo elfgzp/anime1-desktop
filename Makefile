@@ -1,4 +1,4 @@
-# Makefile for Anime1 Cover Browser
+# Makefile for Anime1 Desktop
 #
 # Usage:
 #   make help          - Show this help message
