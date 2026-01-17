@@ -70,7 +70,17 @@ jobs:
           python scripts/cleanup_unicode.py
 
       - name: Build frontend
+        if: runner.os != 'Windows'
         run: |
+          cd frontend
+          npm run build
+          cd ..
+          python scripts/inject-vite-assets.py
+
+      - name: Build frontend (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          chcp 65001
           cd frontend
           npm run build
           cd ..
