@@ -12,7 +12,6 @@ import sys
 import platform
 import shutil
 import subprocess
-import struct
 import zipfile
 import tarfile
 from pathlib import Path
@@ -50,7 +49,6 @@ OUTPUT_LINUX_ARM64 = f"{APP_NAME_LOWER}-linux-{ARCH_ARM64}{EXT_TAR_GZ}"
 OUTPUT_LINUX_X64 = f"{APP_NAME_LOWER}-linux-{ARCH_X64}{EXT_TAR_GZ}"
 
 # 脚本名称常量
-SCRIPT_SIGN_APP = "sign_app.py"
 SCRIPT_CREATE_DMG = "create_dmg.py"
 
 # 目录名称常量
@@ -81,9 +79,6 @@ ENV_ARCH = "ARCH"
 
 # 消息常量
 MSG_DETECTED_ARCH = "Detected architecture: {arch}"
-MSG_SIGNING_APP = "Signing app with adhoc signature..."
-MSG_APP_SIGNED = "[OK] App signed successfully"
-MSG_CONTINUING_WITHOUT_SIGNATURE = "Continuing without signature..."
 MSG_DMG_CREATED = "macOS DMG created: {output_file}"
 MSG_SIZE_MB = "  Size: {size:.2f} MB"
 MSG_WINDOWS_PACKAGED = "Windows build artifact packaged: {output_file}"
@@ -97,15 +92,7 @@ MSG_OUTPUT_DIR = "Output directory: {output_dir}"
 ERROR_NO_EXE_FOUND = "Error: No exe file found in {dist_dir}"
 ERROR_FILES_IN_DIST = "Files in dist/: {files}"
 ERROR_APP_NOT_FOUND = "Warning: Anime1.app not found in {dist_dir}"
-ERROR_SIGN_SCRIPT_NOT_FOUND = "Warning: sign_app.py not found, skipping signature"
 ERROR_CREATE_DMG_NOT_FOUND = "Error: create_dmg.py not found at {path}"
-ERROR_CREATE_DMG_FAILED = "Error creating DMG: {error}"
-ERROR_DMG_OUTPUT = "Output: {output}"
-ERROR_DMG_NOT_CREATED = "Error: DMG file not created: {output_file}"
-ERROR_NO_EXECUTABLE_FOUND = "Error: No executable file found in {dist_dir}"
-ERROR_DIST_NOT_FOUND = "Error: dist directory not found: {dist_dir}"
-ERROR_SIGN_FAILED = "Warning: Failed to sign app: {error}"
-ERROR_UNKNOWN_ARCH = "Warning: Unknown architecture '{machine}', defaulting to x64"
 
 
 def find_exe_file(dist_dir: Path) -> Path | None:
@@ -238,218 +225,6 @@ def get_architecture() -> str:
     return ARCH_X64 if not machine else machine
 
 
-def remove_code_signature_from_macho(filename):
-    """
-    从 Mach-O 文件中直接移除 LC_CODE_SIGNATURE 及其相关数据。
-
-    使用 struct 模块直接操作二进制文件，比 macholib 更可靠。
-    这会彻底移除嵌入的代码签名，解决跨机器签名不兼容问题。
-    """
-    try:
-        with open(filename, 'rb') as f:
-            data = bytearray(f.read())
-
-        if len(data) < 32:
-            print(f"    [WARN] File too small to be valid Mach-O")
-            return False
-
-        # 解析 mach_header_64 (32 bytes)
-        offset = 0
-        magic = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        cputype = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        cpusubtype = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        filetype = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        ncmds = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        sizeofcmds = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        flags = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-        reserved = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-
-        # 读取所有命令
-        cmds = []
-        cmd_offset = offset
-        for i in range(ncmds):
-            if cmd_offset + 8 > len(data):
-                break
-            cmd = struct.unpack('<I', data[cmd_offset:cmd_offset+4])[0]
-            cmdsize = struct.unpack('<I', data[cmd_offset+4:cmd_offset+8])[0]
-            if cmd_offset + cmdsize > len(data):
-                break
-            cmds.append({
-                'cmd': cmd,
-                'cmdsize': cmdsize,
-                'offset': cmd_offset,
-                'data': data[cmd_offset:cmd_offset+cmdsize]
-            })
-            cmd_offset += cmdsize
-
-        # 查找 LC_CODE_SIGNATURE (cmd=0x1d=29)
-        sig_idx = None
-        for i, c in enumerate(cmds):
-            if c['cmd'] == 0x1d:  # LC_CODE_SIGNATURE
-                sig_idx = i
-                break
-
-        if sig_idx is None:
-            print(f"    [INFO] No LC_CODE_SIGNATURE found")
-            return True
-
-        sig_cmd = cmds[sig_idx]
-        # 解析 signature_command 结构
-        # offset 0: cmd (4 bytes)
-        # offset 4: cmdsize (4 bytes)
-        # offset 8: dataoff (4 bytes)
-        # offset 12: datasize (4 bytes)
-        sig_data_off = struct.unpack('<I', sig_cmd['data'][8:12])[0]
-        sig_data_size = struct.unpack('<I', sig_cmd['data'][12:16])[0]
-
-        print(f"    Found LC_CODE_SIGNATURE at offset {sig_data_off}, size {sig_data_size}")
-
-        # 构建新文件，不包含签名数据
-        new_cmds = [c for c in cmds if c['cmd'] != 0x1d]
-        new_ncmds = len(new_cmds)
-        new_sizeofcmds = sum(c['cmdsize'] for c in new_cmds)
-
-        # 更新 __LINKEDIT segment 的 filesize
-        # LC_SEGMENT_64 = 0x19 (25)
-        for cmd in new_cmds:
-            if cmd['cmd'] == 0x19:  # LC_SEGMENT_64
-                # segment_command_64 结构:
-                # offset 0-15: segname[16]
-                # offset 16-23: vmaddr
-                # offset 24-31: vmsize
-                # offset 32-39: fileoff
-                # offset 40-47: filesize (需要更新)
-                segname = cmd['data'][:16]
-                if b'__LINKEDIT' in segname or segname.startswith(b'__LINKEDIT\x00'):
-                    fileoff = struct.unpack('<Q', cmd['data'][32:40])[0]
-                    new_filesize = sig_data_off - fileoff
-                    print(f"    [OK] Updating __LINKEDIT filesize: {new_filesize}")
-                    # 更新 filesize (offset + 48 in the command)
-                    struct.pack_into('<Q', cmd['data'], 48, new_filesize)
-                    # 同时更新 vmsize 以确保足够大
-                    struct.pack_into('<Q', cmd['data'], 24, new_filesize)
-                    break
-
-        # 计算新文件内容
-        # 1. 新的 mach_header (32 bytes)
-        new_data = bytearray()
-        new_data.extend(struct.pack('<I', magic))
-        new_data.extend(struct.pack('<I', cputype))
-        new_data.extend(struct.pack('<I', cpusubtype))
-        new_data.extend(struct.pack('<I', filetype))
-        new_data.extend(struct.pack('<I', new_ncmds))
-        new_data.extend(struct.pack('<I', new_sizeofcmds))
-        new_data.extend(struct.pack('<I', flags))
-        new_data.extend(struct.pack('<I', reserved))
-
-        # 2. 剩余命令的数据
-        for c in new_cmds:
-            new_data.extend(c['data'])
-
-        # 3. 原始内容中命令之后、签名数据之前的部分
-        # 命令结束位置 = 32 + sizeofcmds (原始 sizeofcmds)
-        content_end = 32 + sizeofcmds
-        new_data.extend(data[content_end:sig_data_off])
-
-        # 写回文件
-        with open(filename, 'wb') as f:
-            f.write(new_data)
-
-        print(f"    [OK] Removed signature data ({sig_data_size} bytes), new size: {len(new_data)}")
-        return True
-
-    except Exception as e:
-        print(f"    [WARN] Failed to remove signature: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def sign_macho_binary(binary_path: Path) -> bool:
-    """使用 adhoc 签名签名单个 Mach-O 二进制文件"""
-    try:
-        result = subprocess.run(
-            ["codesign", "--force", "--sign", "-", "--options", "runtime", "--timestamp", str(binary_path)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            return True
-        else:
-            print(f"    [WARN] Failed to sign {binary_path.name}: {result.stderr}")
-            return False
-    except Exception as e:
-        print(f"    [WARN] Error signing {binary_path.name}: {e}")
-        return False
-
-
-def remove_python_framework_signatures(app_path: Path):
-    """
-    移除 Python.framework 内部的所有签名，解决跨机器运行问题
-
-    PyInstaller 捆绑的 Python.framework 可能包含来自构建机器的签名，
-    这些签名在其他机器上会导致验证失败。
-    """
-    python_framework = app_path / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
-
-    if not python_framework.exists():
-        print("  [INFO] No Python.framework found, skipping")
-        return
-
-    # 收集所有需要处理的 Mach-O 二进制文件
-    macho_binaries = []
-    for binary_file in python_framework.rglob("*"):
-        if binary_file.is_file():
-            try:
-                result = subprocess.run(
-                    ["file", str(binary_file)],
-                    capture_output=True,
-                    text=True
-                )
-                if "Mach-O" in result.stdout:
-                    macho_binaries.append(binary_file)
-            except Exception:
-                pass
-
-    print(f"  [INFO] Found {len(macho_binaries)} Mach-O binaries in Python.framework")
-
-    # 1. 递归移除所有 _CodeSignature 目录
-    for code_sig_dir in python_framework.rglob("_CodeSignature"):
-        if code_sig_dir.is_dir():
-            shutil.rmtree(code_sig_dir)
-            print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
-
-    # 2. 递归移除所有 CodeSignature 目录
-    for code_sig_dir in python_framework.rglob("CodeSignature"):
-        if code_sig_dir.is_dir():
-            shutil.rmtree(code_sig_dir)
-            print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
-
-    # 3. 移除所有 Mach-O 二进制文件中的嵌入签名
-    for binary_file in macho_binaries:
-        print(f"  Removing signature from: {binary_file.relative_to(python_framework)}")
-        remove_code_signature_from_macho(str(binary_file))
-
-    print("  [OK] All embedded signatures removed")
-
-    # 4. 重新签名所有 Mach-O 二进制文件
-    print("  [INFO] Re-signing Mach-O binaries...")
-    signed_count = 0
-    for binary_file in macho_binaries:
-        if sign_macho_binary(binary_file):
-            signed_count += 1
-
-    print(f"  [OK] Signed {signed_count}/{len(macho_binaries)} binaries")
-
-
 def package_macos(dist_dir: Path, output_dir: Path):
     """打包 macOS 构建产物为 DMG"""
     app_dir = find_app_dir(dist_dir)
@@ -468,74 +243,6 @@ def package_macos(dist_dir: Path, output_dir: Path):
     print(MSG_DETECTED_ARCH.format(arch=arch))
     print()
 
-    # 复制修复脚本到 app 同级目录
-    script_dir = Path(__file__).parent
-    fix_script_src = script_dir / "fix_signature.sh"
-
-    # 创建临时修复脚本目录
-    temp_scripts_dir = dist_dir / "_fix_scripts"
-    if temp_scripts_dir.exists():
-        shutil.rmtree(temp_scripts_dir)
-    temp_scripts_dir.mkdir(parents=True, exist_ok=True)
-
-    if fix_script_src.exists():
-        fix_script_dst = temp_scripts_dir / "fix_signature.command"
-        shutil.copy2(fix_script_src, fix_script_dst)
-        os.chmod(fix_script_dst, 0o755)
-        print(f"[INFO] Copied fix script to: {fix_script_dst}")
-    else:
-        print(f"[WARN] Fix script not found: {fix_script_src}")
-
-    # 移除 Python.framework 内部的所有签名，解决跨机器运行问题
-    print("[INFO] Removing Python.framework internal signatures...")
-    remove_python_framework_signatures(app_dir)
-    print()
-
-    # 使用 --deep 重新签名整个应用
-    print("[INFO] Re-signing app with adhoc signature...")
-    sign_result = subprocess.run(
-        ["codesign", "--force", "--sign", "-", "--deep", "--options", "runtime", "--timestamp", str(app_dir)],
-        capture_output=True,
-        text=True
-    )
-    if sign_result.returncode == 0:
-        print("  [OK] App signed successfully")
-    else:
-        print(f"  [WARN] Signing: {sign_result.stderr}")
-
-    # 验证签名 - 只检查 Mach-O 二进制文件（不需要检查 plist、resources 等）
-    print("[INFO] Verifying Mach-O binary signatures...")
-    python_framework = app_dir / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
-    if python_framework.exists():
-        unsigned_binaries = []
-        for file in python_framework.rglob("*"):
-            if file.is_file():
-                # 只检查 Mach-O 可执行文件
-                try:
-                    result = subprocess.run(
-                        ["file", str(file)],
-                        capture_output=True,
-                        text=True
-                    )
-                    if "Mach-O" in result.stdout:
-                        # 这是一个 Mach-O 文件，检查签名
-                        verify_result = subprocess.run(
-                            ["codesign", "--verify", str(file)],
-                            capture_output=True,
-                            text=True
-                        )
-                        if verify_result.returncode != 0:
-                            unsigned_binaries.append(str(file.relative_to(python_framework)))
-                except Exception:
-                    pass
-
-        if unsigned_binaries:
-            print(f"  [WARN] Found {len(unsigned_binaries)} unsigned Mach-O binaries:")
-            for f in unsigned_binaries[:5]:
-                print(f"    - {f}")
-        else:
-            print("  [OK] All Mach-O binaries in Python.framework are signed")
-
     # 使用 create_dmg 脚本创建 DMG
     create_dmg_script = Path(__file__).parent / SCRIPT_CREATE_DMG
     if not create_dmg_script.exists():
@@ -547,19 +254,19 @@ def package_macos(dist_dir: Path, output_dir: Path):
         capture_output=True,
         text=True
     )
-    
-    if result.returncode != EXIT_SUCCESS:
-        print(ERROR_CREATE_DMG_FAILED.format(error=result.stderr))
-        print(ERROR_DMG_OUTPUT.format(output=result.stdout))
+
+    if result.returncode != 0:
+        print(f"Error creating DMG: {result.stderr}")
+        print(f"Output: {result.stdout}")
         sys.exit(1)
-    
+
     print(result.stdout)
     if output_file.exists():
         size_mb = output_file.stat().st_size / BYTES_PER_MB
         print(MSG_DMG_CREATED.format(output_file=output_file))
         print(MSG_SIZE_MB.format(size=size_mb))
     else:
-        print(ERROR_DMG_NOT_CREATED.format(output_file=output_file))
+        print(f"Error: DMG file not created: {output_file}")
         sys.exit(1)
 
 
