@@ -247,7 +247,7 @@ def remove_code_signature_from_macho(filename):
     """
     try:
         with open(filename, 'rb') as f:
-            data = f.read()
+            data = bytearray(f.read())
 
         if len(data) < 32:
             print(f"    [WARN] File too small to be valid Mach-O")
@@ -286,7 +286,7 @@ def remove_code_signature_from_macho(filename):
                 'cmd': cmd,
                 'cmdsize': cmdsize,
                 'offset': cmd_offset,
-                'data': bytearray(data[cmd_offset:cmd_offset+cmdsize])
+                'data': data[cmd_offset:cmd_offset+cmdsize]
             })
             cmd_offset += cmdsize
 
@@ -303,6 +303,10 @@ def remove_code_signature_from_macho(filename):
 
         sig_cmd = cmds[sig_idx]
         # 解析 signature_command 结构
+        # offset 0: cmd (4 bytes)
+        # offset 4: cmdsize (4 bytes)
+        # offset 8: dataoff (4 bytes)
+        # offset 12: datasize (4 bytes)
         sig_data_off = struct.unpack('<I', sig_cmd['data'][8:12])[0]
         sig_data_size = struct.unpack('<I', sig_cmd['data'][12:16])[0]
 
@@ -321,19 +325,21 @@ def remove_code_signature_from_macho(filename):
                 # offset 0-15: segname[16]
                 # offset 16-23: vmaddr
                 # offset 24-31: vmsize
-                # offset 32-39: fileoff (我们不修改)
+                # offset 32-39: fileoff
                 # offset 40-47: filesize (需要更新)
                 segname = cmd['data'][:16]
                 if b'__LINKEDIT' in segname or segname.startswith(b'__LINKEDIT\x00'):
-                    # 计算新的 filesize = 签名数据偏移量 - 原始 fileoff
-                    old_filesize = struct.unpack('<Q', cmd['data'][40:48])[0]
                     fileoff = struct.unpack('<Q', cmd['data'][32:40])[0]
                     new_filesize = sig_data_off - fileoff
-                    print(f"    [OK] Updating __LINKEDIT filesize: {old_filesize} -> {new_filesize}")
-                    struct.pack_into('<Q', cmd['data'], 40, new_filesize)
+                    print(f"    [OK] Updating __LINKEDIT filesize: {new_filesize}")
+                    # 更新 filesize (offset + 48 in the command)
+                    struct.pack_into('<Q', cmd['data'], 48, new_filesize)
+                    # 同时更新 vmsize 以确保足够大
+                    struct.pack_into('<Q', cmd['data'], 24, new_filesize)
                     break
 
-        # 重建文件
+        # 计算新文件内容
+        # 1. 新的 mach_header (32 bytes)
         new_data = bytearray()
         new_data.extend(struct.pack('<I', magic))
         new_data.extend(struct.pack('<I', cputype))
@@ -344,19 +350,20 @@ def remove_code_signature_from_macho(filename):
         new_data.extend(struct.pack('<I', flags))
         new_data.extend(struct.pack('<I', reserved))
 
-        # 添加剩余命令
+        # 2. 剩余命令的数据
         for c in new_cmds:
             new_data.extend(c['data'])
 
-        # 添加签名数据之前的内容
-        content_start = 32 + sizeofcmds
-        new_data.extend(data[content_start:sig_data_off])
+        # 3. 原始内容中命令之后、签名数据之前的部分
+        # 命令结束位置 = 32 + sizeofcmds (原始 sizeofcmds)
+        content_end = 32 + sizeofcmds
+        new_data.extend(data[content_end:sig_data_off])
 
         # 写回文件
         with open(filename, 'wb') as f:
             f.write(new_data)
 
-        print(f"    [OK] Removed signature data ({sig_data_size} bytes)")
+        print(f"    [OK] Removed signature data ({sig_data_size} bytes), new size: {len(new_data)}")
         return True
 
     except Exception as e:
