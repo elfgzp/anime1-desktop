@@ -24,28 +24,10 @@ on:
         enum: ['', 'windows', 'macos', 'linux']
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
-    if: ${{ inputs.platform == '' || (inputs.platform == 'windows' && matrix.os == 'windows-latest') || (inputs.platform == 'macos' && (matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel')) || (inputs.platform == 'linux' && matrix.os == 'ubuntu-latest') }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x64
-          - os: windows-latest
-            arch: x64
-          - os: macos-latest
-            arch: arm64
-          # macOS Intel 构建
-          # 注意：macos-12 已废弃（2024年12月3日），macos-13 也将在 2025年12月4日弃用
-          # 使用 macos-15-intel 明确指定 Intel 架构
-          # 如果构建失败，可以注释掉下面这行，只构建 arm64 版本
-          # Apple Silicon Mac 可以通过 Rosetta 运行 x64 应用
-          - os: macos-15-intel
-            arch: x64
-
+  build-linux:
+    name: Build on Linux-x64
+    runs-on: ubuntu-latest
+    if: ${{ inputs.platform == '' || inputs.platform == 'linux' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,15 +54,68 @@ jobs:
           python scripts/cleanup_unicode.py
 
       - name: Build frontend
-        if: runner.os != 'Windows'
         run: |
           cd frontend
           npm run build
           cd ..
           python scripts/inject-vite-assets.py
 
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Extract version for release
+        id: version
+        run: |
+          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
+          source /tmp/version_vars.sh
+          echo "version=$version" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Build application
+        env:
+          ANIME1_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/build.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-build
+          path: release/
+          retention-days: 7
+
+  build-windows:
+    name: Build on Windows-x64
+    runs-on: windows-latest
+    if: ${{ inputs.platform == '' || inputs.platform == 'windows' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Clean Unicode from dependencies
+        run: |
+          python scripts/cleanup_unicode.py
+
       - name: Build frontend (Windows)
-        if: runner.os == 'Windows'
         run: |
           chcp 65001
           cd frontend
@@ -92,17 +127,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-      - name: Install macOS-specific dependencies
-        if: runner.os == 'macOS'
-        run: pip install -e .[macos]
-      
-      - name: Install create-dmg (macOS only)
-        if: runner.os == 'macOS'
-        run: |
-          brew install create-dmg
 
       - name: Install NSIS (Windows only)
-        if: runner.os == 'Windows'
         run: |
           choco install nsis -y || echo "NSIS installation may have failed, trying anyway"
 
@@ -118,19 +144,152 @@ jobs:
         env:
           ANIME1_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Build and create installer (defaults to --onefile --installer)
           python scripts/build.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}-${{ matrix.arch }}-build
+          name: windows-x64-build
+          path: release/
+          retention-days: 7
+
+  build-macos-arm64:
+    name: Build on macOS-arm64
+    runs-on: macos-latest
+    if: ${{ inputs.platform == '' || inputs.platform == 'macos' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Clean Unicode from dependencies
+        run: |
+          python scripts/cleanup_unicode.py
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+          cd ..
+          python scripts/inject-vite-assets.py
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -e .[macos]
+
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg
+
+      - name: Extract version for release
+        id: version
+        run: |
+          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
+          source /tmp/version_vars.sh
+          echo "version=$version" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Build application
+        env:
+          ANIME1_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/build.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-build
+          path: release/
+          retention-days: 7
+
+  build-macos-x64:
+    name: Build on macOS-x64
+    runs-on: macos-15-intel
+    if: ${{ inputs.platform == '' || inputs.platform == 'macos' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Clean Unicode from dependencies
+        run: |
+          python scripts/cleanup_unicode.py
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+          cd ..
+          python scripts/inject-vite-assets.py
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -e .[macos]
+
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg
+
+      - name: Extract version for release
+        id: version
+        run: |
+          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
+          source /tmp/version_vars.sh
+          echo "version=$version" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Build application
+        env:
+          ANIME1_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python scripts/build.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-build
           path: release/
           retention-days: 7
 
   release:
     name: Create Release
-    needs: build
+    needs: [build-linux, build-windows, build-macos-arm64, build-macos-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
