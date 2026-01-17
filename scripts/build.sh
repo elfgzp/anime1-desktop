@@ -48,8 +48,8 @@ echo "Build version: $VERSION"
 # 但为了兼容性，也检查其他可能的格式
 case "$PLATFORM" in
     "Windows"|"windows-latest"|"windows")
-        echo "Building Windows (onefile)..."
-        $PYTHON_CMD build.py --clean --onefile
+        echo "Building Windows (onedir)..."
+        $PYTHON_CMD build.py --clean
         ;;
     "macOS"|"macos-latest"|"macos-12"|"macos")
         echo "Building macOS (onedir)..."

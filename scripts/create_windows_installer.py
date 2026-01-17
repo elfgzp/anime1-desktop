@@ -41,22 +41,43 @@ def run_nsis():
     return result.returncode == 0
 
 
+def find_build_dir(dist_dir: Path):
+    """Find the Windows build directory."""
+    # 尝试多个可能的目录名
+    candidates = [
+        dist_dir / "anime1",  # onedir 模式（小写）
+        dist_dir / "Anime1",  # onedir 模式（大写）
+    ]
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            # 检查目录下是否有可执行文件
+            exe_files = list(candidate.glob("*.exe"))
+            if exe_files:
+                return candidate
+
+    return None
+
+
 def prepare_files():
     """Prepare files for installer."""
     print("[PREPARE] Preparing files for installer...")
 
-    # Check if build exists
-    app_dir = DIST_DIR / "Anime1"
-    if not app_dir.exists():
-        print(f"[ERROR] Build not found: {app_dir}")
+    # Find build directory
+    app_dir = find_build_dir(DIST_DIR)
+    if not app_dir:
+        print(f"[ERROR] Build not found in: {DIST_DIR}")
         print("[ERROR] Run 'make build' first.")
+        print(f"[INFO] Contents of {DIST_DIR}:")
+        if DIST_DIR.exists():
+            for item in DIST_DIR.iterdir():
+                print(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
         return False
+
+    print(f"[OK] Found build directory: {app_dir}")
 
     # Ensure release directory exists
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Copy NSIS script to dist for relative paths
-    # The NSIS script uses relative paths like "dist\Anime1\*.*"
 
     print(f"[OK] Files prepared in: {DIST_DIR}")
     return True
