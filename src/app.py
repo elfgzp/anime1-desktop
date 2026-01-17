@@ -67,7 +67,6 @@ def download_static_resources():
 
 def create_app() -> Flask:
     """Create and configure the Flask application."""
-    from jinja2 import FileSystemLoader
     from flask_cors import CORS
     from flask import Flask, request, g
 
@@ -77,11 +76,9 @@ def create_app() -> Flask:
 
     app = Flask(
         __name__,
-        template_folder=str(PROJECT_ROOT / "templates"),
         static_folder=str(PROJECT_ROOT / "static"),
     )
     app.config["JSON_SORT_KEYS"] = False
-    app.config["TEMPLATES_AUTO_RELOAD"] = True
 
     # Serve vite-built assets from /assets/* path
     @app.route('/assets/<path:filename>')
@@ -113,9 +110,6 @@ def create_app() -> Flask:
                 else:
                     logger.info(f"{request.method} {request.path} - {elapsed:.2f}ms")
         return response
-
-    # Fix DispatchingJinjaLoader threading issue
-    app.jinja_loader = FileSystemLoader(str(PROJECT_ROOT / "templates"))
 
     # Register blueprints
     app.register_blueprint(anime_bp)
@@ -178,7 +172,7 @@ def open_browser(port: int):
 
 
 def print_banner(host: str, port: int):
-    print(f"""
+    banner = f"""
 ╔══════════════════════════════════════════════════════════╗
 ║                    Anime1 v{__version__:<15}              ║
 ║                                                          ║
@@ -190,7 +184,8 @@ def print_banner(host: str, port: int):
 ║                                                          ║
 ║   Ctrl+C to stop                                          ║
 ╚══════════════════════════════════════════════════════════╝
-    """)
+    """
+    logger.info(banner)
 
 
 def main():

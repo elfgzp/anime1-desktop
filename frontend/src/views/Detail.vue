@@ -773,15 +773,23 @@ const fetchPwEpisodes = async () => {
   }
 }
 
-const playEpisode = async (idx) => {
+const playEpisode = async (idx, retryCount = 0) => {
   const episodes = animeData.value?.episodes || pwEpisodes.value
   if (!episodes || idx < 0 || idx >= episodes.length) return
+
+  const MAX_RETRIES = 4
+  const LOADING_MESSAGES = [
+    '正在加载视频...',
+    '视频加载中，请稍候...',
+    '视频仍在处理中，请稍候...',
+    '视频上传中，请耐心等待...'
+  ]
 
   currentEpisodeIndex.value = idx
   const ep = episodes[idx]
 
   videoLoading.value = true
-  loadingText.value = '获取视频中...'
+  loadingText.value = LOADING_MESSAGES[Math.min(retryCount, LOADING_MESSAGES.length - 1)]
   loadingPercent.value = 0
   videoSrc.value = ''
   videoError.value = false
@@ -799,15 +807,47 @@ const playEpisode = async (idx) => {
     console.log('[Video] API返回数据:', data)
 
     if (data[RESPONSE_FIELDS.ERROR]) {
-      showError('无法获取视频', data[RESPONSE_FIELDS.ERROR] || '未知错误')
+      console.log('[Video] API返回错误:', data[RESPONSE_FIELDS.ERROR])
+      // 如果是临时错误（视频还在处理中），重试
+      const errorMsg = (data[RESPONSE_FIELDS.ERROR] || '').toLowerCase()
+      const shouldRetry = errorMsg.includes('not found') ||
+                          errorMsg.includes('not available') ||
+                          errorMsg.includes('不存在') ||
+                          errorMsg.includes('上架') ||
+                          errorMsg.includes('处理中') ||
+                          errorMsg.includes('loading') ||
+                          errorMsg.includes('wait') ||
+                          errorMsg.includes('404') ||
+                          errorMsg.includes('empty') ||
+                          !data[RESPONSE_FIELDS.URL]
+
+      if (shouldRetry && retryCount < MAX_RETRIES) {
+        console.log('[Video] 临时错误，' + (3000 * (retryCount + 1)) + 'ms 后重试')
+        loadingText.value = LOADING_MESSAGES[Math.min(retryCount, LOADING_MESSAGES.length - 1)]
+        setTimeout(() => {
+          playEpisode(idx, retryCount + 1)
+        }, 3000 * (retryCount + 1))
+        return
+      }
+      showError('视频暂未上架', '视频正在上传中，请稍后再试')
       return
     }
 
     if (!data[RESPONSE_FIELDS.URL]) {
-      showError('无法获取视频', '视频地址为空，请稍后重试')
+      console.log('[Video] 视频URL为空')
+      if (retryCount < MAX_RETRIES) {
+        console.log('[Video] URL为空，' + (3000 * (retryCount + 1)) + 'ms 后重试')
+        loadingText.value = LOADING_MESSAGES[Math.min(retryCount, LOADING_MESSAGES.length - 1)]
+        setTimeout(() => {
+          playEpisode(idx, retryCount + 1)
+        }, 3000 * (retryCount + 1))
+        return
+      }
+      showError('视频暂未上架', '视频正在上传中，请稍后再试')
       return
     }
 
+    console.log('[Video] 获取视频成功，设置 videoSrc')
     loadingText.value = '加载视频...'
 
     // 处理视频 URL，使用代理避免 CORS
@@ -829,6 +869,15 @@ const playEpisode = async (idx) => {
       checkAndRestorePlayback(ep.id, idx)
     }, 1500)
   } catch (error) {
+    console.log('[Video] 请求异常:', error.message)
+    if (retryCount < MAX_RETRIES) {
+      console.log('[Video] 网络错误，' + (3000 * (retryCount + 1)) + 'ms 后重试')
+      loadingText.value = LOADING_MESSAGES[Math.min(retryCount, LOADING_MESSAGES.length - 1)]
+      setTimeout(() => {
+        playEpisode(idx, retryCount + 1)
+      }, 3000 * (retryCount + 1))
+      return
+    }
     showError('加载失败', error.message || '网络连接错误，请检查网络后重试')
   }
 }

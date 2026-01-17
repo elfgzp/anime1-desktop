@@ -5,7 +5,6 @@ from pathlib import Path
 # Paths
 # Use abspath to ensure we get the absolute path even when __file__ is relative
 PROJECT_ROOT = Path(os.path.abspath(__file__)).parent.parent
-TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
 STATIC_DIST = STATIC_DIR / "dist"
 STATIC_CACHE_DIR = STATIC_DIR / "vendor"

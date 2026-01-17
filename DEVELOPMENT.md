@@ -11,13 +11,13 @@ anime1-desktop/
 │   │   ├── router/       # 路由配置
 │   │   ├── utils/        # 工具函数
 │   │   └── composables/  # 组合式函数
-│   └── index.html
+│   └── dist/             # 构建输出
 ├── src/              # Python 后端
 │   ├── routes/       # Flask 路由
 │   ├── models/       # 数据模型
 │   └── services/     # 业务逻辑
-├── static/           # 静态资源(构建后)
-└── templates/        # Flask 模板
+└── static/           # 静态资源(构建后)
+    └── dist/         # Vue 构建产物（index.html, assets/）
 ```
 
 ## 开发环境设置

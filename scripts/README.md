@@ -23,6 +23,18 @@ bash scripts/test-local-build.sh dry-run macos
 
 ### 构建相关
 
+- **`build.py`** - Python 构建脚本
+  - 自动构建前端 (Vue) 和后端 (PyInstaller)
+  - 默认清理并重新构建
+  - 用法: `python scripts/build.py [选项]`
+  - 选项:
+    - `--clean` - 清理构建目录 (默认开启)
+    - `--onefile` - 创建单文件可执行文件 (默认)
+    - `--onedir` - 创建目录打包
+    - `--debug` - 调试模式
+    - `--remote` - CLI 版本 (浏览器模式)
+    - `--skip-frontend` - 跳过前端构建
+
 - **`build.sh`** - 根据平台构建应用
   - 参数: 平台名称 (Windows/macOS/Linux)
   - 功能: 根据平台调用 `build.py` 并传递正确的参数

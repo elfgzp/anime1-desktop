@@ -358,7 +358,8 @@ Section "Main Application" SecMain
     File /r "{dist_path_abs}\\*"
 
     CreateDirectory "$SMPROGRAMS\\${{APPNAME}}"
-    CreateShortCut "$SMPROGRAMS\\${{APPNAME}}\\${{APPNAME}}.lnk" "$INSTDIR\\Anime1.exe"
+    CreateShortCut "$SMPROGRAMS\\${{APPNAME}}\\${{APPNAME}}.lnk" "$INSTDIR\\Anime1.exe" "" "$INSTDIR\\app.ico" 0
+    CreateShortCut "$DESKTOP\\${{APPNAME}}.lnk" "$INSTDIR\\Anime1.exe" "" "$INSTDIR\\app.ico" 0
 
     SetOutPath "$INSTDIR"
     WriteUninstaller "$INSTDIR\\Uninstall.exe"
@@ -394,6 +395,7 @@ SectionEnd
 
 Section "Uninstall"
     Delete "$SMPROGRAMS\\${{APPNAME}}\\${{APPNAME}}.lnk"
+    Delete "$DESKTOP\\${{APPNAME}}.lnk"
     RMDir "$SMPROGRAMS\\${{APPNAME}}"
 
     Delete "$INSTDIR\\*.*"
@@ -530,6 +532,84 @@ Note: Requires WebView2 Runtime on Windows.
         return None
 
 
+# ============ Frontend Build Functions ============
+
+# Windows 需要 shell=True 来运行 npm
+USE_SHELL = sys.platform == "win32"
+
+
+def run_subprocess(cmd, cwd=None, timeout=300, check=True):
+    """Run subprocess with consistent settings (handles Windows shell=True and UTF-8 encoding)."""
+    return subprocess.run(
+        cmd,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        shell=USE_SHELL,
+        check=check,
+        encoding='utf-8',
+    )
+
+
+def build_frontend(args) -> bool:
+    """Build the Vue frontend application.
+
+    Returns True if successful, False otherwise.
+    """
+    root = get_project_root()
+    frontend_dir = root / "frontend"
+    dist_dir = root / "static" / "dist"
+
+    # Check if npm is available
+    try:
+        result = run_subprocess(["npm", "--version"], timeout=5, check=False)
+        if result.returncode != 0:
+            print("[WARN] npm is not available, skipping frontend build")
+            return False
+    except (FileNotFoundError, subprocess.SubprocessError):
+        print("[WARN] npm not found, skipping frontend build")
+        return False
+
+    # Check if frontend directory exists
+    if not frontend_dir.exists():
+        print("[WARN] frontend directory not found, skipping frontend build")
+        return False
+
+    # Clean frontend dist if requested
+    if args.clean and dist_dir.exists():
+        print("[BUILD] Cleaning frontend dist directory...")
+        shutil.rmtree(dist_dir)
+
+    print("[BUILD] Building frontend...")
+    try:
+        # Install dependencies and build
+        result = run_subprocess(["npm", "ci"], cwd=frontend_dir, check=False)
+        if result.returncode != 0:
+            print(f"[ERROR] npm ci failed: {result.stderr}")
+            return False
+
+        result = run_subprocess(["npm", "run", "build"], cwd=frontend_dir, check=False)
+        if result.returncode != 0:
+            print(f"[ERROR] npm run build failed: {result.stderr}")
+            return False
+
+        # Check if build output exists
+        if not dist_dir.exists():
+            print("[ERROR] Frontend build completed but output directory not found")
+            return False
+
+        print(f"[BUILD] Frontend built successfully to {dist_dir}")
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("[ERROR] Frontend build timed out")
+        return False
+    except Exception as e:
+        print(f"[ERROR] Frontend build failed: {e}")
+        return False
+
+
 # ============ Main Build Functions ============
 
 def run_pyinstaller(args):
@@ -560,9 +640,8 @@ def run_pyinstaller(args):
         f"--workpath={work_path}",
     ]
 
-    # Windowed mode - 默认保留 console 以支持 DevTools
-    cmd.append("--console")
-    print("[BUILD] Console mode: enabled (for DevTools support)")
+    # Windowed mode (no console) for desktop app on Windows
+    cmd.extend(["--windowed", "--noconsole"])
 
     # Single file or directory
     if args.onefile:
@@ -578,9 +657,6 @@ def run_pyinstaller(args):
 
     # Entry point
     if args.remote:
-        cmd.remove("--windowed")
-        cmd.remove("--noconsole")
-        cmd.append("--console")
         entry_point = str(root / "src" / "app.py")
         cmd.extend(["--name=anime1-cli", entry_point])
         print("[BUILD] Mode: CLI (browser-based)")
@@ -603,7 +679,7 @@ def run_pyinstaller(args):
 
     # Hidden imports
     hidden_imports = [
-        "flask", "flask.templating", "jinja2", "markupsafe", "werkzeug",
+        "flask", "flask_cors", "flask.templating", "jinja2", "markupsafe", "werkzeug",
         "requests", "requests.utils", "requests.auth",
         "urllib3", "urllib3.util", "urllib3.connection",
         "beautifulsoup4", "soupsieve", "bs4", "bs4.builder",
@@ -619,7 +695,6 @@ def run_pyinstaller(args):
 
     # Data files
     datas = [
-        (str(root / "templates"), "templates"),
         (str(root / "static"), "static"),
         (str(root / "src"), "src"),
         (str(root / "distInfo.plist"), "."),
@@ -778,11 +853,12 @@ def verify_dependencies():
 
 def main():
     parser = argparse.ArgumentParser(description="Build Anime1 desktop application")
-    parser.add_argument("--clean", action="store_true", help="Clean dist folder before building")
+    parser.add_argument("--clean", action="store_true", help="Clean dist folder before building", default=True)
     parser.add_argument("--onefile", action="store_true", default=True, help="Create single executable (larger file)")
     parser.add_argument("--debug", action="store_true", help="Build with debug mode")
     parser.add_argument("--remote", action="store_true", help="Build CLI version (browser-based)")
     parser.add_argument("--installer", action="store_true", default=True, help="Create installer/package after build")
+    parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend build")
 
     args = parser.parse_args()
 
@@ -790,6 +866,13 @@ def main():
     print(f"Python version: {sys.version}")
     print(f"Platform: {sys.platform}")
     print(f"Project root: {get_project_root()}")
+
+    # Build frontend first
+    if not args.skip_frontend:
+        frontend_success = build_frontend(args)
+        if not frontend_success:
+            print("[ERROR] Frontend build failed, aborting")
+            sys.exit(1)
 
     verify_dependencies()
     run_pyinstaller(args)
