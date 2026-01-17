@@ -73,62 +73,50 @@ def create_dmg(app_path: Path, output_path: Path, app_name: str = "Anime1") -> b
             print("Error: create-dmg command not found")
             return False
 
-    # 准备修复脚本到临时目录
+    # 查找修复脚本（从 app 同级目录或脚本目录）
     script_dir = Path(__file__).parent
-    fix_script_src = script_dir / "fix_signature.sh"
-    if fix_script_src.exists():
-        # 创建临时目录存放修复脚本
-        temp_dir = Path("/tmp/anime1-dmg-temp")
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        temp_dir.mkdir(parents=True, exist_ok=True)
+    app_parent = app_path.parent
 
-        # 复制修复脚本
-        fix_script_dst = temp_dir / "fix_signature.command"
-        shutil.copy2(fix_script_src, fix_script_dst)
-        os.chmod(fix_script_dst, 0o755)
+    # 优先从 app 同级目录查找
+    fix_script = app_parent / "_fix_scripts" / "fix_signature.command"
+    if not fix_script.exists():
+        # 回退到脚本目录
+        fix_script_src = script_dir / "fix_signature.sh"
+        if fix_script_src.exists():
+            fix_script = app_parent / "fix_signature.command"
+            shutil.copy2(fix_script_src, fix_script)
+            os.chmod(fix_script, 0o755)
 
-        # 创建说明文件
-        readme_content = """欢迎使用 Anime1！
-
-安装方法:
-  1. 将 Anime1.app 拖拽到应用程序文件夹
-
-首次运行如果提示"无法验证开发者":
-  2. 双击运行 "修复签名.command" 脚本
-  3. 或在终端执行: sudo xattr -r -d com.apple.quarantine /Applications/Anime1.app
-
-如有问题请访问:
-  https://github.com/anime1-desktop/anime1-desktop
-"""
-        (temp_dir / "请先阅读.txt").write_text(readme_content)
+    use_fix_script = fix_script.exists() and fix_script.is_file()
+    if use_fix_script:
+        print(f"[INFO] Found fix script: {fix_script}")
 
     # 创建 DMG
     print(f"Creating DMG: {output_path}")
     print(f"  App: {app_path}")
     print(f"  Using: {create_dmg_cmd}")
 
-    cmd = [
-        create_dmg_cmd,
+    cmd = [create_dmg_cmd]
+
+    # 如果有修复脚本，先添加到 DMG
+    # 格式: --add-file <target_name> <source> <x> <y>
+    if use_fix_script:
+        cmd.extend([
+            '--add-file', '安装完成后请执行！.command', str(fix_script), '600', '100',
+            '--app-drop-link', '150', '100'
+        ])
+
+    # 添加其他选项和必需参数
+    cmd.extend([
         '--volname', app_name,
         '--window-pos', '200', '120',
         '--window-size', '800', '500',
         '--icon-size', '100',
         str(output_path),
         str(app_path)
-    ]
-
-    # 如果有临时文件，添加到 DMG，放在应用旁边
-    # 格式: --add-file <target_name> <source> <x> <y>
-    if fix_script_src.exists():
-        cmd.extend(['--add-file', '安装完成后请执行！.command', str(temp_dir / 'fix_signature.command'), '600', '100'])
-        cmd.extend(['--app-drop-link', '150', '100'])
+    ])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
-
-    # 清理临时目录
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
 
     if result.returncode != 0:
         print(f"Error creating DMG: {result.stderr}")
@@ -144,14 +132,14 @@ def create_dmg(app_path: Path, output_path: Path, app_name: str = "Anime1") -> b
 def main():
     """主函数"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Create macOS DMG file')
     parser.add_argument('app_path', type=Path, help='Path to .app directory')
     parser.add_argument('output_path', type=Path, help='Output DMG file path')
     parser.add_argument('--app-name', default='Anime1', help='Application name')
-    
+
     args = parser.parse_args()
-    
+
     if not create_dmg(args.app_path, args.output_path, args.app_name):
         sys.exit(1)
 
