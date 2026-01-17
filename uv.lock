@@ -22,7 +22,6 @@ dependencies = [
     { name = "peewee" },
     { name = "pillow" },
     { name = "pyinstaller" },
-    { name = "pyobjc-framework-webkit" },
     { name = "pywebview" },
     { name = "requests" },
 ]
@@ -30,6 +29,9 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
+]
+macos = [
+    { name = "pyobjc-framework-webkit" },
 ]
 
 [package.metadata]
@@ -40,12 +42,12 @@ requires-dist = [
     { name = "peewee", specifier = ">=3.17.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pyinstaller", specifier = ">=6.0.0" },
-    { name = "pyobjc-framework-webkit", specifier = ">=9.0" },
+    { name = "pyobjc-framework-webkit", marker = "extra == 'macos'", specifier = ">=9.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pywebview", specifier = "==5.0" },
     { name = "requests", specifier = ">=2.31.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "macos"]
 
 [[package]]
 name = "beautifulsoup4"
