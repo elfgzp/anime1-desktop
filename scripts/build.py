@@ -560,6 +560,7 @@ def build_frontend(args) -> bool:
     root = get_project_root()
     frontend_dir = root / "frontend"
     dist_dir = root / "static" / "dist"
+    frontend_dist = frontend_dir / "dist"
 
     print(f"[DEBUG] Project root: {root}")
     print(f"[DEBUG] Frontend dir: {frontend_dir}")
@@ -580,10 +581,14 @@ def build_frontend(args) -> bool:
         print("[WARN] frontend directory not found, skipping frontend build")
         return False
 
-    # Clean frontend dist if requested
-    if args.clean and dist_dir.exists():
-        print("[BUILD] Cleaning frontend dist directory...")
-        shutil.rmtree(dist_dir)
+    # Clean frontend dist if requested (always clean to ensure fresh build)
+    if args.clean:
+        if frontend_dist.exists():
+            print(f"[BUILD] Cleaning frontend/dist directory...")
+            shutil.rmtree(frontend_dist)
+        if dist_dir.exists():
+            print(f"[BUILD] Cleaning static/dist directory...")
+            shutil.rmtree(dist_dir)
 
     print("[BUILD] Building frontend...")
     try:
@@ -602,22 +607,17 @@ def build_frontend(args) -> bool:
             print(f"[ERROR] npm run build failed (code={result.returncode})")
             return False
 
-        # Check if build output exists, and find/move it if needed
-        frontend_dist = frontend_dir / "dist"
+        # Check if build output exists
         print(f"[DEBUG] Checking frontend/dist: {frontend_dist.exists()}")
         print(f"[DEBUG] Checking static/dist: {dist_dir.exists()}")
 
-        if dist_dir.exists():
-            print(f"[BUILD] Frontend built successfully to {dist_dir}")
-            return True
-        elif frontend_dist.exists():
+        if frontend_dist.exists():
             # Vite built to frontend/dist, move it to static/dist
-            print(f"[DEBUG] Moving frontend/dist to static/dist...")
             if dist_dir.exists():
                 shutil.rmtree(dist_dir)
             dist_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(frontend_dist), str(dist_dir))
-            print(f"[BUILD] Frontend built and moved to {dist_dir}")
+            shutil.copytree(frontend_dist, dist_dir)
+            print(f"[BUILD] Frontend built successfully to {dist_dir}")
             return True
         else:
             print(f"[ERROR] Frontend build completed but output directory not found")
