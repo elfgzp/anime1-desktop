@@ -144,8 +144,13 @@ def generate_macos_icon():
     try:
         from PIL import Image
         img = Image.open(png_path)
-        # macOS icons are typically 1024x1024 for Retina
-        sizes = [256, 512, 1024, 2048]
+
+        # First, upscale to 1024x1024 if smaller (for better quality)
+        if img.size[0] < 1024:
+            img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+
+        # macOS icons: 256, 512, 1024, 2048 (2048 is for @2x Retina)
+        sizes = [256, 512, 1024]
         img_list = []
 
         for size in sizes:
