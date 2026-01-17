@@ -201,6 +201,11 @@ def run_pyinstaller(args):
         cmd.extend(["--osx-bundle-identifier", "com.anime1.app"])
         print(f"[BUILD] Bundle ID: com.anime1.app")
 
+    # Disable code signing on macOS to avoid cross-machine issues
+    if sys.platform == "darwin":
+        cmd.extend(["--codesign-identity", "-"])
+        print("[BUILD] Code signing disabled")
+
     # Hidden imports for pywebview and dependencies
     hidden_imports = [
         "flask", "flask.templating", "jinja2", "markupsafe", "werkzeug",

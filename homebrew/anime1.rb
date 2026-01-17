@@ -40,6 +40,11 @@ cask "anime1" do
     system_command "xattr",
                    args: ["-r", "-d", "com.apple.quarantine", "/Applications/Anime1.app"],
                    sudo: true
+
+    # 重新签名应用（解决跨机器签名不兼容问题）
+    system_command "codesign",
+                   args: ["--force", "--sign", "-", "--deep", "--options", "runtime", "--timestamp", "/Applications/Anime1.app"],
+                   sudo: true
   end
 
   uninstall quit: "com.anime1.app"
