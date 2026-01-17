@@ -12,17 +12,10 @@ import sys
 import platform
 import shutil
 import subprocess
+import struct
 import zipfile
 import tarfile
 from pathlib import Path
-
-# 导入 macholib 用于处理 Mach-O 文件
-try:
-    from macholib.MachO import MachO
-    from macholib.mach_o import LC_CODE_SIGNATURE, LC_SYMTAB, LC_SEGMENT_64
-    MACHOLIB_AVAILABLE = True
-except ImportError:
-    MACHOLIB_AVAILABLE = False
 
 # 应用名称常量
 APP_NAME_UPPER = "Anime1"
@@ -247,101 +240,108 @@ def get_architecture() -> str:
 
 def remove_code_signature_from_macho(filename):
     """
-    从 Mach-O 文件中移除 LC_CODE_SIGNATURE 及其相关数据。
+    从 Mach-O 文件中直接移除 LC_CODE_SIGNATURE 及其相关数据。
 
+    使用 struct 模块直接操作二进制文件，比 macholib 更可靠。
     这会彻底移除嵌入的代码签名，解决跨机器签名不兼容问题。
     """
-    if not MACHOLIB_AVAILABLE:
-        print("    [WARN] macholib not available, skipping signature removal")
-        return False
-
     try:
-        # 打开 Mach-O 文件
-        binary = MachO(filename)
-        file_size = os.path.getsize(filename)
+        with open(filename, 'rb') as f:
+            data = f.read()
 
-        # 获取文件偏移（用于 fat binary）
-        header_offset = binary.headers[0].offset if hasattr(binary.headers[0], 'offset') else 0
+        if len(data) < 32:
+            print(f"    [WARN] File too small to be valid Mach-O")
+            return False
 
-        # 处理每个 arch slice
-        for header in binary.headers:
-            # 查找 LC_CODE_SIGNATURE 命令
-            code_sig_cmds = [cmd for cmd in header.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+        offset = 0
+        # 解析 mach_header_64 (32 bytes)
+        magic = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        cputype = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        cpusubtype = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        filetype = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        ncmds = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        sizeofcmds = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        flags = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
+        reserved = struct.unpack('<I', data[offset:offset+4])[0]
+        offset += 4
 
-            if not code_sig_cmds:
-                continue  # 没有签名，跳过
+        # 读取所有命令
+        cmds = []
+        cmd_offset = offset
+        for i in range(ncmds):
+            if cmd_offset + 8 > len(data):
+                break
+            cmd = struct.unpack('<I', data[cmd_offset:cmd_offset+4])[0]
+            cmdsize = struct.unpack('<I', data[cmd_offset+4:cmd_offset+8])[0]
+            if cmd_offset + cmdsize > len(data):
+                break
+            cmds.append({
+                'cmd': cmd,
+                'cmdsize': cmdsize,
+                'offset': cmd_offset,
+                'data': data[cmd_offset:cmd_offset+cmdsize]
+            })
+            cmd_offset += cmdsize
 
-            code_sig_cmd = code_sig_cmds[0]
-            code_sig_cmd_entry = code_sig_cmd[1]
+        # 查找 LC_CODE_SIGNATURE (cmd=0x1d=29)
+        sig_idx = None
+        for i, c in enumerate(cmds):
+            if c['cmd'] == 0x1d:  # LC_CODE_SIGNATURE
+                sig_idx = i
+                break
 
-            # 获取签名数据的位置和大小
-            sig_data_offset = header_offset + code_sig_cmd_entry.dataoff
-            sig_data_size = code_sig_cmd_entry.datasize
+        if sig_idx is None:
+            print(f"    [INFO] No LC_CODE_SIGNATURE found")
+            return True
 
-            print(f"    Found LC_CODE_SIGNATURE at offset {code_sig_cmd_entry.dataoff}, size {code_sig_cmd_entry.datasize}")
+        sig_cmd = cmds[sig_idx]
+        # 解析 signature_command 结构
+        sig_data_off = struct.unpack('<I', sig_cmd['data'][8:12])[0]
+        sig_data_size = struct.unpack('<I', sig_cmd['data'][12:16])[0]
 
-            # 读取文件内容
-            with open(filename, 'rb') as f:
-                data = f.read()
+        print(f"    Found LC_CODE_SIGNATURE at offset {sig_data_off}, size {sig_data_size}")
 
-            # 移除签名数据：保留文件头到签名数据开始之前的内容
-            new_data = data[:sig_data_offset]
+        # 构建新文件，不包含签名数据
+        new_cmds = [c for c in cmds if c['cmd'] != 0x1d]
+        new_ncmds = len(new_cmds)
+        new_sizeofcmds = sum(c['cmdsize'] for c in new_cmds)
 
-            # 修复文件头中的命令列表
-            # 找到 LC_CODE_SIGNATURE 命令的位置（相对于 header 开始）
-            # 我们需要重建命令列表，移除 LC_CODE_SIGNATURE
-            new_commands = []
-            for cmd in header.commands:
-                if cmd[0].cmd != LC_CODE_SIGNATURE:
-                    new_commands.append(cmd)
+        # 重建文件
+        new_data = bytearray()
+        new_data.extend(struct.pack('<I', magic))
+        new_data.extend(struct.pack('<I', cputype))
+        new_data.extend(struct.pack('<I', cpusubtype))
+        new_data.extend(struct.pack('<I', filetype))
+        new_data.extend(struct.pack('<I', new_ncmds))
+        new_data.extend(struct.pack('<I', new_sizeofcmds))
+        new_data.extend(struct.pack('<I', flags))
+        new_data.extend(struct.pack('<I', reserved))
 
-            # 计算新的命令列表大小
-            new_cmdsize = sum(cmd[0].cmdsize for cmd in new_commands)
+        # 添加剩余命令
+        for c in new_cmds:
+            new_data.extend(c['data'])
 
-            # 重建 Mach-O 头
-            # 这是一个简化的实现，直接截断文件到签名数据之前
-            # 然后重新计算一些关键字段
+        # 添加签名数据之前的内容
+        content_start = 32 + sizeofcmds
+        new_data.extend(data[content_start:sig_data_off])
 
-            # 写入新文件
-            with open(filename, 'wb') as f:
-                f.write(new_data)
+        # 写回文件
+        with open(filename, 'wb') as f:
+            f.write(new_data)
 
-            print(f"    [OK] Removed signature data ({sig_data_size} bytes)")
-
-            # 更新文件中的指针（如果需要）
-            # 由于我们只是截断了文件，需要更新 LC_SYMTAB 和 LC_SEGMENT_64 中的相关字段
-            _fix_macho_after_signature_removal(filename, header_offset, sig_data_offset, new_cmdsize, header)
-
+        print(f"    [OK] Removed signature data ({sig_data_size} bytes)")
         return True
+
     except Exception as e:
         print(f"    [WARN] Failed to remove signature: {e}")
         return False
-
-
-def _fix_macho_after_signature_removal(filename, header_offset, sig_data_offset, new_cmdsize, header):
-    """
-    在移除签名后修复 Mach-O 头中的相关字段。
-    """
-    try:
-        binary = MachO(filename)
-
-        for h in binary.headers:
-            # 查找并更新 __LINKEDIT segment 的大小
-            __LINKEDIT_NAME = b'__LINKEDIT\x00\x00\x00\x00\x00\x00'
-            for cmd in h.commands:
-                if cmd[0].cmd == LC_SEGMENT_64 and cmd[1].segname == __LINKEDIT_NAME:
-                    linkedit = cmd[1]
-                    # 更新 filesize 到签名数据开始的位置
-                    linkedit.filesize = sig_data_offset - (header_offset + linkedit.fileoff)
-                    print(f"    [OK] Updated __LINKEDIT filesize to {linkedit.filesize}")
-                    break
-
-        # 写回修改
-        with open(filename, 'rb+') as f:
-            binary.write(f)
-
-    except Exception as e:
-        print(f"    [WARN] Failed to fix Mach-O headers: {e}")
 
 
 def remove_python_framework_signatures(app_path: Path):
