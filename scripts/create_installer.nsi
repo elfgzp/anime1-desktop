@@ -68,11 +68,9 @@ UninstPage instfiles
 Section "Main Application" SecMain
     SectionIn RO
 
-    ; 设置输出路径
+    ; 使用 FilesTree 递归复制整个目录
     SetOutPath "$INSTDIR"
-
-    ; 复制整个应用目录 (使用通配符)
-    File /r "dist\anime1\*"
+    File /nonfatal /r "dist\anime1"
 
     ; 检查 app.ico 是否存在
     IfFileExists "$INSTDIR\app.ico" 0 SkipIcon
