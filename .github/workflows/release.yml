@@ -27,7 +27,7 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    if: ${{ inputs.platform == '' || matrix.os == 'windows-latest' }}
+    if: ${{ inputs.platform == '' || (inputs.platform == 'windows' && matrix.os == 'windows-latest') || (inputs.platform == 'macos' && (matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel')) || (inputs.platform == 'linux' && matrix.os == 'ubuntu-latest') }}
     strategy:
       fail-fast: false
       matrix:
