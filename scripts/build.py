@@ -663,6 +663,12 @@ def run_pyinstaller(args):
     version_file = root / "src" / "_version.txt"
     version_file.write_text(version, encoding='utf-8')
 
+    # Generate icons before build
+    if sys.platform == "darwin":
+        generate_macos_icon()
+    elif sys.platform == "win32":
+        generate_windows_icon()
+
     # Clean if requested
     if args.clean and dist_path.exists():
         shutil.rmtree(dist_path)
