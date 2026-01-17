@@ -69,6 +69,7 @@ help:
 	@echo "Testing & CI:"
 	@echo "  make test          - Run tests"
 	@echo "  make test-workflow - Test GitHub Actions workflow (需要 gh CLI)"
+	@echo "  make trigger-workflow WORKFLOW=test-build.yml - Trigger workflow"
 	@echo "  make test-gh-auth  - Check GitHub CLI authentication"
 	@echo "  make verify-scripts - Verify all workflow scripts"
 	@echo "  make test-local-build - Test build scripts locally (dry-run)"
@@ -236,6 +237,19 @@ test:
 test-workflow:
 	@echo "Testing GitHub Actions workflow..."
 	@bash $(PROJECT_ROOT)scripts/test-workflow.sh
+
+# Trigger GitHub Actions workflow
+# Usage: make trigger-workflow WORKFLOW=test-build.yml
+trigger-workflow:
+	@echo "Triggering GitHub Actions workflow: $(WORKFLOW)..."
+	@if [ -z "$(WORKFLOW)" ]; then \
+		echo "Error: WORKFLOW not specified"; \
+		echo "Usage: make trigger-workflow WORKFLOW=test-build.yml"; \
+		exit 1; \
+	fi
+	@gh auth status || (echo "Error: GitHub CLI not authenticated. Run: gh auth login --scopes workflow" && exit 1)
+	@gh workflow run "$(WORKFLOW)" --ref main || (echo "Error: Failed to trigger workflow. Check permissions." && exit 1)
+	@echo "✓ Workflow triggered successfully"
 
 test-gh-auth:
 	@echo "检查 GitHub CLI 认证状态..."
