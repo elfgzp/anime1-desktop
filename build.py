@@ -148,6 +148,7 @@ def run_pyinstaller(args):
         "-m", "PyInstaller",
         "--clean",
         "--noconfirm",
+        "--disable-sign",  # 禁用自动签名，我们会手动签名
         f"--distpath={dist_path}",
         f"--workpath={work_path}",
     ]
