@@ -344,6 +344,24 @@ def remove_code_signature_from_macho(filename):
         return False
 
 
+def sign_macho_binary(binary_path: Path) -> bool:
+    """使用 adhoc 签名签名单个 Mach-O 二进制文件"""
+    try:
+        result = subprocess.run(
+            ["codesign", "--force", "--sign", "-", "--options", "runtime", "--timestamp", str(binary_path)],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return True
+        else:
+            print(f"    [WARN] Failed to sign {binary_path.name}: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"    [WARN] Error signing {binary_path.name}: {e}")
+        return False
+
+
 def remove_python_framework_signatures(app_path: Path):
     """
     移除 Python.framework 内部的所有签名，解决跨机器运行问题
@@ -356,6 +374,23 @@ def remove_python_framework_signatures(app_path: Path):
     if not python_framework.exists():
         print("  [INFO] No Python.framework found, skipping")
         return
+
+    # 收集所有需要处理的 Mach-O 二进制文件
+    macho_binaries = []
+    for binary_file in python_framework.rglob("*"):
+        if binary_file.is_file():
+            try:
+                result = subprocess.run(
+                    ["file", str(binary_file)],
+                    capture_output=True,
+                    text=True
+                )
+                if "Mach-O" in result.stdout:
+                    macho_binaries.append(binary_file)
+            except Exception:
+                pass
+
+    print(f"  [INFO] Found {len(macho_binaries)} Mach-O binaries in Python.framework")
 
     # 1. 递归移除所有 _CodeSignature 目录
     for code_sig_dir in python_framework.rglob("_CodeSignature"):
@@ -370,23 +405,20 @@ def remove_python_framework_signatures(app_path: Path):
             print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
 
     # 3. 移除所有 Mach-O 二进制文件中的嵌入签名
-    for binary_file in python_framework.rglob("*"):
-        if binary_file.is_file():
-            # 检查是否是 Mach-O 可执行文件或动态库
-            try:
-                result = subprocess.run(
-                    ["file", str(binary_file)],
-                    capture_output=True,
-                    text=True
-                )
-                if "Mach-O" in result.stdout:
-                    print(f"  Processing: {binary_file.relative_to(python_framework)}")
-                    # 移除嵌入的签名
-                    remove_code_signature_from_macho(str(binary_file))
-            except Exception:
-                pass
+    for binary_file in macho_binaries:
+        print(f"  Removing signature from: {binary_file.relative_to(python_framework)}")
+        remove_code_signature_from_macho(str(binary_file))
 
-    print("  [OK] All Python.framework signatures removed")
+    print("  [OK] All embedded signatures removed")
+
+    # 4. 重新签名所有 Mach-O 二进制文件
+    print("  [INFO] Re-signing Mach-O binaries...")
+    signed_count = 0
+    for binary_file in macho_binaries:
+        if sign_macho_binary(binary_file):
+            signed_count += 1
+
+    print(f"  [OK] Signed {signed_count}/{len(macho_binaries)} binaries")
 
 
 def package_macos(dist_dir: Path, output_dir: Path):
