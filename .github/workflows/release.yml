@@ -1,4 +1,4 @@
-name: Build and Release (Test: fix/windows-encoding)
+name: "Build and Release (Test: fix/windows-encoding)"
 
 on:
   push:
