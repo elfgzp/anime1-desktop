@@ -13,6 +13,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
+# Windows 需要 shell=True 来运行 npm
+USE_SHELL = sys.platform == "win32"
+
 
 def check_dependencies():
     """检查必要的依赖是否已安装"""
@@ -30,7 +33,8 @@ def check_dependencies():
             ["npm", "--version"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
+            shell=USE_SHELL
         )
         if result.returncode != 0:
             errors.append("npm 未安装或不可用")
@@ -163,7 +167,7 @@ def is_our_process_on_port(port):
     return False
 
 
-def start_flask(port=5172, debug=True):
+def start_flask(port=5172):
     """启动 Flask 后端服务器，返回 (process, actual_port)"""
     # 如果端口被占用，先尝试清理我们的进程
     if not is_port_available(port):
@@ -187,10 +191,9 @@ def start_flask(port=5172, debug=True):
         sys.executable,
         "-m", "src.app",
         "--port", str(port),
-        "--no-browser"
+        "--no-browser",
+        "--dev"
     ]
-    if debug:
-        cmd.append("--debug")
 
     print(f"🚀 启动 Flask 后端 (端口 {port})...")
     process = subprocess.Popen(
@@ -236,7 +239,8 @@ def start_vite(port=5173, flask_port=5172):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        env=env
+        env=env,
+        shell=USE_SHELL
     )
     return process, port
 
@@ -390,11 +394,6 @@ def main():
         help="Vite 前端端口（默认: 5173）"
     )
     parser.add_argument(
-        "--no-debug",
-        action="store_true",
-        help="禁用 Flask debug 模式"
-    )
-    parser.add_argument(
         "--skip-check",
         action="store_true",
         help="跳过依赖检查"
@@ -435,7 +434,14 @@ def main():
     parser.add_argument(
         "--debug-webview",
         action="store_true",
-        help="打开 webview 开发者工具"
+        default=True,
+        help="打开 webview 开发者工具（默认开启，使用 --no-debug-webview 关闭）"
+    )
+    parser.add_argument(
+        "--no-debug-webview",
+        action="store_false",
+        dest="debug_webview",
+        help="关闭 webview 开发者工具"
     )
 
     args = parser.parse_args()
@@ -465,7 +471,7 @@ def main():
 
     try:
         # 启动 Flask
-        flask_result = start_flask(args.flask_port, not args.no_debug)
+        flask_result = start_flask(args.flask_port)
         if flask_result is None:
             print("❌ Flask 启动失败")
             sys.exit(1)

@@ -1,6 +1,7 @@
 """HTTP request utilities."""
 import logging
 import subprocess
+import sys
 import time
 from typing import Optional, Tuple
 
@@ -87,12 +88,16 @@ def fetch_page_with_curl(url: str, timeout: int = 30) -> str:
 
     for i, cmd in enumerate(curl_commands):
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout + 5,
-            )
+            # On Windows, use CREATE_NO_WINDOW to avoid terminal flash
+            run_kwargs = {
+                'capture_output': True,
+                'text': True,
+                'timeout': timeout + 5,
+            }
+            if sys.platform == "win32":
+                run_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
+            result = subprocess.run(cmd, **run_kwargs)
             if result.returncode == 0 and result.text.strip():
                 return result.text
             logger.debug(f"Curl approach {i+1} failed for {url}: returncode={result.returncode}")

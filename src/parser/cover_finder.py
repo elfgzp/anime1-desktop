@@ -180,21 +180,45 @@ class CoverFinder:
                 "subject_url": results[0].get("subject_url")
             }
 
-    def get_bangumi_info(self, anime: Anime) -> Optional[Dict[str, Any]]:
-        """Get detailed Bangumi info for an anime.
+    def get_bangumi_info(self, anime: Anime, update_anime: bool = True) -> Optional[Dict[str, Any]]:
+        """Get detailed Bangumi info for an anime, including cover.
+
+        This method combines cover fetching and detailed info fetching into a single
+        operation to avoid redundant network requests.
 
         Args:
             anime: Anime object to find info for.
+            update_anime: If True, update the anime object with cover_url and match info.
 
         Returns:
-            Dict with Bangumi info (rating, rank, type, date, summary, etc.), or None.
+            Dict with Bangumi info (cover_url, rating, rank, type, date, summary, etc.),
+            or None if not found.
         """
         # First, search to find the best match and get subject URL
         search_result = self._search_bangumi(anime.title, include_details=True)
-        if not search_result or not search_result.get("subject_url"):
+        if not search_result:
             return None
 
-        subject_url = search_result["subject_url"]
+        subject_url = search_result.get("subject_url")
+        cover_url = search_result.get("cover_url")
+
+        # If we only need cover and don't need detailed info, return early
+        if not subject_url:
+            # Return just the cover info
+            return {
+                "cover_url": cover_url,
+                "title": search_result.get("title"),
+                "subject_url": None,
+                "rating": None,
+                "rank": None,
+                "type": None,
+                "date": None,
+                "summary": None,
+                "genres": [],
+                "staff": [],
+                "cast": []
+            }
+
         try:
             # Fetch the subject detail page
             html = self.client.get(subject_url)
@@ -203,12 +227,38 @@ class CoverFinder:
             # Parse the info
             info = self._parse_bangumi_subject(soup, search_result)
 
-            # Store in cache
+            # Also update the anime object with cover info if requested
+            if update_anime and cover_url:
+                anime.cover_url = cover_url
+                anime.match_source = self.SOURCE_BANGUMI
+                anime.match_score = search_result.get("score", 0)
+                # Store in cover cache
+                self._cover_cache[anime.title] = {
+                    "cover_url": cover_url,
+                    "score": search_result.get("score", 0)
+                }
+
+            # Store in Bangumi info cache
             self._bangumi_info_cache[anime.title] = info
 
             return info
         except Exception as e:
             logger.error(f"Error fetching Bangumi info for {anime.title}: {e}")
+            # Even on error, return the basic info we got from search
+            if cover_url:
+                return {
+                    "cover_url": cover_url,
+                    "title": search_result.get("title"),
+                    "subject_url": subject_url,
+                    "rating": None,
+                    "rank": None,
+                    "type": None,
+                    "date": None,
+                    "summary": None,
+                    "genres": [],
+                    "staff": [],
+                    "cast": []
+                }
             return None
 
     def _parse_bangumi_subject(self, soup: BeautifulSoup, search_result: dict) -> Dict[str, Any]:

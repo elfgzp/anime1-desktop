@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, request, jsonify
 
-from src.config import PAGE_SIZE
+from src.config import PAGE_SIZE, STATIC_DIST, PROJECT_ROOT
 from src.constants.api import error_response
 from src.constants.messages import (
     ERROR_ANIME_NOT_FOUND,
@@ -93,8 +93,8 @@ def get_anime_detail(anime_id: str):
     html = parser.client.get(anime.detail_url)
     detail_info = parser.parse_anime_detail(html)
 
-    # Find cover
-    anime = finder.find_cover_for_anime(anime)
+    # Find cover using unified Bangumi info function
+    finder.get_bangumi_info(anime, update_anime=True)
 
     # Update anime with additional info
     anime.year = detail_info.get("year", "")
@@ -189,8 +189,8 @@ def get_anime_episodes(anime_id: str):
     except (ValueError, KeyError):
         pass
 
-    # Find cover for anime
-    anime = finder.find_cover_for_anime(anime)
+    # Find cover using unified Bangumi info function
+    finder.get_bangumi_info(anime, update_anime=True)
 
     return jsonify({
         "anime": anime.to_dict(),
@@ -242,12 +242,17 @@ def get_bangumi_info(anime_id: str):
 
 
 def _trigger_background_bangumi_update(anime_id, anime, cache_service):
-    """后台异步更新 Bangumi 信息."""
+    """后台异步更新 Bangumi 信息 (包含封面和信息获取).
+
+    使用统一的 get_bangumi_info 函数一次性获取封面和详细信息，
+    避免重复的网络请求。
+    """
     import threading
 
     def _update():
         try:
             _, finder = get_services()
+            # 使用统一的函数获取封面和详细信息
             bangumi_info = finder.get_bangumi_info(anime)
             if bangumi_info:
                 cache_service.set_bangumi_info(anime_id, bangumi_info)
@@ -301,8 +306,8 @@ def fetch_pw_episodes():
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_content, "html.parser")
 
-        # Find cover for anime
-        anime = finder.find_cover_for_anime(anime)
+        # Find cover for anime using unified Bangumi info function
+        finder.get_bangumi_info(anime, update_anime=True)
 
         # Extract episodes using the parser's method
         episodes = parser._extract_episodes(html_content)
@@ -388,7 +393,11 @@ def get_covers_batch():
 
 
 def _trigger_background_cover_update(anime_id, anime_map, cache_service):
-    """后台异步更新封面缓存."""
+    """后台异步更新封面缓存 (使用统一的 Bangumi 信息获取).
+
+    使用统一的 get_bangumi_info 函数获取封面，
+    同时保留从 anime1 页面获取 year/season/subtitle_group 的逻辑。
+    """
     import threading
 
     def _update():
@@ -403,8 +412,16 @@ def _trigger_background_cover_update(anime_id, anime_map, cache_service):
             parser = Anime1Parser()
             finder = CoverFinder()
 
-            anime = finder.find_cover_for_anime(anime)
-            # Only fetch additional info if needed
+            # 使用统一的函数获取 Bangumi 信息（包含封面）
+            bangumi_info = finder.get_bangumi_info(anime, update_anime=True)
+
+            # 如果 bangumi_info 包含 cover_url，确保 anime 对象已更新
+            if bangumi_info and bangumi_info.get("cover_url"):
+                anime.cover_url = bangumi_info["cover_url"]
+                anime.match_source = "Bangumi"
+                anime.match_score = bangumi_info.get("match_score", 0)
+
+            # Only fetch additional info from anime1 if needed
             if not anime.year or not anime.season or not anime.subtitle_group:
                 html = parser.client.get(anime.detail_url)
                 detail_info = parser.parse_anime_detail(html)
@@ -475,21 +492,61 @@ def search_anime():
 # Page routes (non-API)
 def register_page_routes(app):
     """Register non-API page routes.
-    
+
     All routes now serve the Vue SPA index.html.
     Vue Router handles client-side routing.
-    
+
     Note: API routes (blueprints) should be registered BEFORE this function
     to ensure API endpoints are not caught by the catch-all route.
     """
-    
+
+    def get_manifest_paths():
+        """Read Vite manifest.json and return CSS/JS paths."""
+        import json
+        from pathlib import Path
+
+        # Check both possible locations:
+        # 1. static/dist/.vite/ (when running from built executable)
+        # 2. frontend/dist/.vite/ (when running from source with npm run build)
+        manifest_paths = [
+            STATIC_DIST / ".vite" / "manifest.json",
+            PROJECT_ROOT / "frontend" / "dist" / ".vite" / "manifest.json",
+        ]
+
+        manifest_path = None
+        for path in manifest_paths:
+            if path.exists():
+                manifest_path = path
+                break
+
+        if not manifest_path:
+            return None, None
+
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                manifest = json.load(f)
+
+            # Find index.html entry
+            index_entry = manifest.get('index.html', {})
+            css_files = index_entry.get('css', [])
+            js_file = index_entry.get('file', '')
+
+            css_path = f"/{css_files[0]}" if css_files else None
+            js_path = f"/{js_file}" if js_file else None
+
+            return css_path, js_path
+        except Exception as e:
+            print(f"[WARN] Failed to read manifest: {e}")
+            return None, None
+
     def render_spa():
         """Helper function to render the Vue SPA template.
-        
-        Returns the index.html template with version and debug mode.
+
+        Returns the index.html template with version and dev mode.
         """
-        debug = app.config.get("DEBUG", False)
-        return render_template("index.html", version=__version__, debug=debug)
+        dev = app.config.get("DEV", False)
+        css_path, js_path = get_manifest_paths()
+        return render_template("index.html", version=__version__, dev=dev, css_path=css_path, js_path=js_path)
 
     @app.route("/")
     def index():

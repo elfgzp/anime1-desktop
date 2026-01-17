@@ -7,7 +7,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(os.path.abspath(__file__)).parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
-STATIC_CACHE_DIR = PROJECT_ROOT / "static" / "vendor"
+STATIC_DIST = STATIC_DIR / "dist"
+STATIC_CACHE_DIR = STATIC_DIR / "vendor"
 
 # HTTP Configuration
 DEFAULT_TIMEOUT = 30

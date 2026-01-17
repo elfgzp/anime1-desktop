@@ -108,10 +108,45 @@ python -m src.app --debug
 
 ```bash
 # 构建前端
+cd frontend
 npm run build
+cd ..
 
-# 构建桌面应用(使用 PyInstaller)
-# 参考项目根目录的构建脚本
+# 构建桌面应用
+python scripts/build.py
+```
+
+#### 构建脚本选项
+
+```bash
+python scripts/build.py [选项]
+
+选项:
+  --clean      清理 dist 文件夹后再构建
+  --onefile    创建单文件可执行程序（默认开启）
+  --debug      调试模式构建（显示更多日志）
+  --remote     构建 CLI 版本（浏览器打开，无窗口）
+  --installer  创建安装包（默认开启）
+
+# 示例
+python scripts/build.py                    # 默认构建（单文件 + 安装包）
+python scripts/build.py --clean            # 清理后构建
+python scripts/build.py --debug            # 调试模式
+python scripts/build.py --remote           # CLI 版本
+```
+
+#### 构建产物
+
+| 平台 | 输出文件 | 说明 |
+|------|---------|------|
+| Windows | `release/anime1-windows-x64-setup.exe` | NSIS 安装程序 |
+| Windows | `release/anime1-windows-x64.zip` | 便携版（解压即用） |
+| macOS | `release/anime1-macos-{version}.dmg` | DMG 磁盘映像 |
+| Linux | `release/anime1-linux-x64.tar.gz` | 压缩包 |
+
+**注意**: Windows 安装程序需要先安装 NSIS:
+```bash
+choco install nsis -y
 ```
 
 ## 技术栈

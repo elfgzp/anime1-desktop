@@ -85,6 +85,11 @@ jobs:
         run: |
           brew install create-dmg
 
+      - name: Install NSIS (Windows only)
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y || echo "NSIS installation may have failed, trying anyway"
+
       - name: Extract version for release
         id: version
         run: |
@@ -96,32 +101,9 @@ jobs:
       - name: Build application
         env:
           ANIME1_VERSION: ${{ steps.version.outputs.version }}
-          PYINST_SIGN_BINARY: "no"
-        run: bash scripts/build.sh "${{ runner.os }}"
-        shell: bash
-
-      # macOS: 不签名，直接分发
-      # 由于 adhoc 签名有 Team ID 问题，不如让用户自己处理
-      # 用户可以通过以下方式安装：
-      # 1. brew tap anime1-desktop/tap && brew install --cask anime1
-      # 2. 或下载 DMG 后运行修复脚本
-
-      - name: Create Windows installer (NSIS)
-        if: runner.os == 'Windows'
         run: |
-          # Install NSIS
-          choco install nsis -y || echo "NSIS installation may have failed, trying anyway"
-
-          # Generate Windows icon
-          python scripts/generate_icons.py
-
-          # Create installer
-          python scripts/create_windows_installer.py
-
-      - name: Prepare artifacts
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: python scripts/prepare_artifacts.py
+          # Build and create installer (defaults to --onefile --installer)
+          python scripts/build.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -194,12 +194,21 @@
               @error="onPlayerError"
               @timeupdate="onTimeUpdate"
             />
-            <!-- 视频播放器骨架屏 -->
+            <!-- 视频播放器骨架屏 / 加载中 -->
             <div v-else-if="pwEpisodesLoading" class="video-placeholder loading">
               <el-icon class="is-loading" :size="60"><Loading /></el-icon>
               <div>正在加载剧集信息...</div>
             </div>
-            <div v-else-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodesLoading" class="video-placeholder">
+            <!-- 加载失败 -->
+            <div v-else-if="pwEpisodesLoadError && !pwEpisodes.length" class="video-placeholder">
+              <el-icon :size="60"><Warning /></el-icon>
+              <div>加载失败，请检查网络后重试</div>
+              <el-button type="primary" style="margin-top: 16px;" @click="retryLoadEpisodes">
+                重新加载
+              </el-button>
+            </div>
+            <!-- 视频还未上架（真正没有剧集） -->
+            <div v-else-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && pwEpisodesLoadComplete" class="video-placeholder">
               <el-icon :size="60"><VideoCamera /></el-icon>
               <div>视频还未上架，请等待更新</div>
             </div>
@@ -268,7 +277,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, Star, StarFilled, VideoPlay, VideoCamera, Loading, Refresh, Link, Picture } from '@element-plus/icons-vue'
+import { ArrowLeft, Star, StarFilled, VideoPlay, VideoCamera, Loading, Refresh, Link, Picture, Warning } from '@element-plus/icons-vue'
 import { animeAPI, favoriteAPI, playbackAPI } from '../utils/api'
 import { ROUTES, API_ENDPOINTS, REQUEST_PARAMS, RESPONSE_FIELDS, ERROR_MESSAGES, UI_TEXT } from '../constants/api'
 import DOMPurify from 'dompurify'
@@ -286,6 +295,9 @@ const loadingTitle = ref(true)  // 标题骨架屏状态
 const loadingEpisodes = ref(true)  // 剧集骨架屏状态
 const pwEpisodes = ref([])
 const pwEpisodesLoading = ref(false)
+const pwEpisodesLoadComplete = ref(false)  // 标记首次加载是否完成
+const pwEpisodesLoadError = ref(false)     // 标记是否有加载错误
+const anime1PwUrl = ref('')  // anime1.pw 详情页 URL
 const currentEpisodeIndex = ref(0)
 const videoSrc = ref('')
 const videoLoading = ref(false)
@@ -607,6 +619,15 @@ const retryLoad = () => {
   fetchData()
 }
 
+// 重试加载剧集
+const retryLoadEpisodes = () => {
+  pwEpisodesLoadError.value = false
+  pwEpisodesLoading.value = true
+  fetchPwEpisodes().catch(err => {
+    console.error('[Detail] 重试获取 anime1.pw 剧集失败:', err)
+  })
+}
+
 // 获取 anime1.pw 页面内容并解析集数
 const fetchPwEpisodes = async () => {
   console.log('[Detail] fetchPwEpisodes 开始')
@@ -704,11 +725,15 @@ const fetchPwEpisodes = async () => {
       const isTLSDomain = anime1PwUrl.value.includes('anime1.pw')
       if (isTLSDomain) {
         console.warn('[Detail] anime1.pw TLS 错误')
-        // 不阻塞显示，只显示错误提示
+        // 标记加载完成，但有错误
         pwEpisodesLoading.value = false
+        pwEpisodesLoadComplete.value = true
+        pwEpisodesLoadError.value = true
         return
       }
+      // 其他情况也标记加载完成
       pwEpisodesLoading.value = false
+      pwEpisodesLoadComplete.value = true
       return
     }
 
@@ -735,12 +760,16 @@ const fetchPwEpisodes = async () => {
 
       // 自动播放第一集
       playEpisode(0)
+      pwEpisodesLoadComplete.value = true
     } else {
       pwEpisodesLoading.value = false
+      pwEpisodesLoadComplete.value = true
     }
   } catch (error) {
     console.error('[Detail] 获取 anime1.pw 集数失败:', error)
     pwEpisodesLoading.value = false
+    pwEpisodesLoadComplete.value = true
+    pwEpisodesLoadError.value = true
   }
 }
 

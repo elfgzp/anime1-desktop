@@ -4,23 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Anime1{% if version %} v{{ version }}{% endif %}</title>
-    {% if debug %}
+    {% if dev %}
     <!-- Development mode - use Vite dev server -->
     <script type="module" src="http://localhost:5173/@vite/client"></script>
     <script type="module" src="http://localhost:5173/src/main.js"></script>
     {% else %}
-    <!-- Production mode - use built files (hash-prefixed by Vite) -->
-    <link rel="stylesheet" href="/assets/index.DH67d7yA.css">
-    <script type="module" src="/assets/index.Dhhj8mwy.js"></script>
+    <!-- Production mode - use built files (from manifest.json) -->
+    {% if css_path %}
+    <link rel="stylesheet" href="{{ css_path }}">
+    {% endif %}
+    {% if js_path %}
+    <script type="module" src="{{ js_path }}"></script>
+    {% endif %}
     {% endif %}
     <!-- HLS.js for Safari WebKit video streaming support -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
     <script>
-        // Initialize HLS.js for browsers that need it (Safari WebKit)
         if (Hls.isSupported()) {
             window.hlsSupported = true;
         } else if (navigator.userAgent.indexOf('Safari') > -1 && navigator.userAgent.indexOf('Chrome') === -1) {
-            // Safari (not Chrome) - might support HLS natively or need polyfill
             window.hlsSupported = true;
         }
     </script>

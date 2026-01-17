@@ -1,7 +1,8 @@
 """使用 Chrome headless 获取无法用 SSL 访问的页面"""
-import subprocess
-import tempfile
 import os
+import subprocess
+import sys
+import tempfile
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -14,6 +15,15 @@ def fetch_with_chrome(url: str, timeout: int = 30) -> str:
     if not os.path.exists(CHROME_PATH):
         raise RuntimeError(f"Chrome not found at {CHROME_PATH}")
 
+    run_kwargs = {
+        'capture_output': True,
+        'text': True,
+        'timeout': timeout + 5,
+    }
+    # On Windows, use CREATE_NO_WINDOW to avoid terminal flash
+    if sys.platform == "win32":
+        run_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
     result = subprocess.run(
         [
             CHROME_PATH,
@@ -25,9 +35,7 @@ def fetch_with_chrome(url: str, timeout: int = 30) -> str:
             "--virtual-time-budget=5000",
             url,
         ],
-        capture_output=True,
-        text=True,
-        timeout=timeout + 5,
+        **run_kwargs
     )
 
     # Chrome 会输出 SSL 错误到 stderr，HTML 在 stdout

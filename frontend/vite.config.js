@@ -27,6 +27,8 @@ export default defineConfig({
     }
   },
   build: {
+    // 生成 manifest.json 用于资源注入
+    manifest: true,
     // 禁用构建缓存
     cache: false,
     rollupOptions: {
