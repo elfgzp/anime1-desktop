@@ -1,0 +1,33 @@
+{
+  "name": "anime1-desktop-test",
+  "description": "Anime1 Desktop 应用测试技能 - 用于测试应用的各项功能",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "test_type": {
+        "type": "string",
+        "description": "测试类型: home(首页测试), detail(详情页测试), favorites(收藏页测试), settings(设置页测试), navigation(导航测试), all(全部测试)",
+        "enum": ["home", "detail", "favorites", "settings", "navigation", "all"]
+      },
+      "action": {
+        "type": "string",
+        "description": "执行的操作: start_server(启动服务), take_snapshot(截图), click(点击), input(输入), navigate(导航), verify(验证)",
+        "enum": ["start_server", "take_snapshot", "click", "input", "navigate", "verify", "scroll", "hover"]
+      },
+      "target": {
+        "type": "string",
+        "description": "目标元素标识符，如搜索框、按钮、菜单项等",
+        "enum": ["search_input", "search_button", "pagination", "anime_card_1", "anime_card_2", "back_button", "episode_1", "episode_2", "video_player", "favorite_btn", "favorites_menu", "settings_menu", "home_menu", "sidebar_collapse", "theme_select", "check_update_btn", "any"]
+      },
+      "value": {
+        "type": "string",
+        "description": "输入值或导航路径"
+      },
+      "verify_text": {
+        "type": "string",
+        "description": "验证页面是否包含指定文本"
+      }
+    },
+    "required": ["test_type", "action"]
+  }
+}

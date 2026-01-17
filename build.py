@@ -30,6 +30,53 @@ def get_project_root() -> Path:
     return Path(__file__).parent.resolve()
 
 
+def extract_version() -> str:
+    """Extract version from git tag or commit id.
+    
+    Returns:
+        Version string from git tag (without 'v' prefix) or short commit id.
+        Falls back to 'dev' if git is not available.
+    """
+    root = get_project_root()
+    
+    # Try to get the latest tag
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            tag = result.stdout.strip()
+            # Remove 'v' prefix if present
+            version = tag.lstrip('vV')
+            return version
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        pass
+    
+    # If no tag, try to get commit id
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            commit_id = result.stdout.strip()
+            return f"dev-{commit_id}"
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        pass
+    
+    # Fallback to 'dev' if git is not available
+    return "dev"
+
+
 def clean_dist():
     """Clean the dist folder."""
     dist_path = get_project_root() / "dist"
@@ -42,9 +89,22 @@ def clean_dist():
 
 def get_icon_path(root: Path) -> str:
     """Get icon path for current platform."""
-    icon_path = root / "static" / "favicon.png"
-    if icon_path.exists():
-        return str(icon_path)
+    # Check for .icns file first (macOS)
+    icns_path = root / "static" / "app.icns"
+    if icns_path.exists():
+        return str(icns_path)
+    # Fallback to PNG
+    png_path = root / "static" / "favicon.png"
+    if png_path.exists():
+        return str(png_path)
+    return ""
+
+
+def get_plist_path(root: Path) -> str:
+    """Get Info.plist path for macOS."""
+    plist_path = root / "distInfo.plist"
+    if plist_path.exists():
+        return str(plist_path)
     return ""
 
 
@@ -53,6 +113,16 @@ def run_pyinstaller(args):
     root = get_project_root()
     dist_path = root / "dist"
     work_path = root / "build"
+
+    # Extract version and set environment variable for build
+    version = extract_version()
+    os.environ["ANIME1_VERSION"] = version
+    print(f"[BUILD] Version: {version}")
+    
+    # Create version file for frozen executables
+    version_file = root / "src" / "_version.txt"
+    version_file.write_text(version, encoding='utf-8')
+    print(f"[BUILD] Created version file: {version_file}")
 
     # Ensure dist exists
     dist_path.mkdir(parents=True, exist_ok=True)
@@ -104,6 +174,12 @@ def run_pyinstaller(args):
         cmd.extend(["--icon", icon_path])
         print(f"[BUILD] Icon: {icon_path}")
 
+    # Custom Info.plist for macOS (to set proper menu bar name)
+    plist_path = get_plist_path(root)
+    if plist_path and sys.platform == "darwin":
+        cmd.extend(["--osx-bundle-identifier", "com.anime1.app"])
+        print(f"[BUILD] Bundle ID: com.anime1.app")
+
     # Hidden imports for pywebview and dependencies
     hidden_imports = [
         "flask", "flask.templating", "jinja2", "markupsafe", "werkzeug",
@@ -127,7 +203,23 @@ def run_pyinstaller(args):
         (str(root / "templates"), "templates"),
         (str(root / "static"), "static"),
         (str(root / "src"), "src"),
+        (str(root / "distInfo.plist"), "."),
     ]
+    
+    # Add frontend build output (if exists)
+    frontend_dist = root / "static" / "dist"
+    if frontend_dist.exists():
+        datas.append((str(frontend_dist), "static/dist"))
+        print(f"[BUILD] Including frontend build: {frontend_dist}")
+    else:
+        print(f"[WARNING] Frontend build not found at {frontend_dist}")
+        print("[WARNING] Make sure to run 'npm run build' in frontend/ directory first")
+    
+    # Ensure version file is included (if it exists)
+    if version_file.exists():
+        # For onedir, include in src directory
+        # For onefile, it will be in _MEIPASS/src
+        datas.append((str(version_file), "src"))
 
     for src, dst in datas:
         cmd.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
@@ -149,9 +241,12 @@ def run_pyinstaller(args):
         print(f"{'='*60}")
         print(f"\nOutput location: {dist_path}")
 
+        # Fix macOS app Info.plist to show proper menu bar name
         if sys.platform == "darwin" and not args.onefile:
             app_path = dist_path / "Anime1.app"
             if app_path.exists():
+                fix_macos_app_info_plist(app_path)
+                fix_macos_app_icon(app_path, icon_path)
                 print(f"macOS App: {app_path}")
                 print(f"  Size: {get_size(app_path)}")
 
@@ -187,6 +282,39 @@ def get_size(path: Path) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def fix_macos_app_icon(app_path: Path, icon_path: str):
+    """Fix macOS app bundle icon by copying icon file to Resources."""
+    if not icon_path:
+        print(f"[WARN] No icon file found, app will use default icon")
+        return
+
+    # Get the icon filename
+    icon_file = Path(icon_path).name
+    icon_src = Path(icon_path)
+
+    # Target location in app bundle
+    resources_path = app_path / "Contents" / "Resources"
+
+    if not resources_path.exists():
+        print(f"[WARN] Resources path not found: {resources_path}")
+        return
+
+    # Copy icon file to Resources
+    icon_dst = resources_path / icon_file
+    try:
+        shutil.copy2(icon_src, icon_dst)
+        print(f"[BUILD] Copied icon to app bundle: {icon_file}")
+
+        # If it's a PNG, we may need to convert to ICNS
+        # For now, try renaming to app.icns if that's what Info.plist expects
+        if icon_file.endswith('.png') and icon_file != 'app.icns':
+            icns_dst = resources_path / "app.icns"
+            shutil.copy2(icon_src, icns_dst)
+            print(f"[BUILD] Created app.icns from PNG")
+    except Exception as e:
+        print(f"[WARN] Could not copy icon: {e}")
 
 
 def verify_dependencies():

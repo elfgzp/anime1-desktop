@@ -1,12 +1,22 @@
 """Anime API routes for listing and detail pages."""
 import logging
+import re
 from typing import List, Optional, Tuple, Union
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request, jsonify
 
 from src.config import PAGE_SIZE
+from src.constants.api import error_response
+from src.constants.messages import (
+    ERROR_ANIME_NOT_FOUND,
+    ERROR_KEYWORD_REQUIRED,
+    ERROR_URL_REQUIRED,
+    ERROR_INVALID_DOMAIN,
+    DOMAIN_ANIME1_PW,
+)
+from src.constants.headers import VALUE_USER_AGENT_DEFAULT
 from src.models.anime import Anime, AnimePage
 from src.parser.anime1_parser import Anime1Parser
 from src.parser.cover_finder import CoverFinder
@@ -39,7 +49,7 @@ def get_anime_map() -> dict:
     return {a.id: a for a in _anime_cache}
 
 
-@anime_bp.route("")
+@anime_bp.route("/")
 def get_anime_list():
     """Get anime list for a page.
 
@@ -77,7 +87,7 @@ def get_anime_detail(anime_id: str):
     anime = next((a for a in anime_list if a.id == anime_id), None)
 
     if anime is None:
-        return jsonify({"error": "Anime not found"}), 404
+        return error_response(ERROR_ANIME_NOT_FOUND, 404)
 
     # Get additional info from detail page
     html = parser.client.get(anime.detail_url)
@@ -91,7 +101,7 @@ def get_anime_detail(anime_id: str):
     anime.season = detail_info.get("season", "")
     anime.subtitle_group = detail_info.get("subtitle_group", "")
 
-    return jsonify(anime.to_dict())
+    return anime.to_dict()
 
 
 @anime_bp.route("/<anime_id>/episodes")
@@ -100,20 +110,50 @@ def get_anime_episodes(anime_id: str):
 
     Query params:
         page: Page number (default: 1)
+
+    Special handling for anime1.pw domains (SSL issues):
+        Returns a flag telling frontend to fetch via JavaScript
     """
     parser, finder = get_services()
 
+    logger.info(f"[anime_id={anime_id}] 正在获取番剧详情")
+
     anime_list = parser.parse_page(1)
+    logger.info(f"[anime_id={anime_id}] 解析到 {len(anime_list)} 个番剧")
+
     anime = next((a for a in anime_list if a.id == anime_id), None)
+    logger.info(f"[anime_id={anime_id}] 查找结果: {'找到' if anime else '未找到'}")
 
     if anime is None:
-        return jsonify({"error": "Anime not found"}), 404
+        # 尝试在更多页中查找
+        logger.warning(f"[anime_id={anime_id}] 未找到该番剧，detail_url 以 anime1.pw 结尾的条目数: {sum(1 for a in anime_list if 'anime1.pw' in a.detail_url)}")
+        return error_response(ERROR_ANIME_NOT_FOUND, 404)
 
-    # Fetch the detail page
-    html = parser.client.get(anime.detail_url)
+    # Special handling for anime1.pw (SSL issues - requires frontend fetch)
+    if DOMAIN_ANIME1_PW in anime.detail_url:
+        return jsonify({
+            "anime": anime.to_dict(),
+            "episodes": [],
+            "total_episodes": 0,
+            "requires_frontend_fetch": True,
+            "fetch_url": anime.detail_url,
+            "message": "由于技术限制，此番剧的剧集需要通过浏览器内核获取。点击\"追番\"后可在播放页面查看所有剧集。"
+        })
+
+    try:
+        # Fetch the detail page (with SSL handling for problematic domains)
+        html = parser.client.get(anime.detail_url)
+    except Exception as e:
+        logger.error(f"Failed to fetch episode page for {anime_id}: {e}")
+        return error_response(f"无法获取番剧页面: {str(e)}", 500)
 
     # Get total pages for pagination
     total_pages = parser.get_total_episode_pages(html)
+
+    # Limit pages to prevent too many requests
+    max_pages = 5
+    if total_pages > max_pages:
+        total_pages = max_pages
 
     # Get all episodes from all pages
     all_episodes = []
@@ -130,7 +170,11 @@ def get_anime_episodes(anime_id: str):
                 page_url = anime.detail_url + "&page=" + str(page)
             else:
                 page_url = anime.detail_url + "?page=" + str(page)
-            page_html = parser.client.get(page_url)
+            try:
+                page_html = parser.client.get(page_url)
+            except Exception as e:
+                logger.warning(f"Failed to fetch episode page {page} for {anime_id}: {e}")
+                break
 
         episodes = parser._extract_episodes(page_html)
         # Deduplicate episodes
@@ -155,39 +199,226 @@ def get_anime_episodes(anime_id: str):
     })
 
 
+@anime_bp.route("/<anime_id>/bangumi")
+def get_bangumi_info(anime_id: str):
+    """Get Bangumi info for a specific anime.
+
+    Uses SQLite cache to avoid repeated network requests.
+    If not cached, returns basic info immediately and triggers background fetch.
+
+    Returns:
+        JSON with Bangumi info (rating, rank, type, date, summary, genres, staff).
+    """
+    # Get anime data
+    anime_map = get_anime_map()
+    anime = anime_map.get(anime_id)
+
+    if anime is None:
+        return error_response(ERROR_ANIME_NOT_FOUND, 404)
+
+    # Get cache service
+    from src.services.cover_cache_service import get_cover_cache_service
+    cache_service = get_cover_cache_service()
+
+    # Check cache first
+    cached_info = cache_service.get_bangumi_info(anime_id)
+    if cached_info:
+        # Remove internal cached_at field if present
+        cached_info.pop("_cached_at", None)
+        # Trigger background update for fresh data
+        _trigger_background_bangumi_update(anime_id, anime, cache_service)
+        return jsonify(cached_info)
+
+    # Not cached, return basic info immediately (non-blocking)
+    basic_info = {
+        "title": anime.title,
+        "subject_url": f"https://bgm.tv/search?keyword={anime.title}",
+    }
+
+    # Trigger background fetch
+    _trigger_background_bangumi_update(anime_id, anime, cache_service)
+
+    return jsonify(basic_info)
+
+
+def _trigger_background_bangumi_update(anime_id, anime, cache_service):
+    """后台异步更新 Bangumi 信息."""
+    import threading
+
+    def _update():
+        try:
+            _, finder = get_services()
+            bangumi_info = finder.get_bangumi_info(anime)
+            if bangumi_info:
+                cache_service.set_bangumi_info(anime_id, bangumi_info)
+        except Exception:
+            pass  # 后台更新失败不影响
+
+    thread = threading.Thread(target=_update, daemon=True)
+    thread.start()
+
+
+@anime_bp.route("/pw/episodes", methods=["POST"])
+def fetch_pw_episodes():
+    """Fetch episodes for anime1.pw by parsing HTML content from frontend.
+
+    Request body:
+        html: The HTML content from anime1.pw page
+        anime_id: The anime ID for reference
+
+    Returns:
+        JSON with anime info and episodes list extracted from HTML
+    """
+    from flask import request
+
+    html_content = request.json.get("html", "").strip()
+    anime_id = request.json.get("anime_id", "")
+
+    logger.info(f"[pw/episodes] 收到请求, anime_id={anime_id}, html长度={len(html_content)}")
+
+    if not html_content:
+        logger.warning("[pw/episodes] HTML 内容为空")
+        return error_response("HTML content is required", 400)
+
+    if not anime_id:
+        logger.warning("[pw/episodes] Anime ID 为空")
+        return error_response("Anime ID is required", 400)
+
+    try:
+        parser, finder = get_services()
+
+        # Get anime info from cache
+        anime_map = get_anime_map()
+        anime = anime_map.get(anime_id)
+
+        logger.info(f"[pw/episodes] 从缓存查找 anime_id={anime_id}, 结果: {'找到' if anime else '未找到'}")
+
+        if anime is None:
+            logger.warning(f"[pw/episodes] 未找到 anime_id={anime_id} 在缓存中")
+            return error_response(ERROR_ANIME_NOT_FOUND, 404)
+
+        # Parse episodes from HTML
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, "html.parser")
+
+        # Find cover for anime
+        anime = finder.find_cover_for_anime(anime)
+
+        # Extract episodes using the parser's method
+        episodes = parser._extract_episodes(html_content)
+        logger.info(f"[pw/episodes] 解析到 {len(episodes)} 个剧集")
+
+        # Sort by episode number (descending - newest first)
+        try:
+            episodes.sort(key=lambda x: float(x["episode"]), reverse=True)
+        except (ValueError, KeyError):
+            pass
+
+        result = {
+            "anime": anime.to_dict(),
+            "episodes": episodes,
+            "total_episodes": len(episodes),
+            "requires_frontend_fetch": False,
+        }
+        logger.info(f"[pw/episodes] 返回结果: anime标题={result['anime'].get('title', 'N/A')[:30]}, 剧集数={result['total_episodes']}")
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"[pw/episodes] 解析失败: {e}", exc_info=True)
+        return error_response(f"解析页面失败: {str(e)}", 500)
+
+
 @anime_bp.route("/covers")
 def get_covers_batch():
-    """Get covers for multiple anime (batch API).
+    """Get cover for a single anime.
 
     Query params:
-        ids: Comma-separated anime IDs
-    """
-    ids = request.args.get("ids", "")
-    if not ids:
-        return jsonify([])
+        id: Anime ID (only supports single ID, not batch)
 
-    id_list = ids.split(",")
-    parser, finder = get_services()
+    Returns cached data immediately, updates cache in background.
+    """
+    anime_id = request.args.get("id", "").strip()
+    if not anime_id:
+        return []
+
+    # Validate ID format (alphanumeric, dash, underscore)
+    id_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+    if not id_pattern.match(anime_id):
+        return []
+
+    # Get cover cache service
+    from src.services.cover_cache_service import get_cover_cache_service
+    cache_service = get_cover_cache_service()
 
     # Use cached anime map
+    from src.routes.anime import get_anime_map
     anime_map = get_anime_map()
 
-    results = []
-    for anime_id in id_list:
-        anime_id = anime_id.strip()
-        anime = anime_map.get(anime_id)
-        if anime:
+    # Check cache first
+    cached_covers = cache_service.get_covers([anime_id])
+    if anime_id in cached_covers:
+        # Remove internal cached_at field before returning
+        cached_data = cached_covers[anime_id].copy()
+        cached_data.pop("_cached_at", None)
+
+        # 缓存命中，触发后台更新封面（确保数据最新）
+        _trigger_background_cover_update(anime_id, anime_map, cache_service)
+
+        return [cached_data]
+
+    # Not cached, return basic info immediately (non-blocking)
+    if anime_id in anime_map:
+        anime = anime_map[anime_id]
+        anime_dict = anime.to_dict()
+        # 清除需要网络请求的字段，先返回
+        anime_dict.pop("cover_url", None)
+        anime_dict.pop("year", None)
+        anime_dict.pop("season", None)
+        anime_dict.pop("subtitle_group", None)
+        anime_dict.pop("match_source", None)
+        anime_dict.pop("match_score", None)
+
+        # 后台异步更新封面
+        _trigger_background_cover_update(anime_id, anime_map, cache_service)
+
+        return [anime_dict]
+
+    return []
+
+
+def _trigger_background_cover_update(anime_id, anime_map, cache_service):
+    """后台异步更新封面缓存."""
+    import threading
+
+    def _update():
+        try:
+            anime = anime_map.get(anime_id)
+            if not anime:
+                return
+
+            from src.parser.cover_finder import CoverFinder
+            from src.parser.anime1_parser import Anime1Parser
+
+            parser = Anime1Parser()
+            finder = CoverFinder()
+
             anime = finder.find_cover_for_anime(anime)
-            # Only fetch additional info if year/season/subtitle are empty
+            # Only fetch additional info if needed
             if not anime.year or not anime.season or not anime.subtitle_group:
                 html = parser.client.get(anime.detail_url)
                 detail_info = parser.parse_anime_detail(html)
                 anime.year = anime.year or detail_info.get("year", "")
                 anime.season = anime.season or detail_info.get("season", "")
                 anime.subtitle_group = anime.subtitle_group or detail_info.get("subtitle_group", "")
-            results.append(anime.to_dict())
 
-    return jsonify(results)
+            anime_dict = anime.to_dict()
+            cache_service.set_covers({anime_id: anime_dict})
+        except Exception:
+            pass  # 后台更新失败不影响
+
+    thread = threading.Thread(target=_update, daemon=True)
+    thread.start()
 
 
 @anime_bp.route("/search")
@@ -204,7 +435,7 @@ def search_anime():
     page = request.args.get("page", 1, type=int)
 
     if not keyword:
-        return jsonify({"error": "Keyword is required", "anime_list": []})
+        return error_response(ERROR_KEYWORD_REQUIRED, 400)
 
     # Get all anime from cache
     anime_map = get_anime_map()
@@ -243,17 +474,84 @@ def search_anime():
 
 # Page routes (non-API)
 def register_page_routes(app):
-    """Register non-API page routes."""
+    """Register non-API page routes.
+    
+    All routes now serve the Vue SPA index.html.
+    Vue Router handles client-side routing.
+    
+    Note: API routes (blueprints) should be registered BEFORE this function
+    to ensure API endpoints are not caught by the catch-all route.
+    """
+    
+    def render_spa():
+        """Helper function to render the Vue SPA template.
+        
+        Returns the index.html template with version and debug mode.
+        """
+        debug = app.config.get("DEBUG", False)
+        return render_template("index.html", version=__version__, debug=debug)
 
     @app.route("/")
     def index():
-        page = request.args.get("page", 1, type=int)
-        return render_template("index.html", page=page, version=__version__)
+        """Render the Vue SPA."""
+        return render_spa()
 
     @app.route("/anime/<anime_id>")
     def detail(anime_id: str):
-        """Render the anime detail page."""
-        return render_template("detail.html", anime_id=anime_id, version=__version__)
+        """Render the Vue SPA (Vue Router handles detail page)."""
+        return render_spa()
+    
+    @app.route("/favorites")
+    def favorites():
+        """Render the Vue SPA (Vue Router handles favorites page)."""
+        return render_spa()
+    
+    @app.route("/settings")
+    def settings():
+        """Render the Vue SPA (Vue Router handles settings page)."""
+        return render_spa()
+
+    # Catch-all route for SPA: all other routes should return index.html
+    # This allows Vue Router to handle client-side routing
+    # Must be registered LAST to not interfere with API routes
+    # Flask's static file handler will serve static files before this route is checked
+    @app.route("/<path:path>")
+    def catch_all(path: str):
+        """Catch-all route for Vue SPA.
+        
+        Returns index.html for any route that doesn't match API endpoints.
+        Vue Router will handle the actual routing on the client side.
+        
+        Note: Flask automatically handles static files (from static_folder),
+        so static file requests won't reach this route.
+        """
+        from flask import request
+        
+        # Double-check: don't catch API routes (shouldn't reach here if registered correctly)
+        # This is a safety check in case of misconfiguration
+        if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
+            from flask import abort
+            abort(404)
+        
+        return render_spa()
+
+    # 404 handler for API routes
+    @app.errorhandler(404)
+    def not_found(error):
+        """Handle 404 errors.
+
+        For API routes, return JSON error.
+        For page routes, return index.html (handled by catch-all above).
+        """
+        from flask import request
+
+        # If it's an API request, return JSON error
+        if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
+            return error_response("Not found", 404)
+
+        # For other routes, return index.html (SPA fallback)
+        # This should rarely be hit due to catch-all route above
+        return render_spa(), 404
 
     @app.route("/api/extract-player")
     def extract_player():
@@ -268,16 +566,16 @@ def register_page_routes(app):
         target_url = request.args.get("url", "").strip()
 
         if not target_url:
-            return jsonify({"error": "URL is required"}), 400
+            return error_response(ERROR_URL_REQUIRED, 400)
 
         if "anime1.me" not in target_url:
-            return jsonify({"error": "Only anime1.me URLs are allowed"}), 403
+            return error_response(ERROR_INVALID_DOMAIN, 403)
 
         try:
             from bs4 import BeautifulSoup
 
             headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "User-Agent": VALUE_USER_AGENT_DEFAULT,
             }
             response = requests.get(target_url, headers=headers, timeout=10)
             response.raise_for_status()
@@ -289,25 +587,22 @@ def register_page_routes(app):
 
             if iframes:
                 iframe_src = iframes[0].get("src", "")
-                return jsonify({
+                return {
                     "iframe_url": iframe_src,
                     "player_page": target_url,
-                })
+                }
 
             # Alternative: look for video embedding scripts
             scripts = soup.find_all("script")
             for script in scripts:
                 src = script.get("src", "")
                 if "player" in src.lower() or "video" in src.lower():
-                    return jsonify({
+                    return {
                         "script_url": src,
                         "player_page": target_url,
-                    })
+                    }
 
-            return jsonify({
-                "error": "No player found",
-                "player_page": target_url,
-            }), 404
+            return error_response("No player found", 404)
 
         except requests.RequestException as e:
-            return jsonify({"error": str(e)}), 500
+            return error_response(str(e), 500)

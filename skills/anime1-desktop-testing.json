@@ -1,0 +1,415 @@
+/**
+ * Anime1 Desktop 测试技能
+ *
+ * ## 架构设计
+ *
+ * 使用两个 SubAgent 并行运行:
+ * - **Server Agent**: 负责启动和管理 Anime1 Desktop 开发服务器
+ * - **Test Agent**: 负责使用 chrome-devtools 执行测试用例并验证结果
+ *
+ * ## 使用方法
+ *
+ * 在 Claude 或 Cursor 中直接描述测试需求，例如:
+ * ```
+ * 测试首页搜索功能
+ * 测试详情页播放功能
+ * 完整测试所有功能
+ * ```
+ *
+ * ## 启动应用
+ * ```bash
+ * # 方式1: 使用 dev.py 脚本 (推荐)
+ * python scripts/dev.py --flask-port 5001 --vite-port 5173
+ *
+ * # 方式2: 手动启动
+ * # 终端1: 启动 Flask 后端
+ * python -m src.app --port 5001 --no-browser
+ *
+ * # 终端2: 启动 Vite 前端
+ * cd frontend && npm run dev
+ * ```
+ *
+ * 访问: http://localhost:5173
+ *
+ * ## 服务健康检查
+ *
+ * 执行测试前必须确保服务正常运行:
+ *
+ * ```bash
+ * # 检查 Flask (5001)
+ * curl -s http://localhost:5001/api/settings/theme
+ * # 期望: {"data":{"theme":"dark"},"success":true}
+ *
+ * # 检查 Vite (5173)
+ * curl -s http://localhost:5173 | grep -q "Anime1"
+ * # 期望: 0 (成功)
+ * ```
+ *
+ * ## 常见错误
+ *
+ * | 错误 | 原因 | 解决方案 |
+ * |------|------|----------|
+ * | ERR_CONNECTION_REFUSED | Flask 服务未运行 | 启动: `python -m src.app --port 5001 --no-browser` |
+ * | 500 Internal Server Error | 服务异常 | 查看后端日志 |
+ * | CORS 错误 | 跨域问题 | 确保 flask-cors 已安装 |
+ * | 获取封面失败 | 外部 CDN 不可达 | 可忽略，非关键错误 |
+ */
+
+{
+  "name": "anime1-desktop-testing",
+  "description": "Anime1 Desktop 应用自动化测试技能 - 使用 chrome-devtools MCP 工具",
+  "version": "1.2.0",
+  "tested_date": "2026-01-17",
+  "issues_fixed": [
+    {
+      "id": "ISSUE-001",
+      "date": "2026-01-17",
+      "description": "Favicon 404 错误",
+      "files": ["frontend/index.html", "frontend/public/favicon.png"],
+      "fix": "下载 favicon 到本地，使用本地路径 /favicon.png"
+    },
+    {
+      "id": "ISSUE-002",
+      "date": "2026-01-17",
+      "description": "无剧集时视频区提示不明确",
+      "file": "frontend/src/views/Detail.vue",
+      "fix": "无剧集时显示'视频还未上架，请等待更新'，有剧集时显示'点击左侧列表选择剧集'"
+    }
+  ],
+  "mcp_tools": {
+    "chrome_devtools": {
+      "description": "Chrome DevTools MCP 服务 - 用于浏览器自动化测试",
+      "tools": [
+        "mcp__chrome-devtools__new_page",
+        "mcp__chrome-devtools__navigate_page",
+        "mcp__chrome-devtools__take_snapshot",
+        "mcp__chrome-devtools__take_screenshot",
+        "mcp__chrome-devtools__click",
+        "mcp__chrome-devtools__fill",
+        "mcp__chrome-devtools__hover",
+        "mcp__chrome-devtools__press_key",
+        "mcp__chrome-devtools__wait_for",
+        "mcp__chrome-devtools__list_console_messages",
+        "mcp__chrome-devtools__list_network_requests",
+        "mcp__chrome-devtools__get_network_request",
+        "mcp__chrome-devtools__list_pages",
+        "mcp__chrome-devtools__select_page",
+        "mcp__chrome-devtools__close_page"
+      ],
+      "usage_examples": {
+        "new_page": "Create a new browser page",
+        "navigate": "Navigate to URL",
+        "take_snapshot": "Get page content snapshot with element UIDs",
+        "click": "Click element by UID",
+        "fill": "Fill input field by UID",
+        "list_console_messages": "Check for JS errors in console"
+      }
+    }
+  },
+  "test_suites": {
+    "home_page": {
+      "description": "首页功能测试",
+      "preconditions": ["服务已启动", "页面可访问"],
+      "test_cases": [
+        {
+          "id": "H-001",
+          "name": "测试首页加载",
+          "steps": [
+            "打开 http://localhost:5173",
+            "等待页面完全加载"
+          ],
+          "verification": {
+            "page": "显示番剧列表网格，包含分页器",
+            "console": "无严重错误(封面加载警告可忽略)"
+          },
+          "expected_result": "首页正常显示",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "H-002",
+          "name": "测试搜索功能",
+          "steps": [
+            "在搜索框输入关键词",
+            "点击搜索按钮"
+          ],
+          "verification": {
+            "page": "显示搜索结果或'暂无番剧数据'",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "搜索功能正常工作",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "H-003",
+          "name": "测试分页功能",
+          "steps": [
+            "找到分页器",
+            "点击第2页"
+          ],
+          "verification": {
+            "page": "页面内容变化，显示新的番剧列表",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "切换到第2页",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "H-004",
+          "name": "测试进入详情页",
+          "steps": [
+            "点击第一个番剧卡片"
+          ],
+          "verification": {
+            "page": "URL 变为 /anime/:id，显示详情页内容",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "进入番剧详情页",
+          "tested": true,
+          "result": "PASS"
+        }
+      ]
+    },
+    "detail_page": {
+      "description": "详情页功能测试",
+      "preconditions": ["已进入详情页"],
+      "test_cases": [
+        {
+          "id": "D-001",
+          "name": "测试详情页显示(有剧集)",
+          "steps": [
+            "进入一个有剧集的番剧详情页(如 进击的巨人)"
+          ],
+          "verification": {
+            "page": "显示标题、年份、季度、字幕、剧集列表，视频区显示'点击左侧列表选择剧集'",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "详情页内容完整显示",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "D-002",
+          "name": "测试详情页显示(无剧集)",
+          "steps": [
+            "进入一个无剧集的番剧详情页(如 2026年冬番)"
+          ],
+          "verification": {
+            "page": "显示标题、年份、季度、字幕，但剧集列表为空，视频区显示'视频还未上架，请等待更新'",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "无剧集时视频区提示'视频还未上架，请等待更新'",
+          "tested": true,
+          "result": "PASS",
+          "fixed_in": "ISSUE-002"
+        },
+        {
+          "id": "D-003",
+          "name": "测试返回功能",
+          "steps": [
+            "点击返回按钮或侧边栏'最新番剧'"
+          ],
+          "verification": {
+            "page": "返回首页",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "返回到番剧列表首页",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "D-004",
+          "name": "测试播放功能",
+          "steps": [
+            "进入一个有剧集的番剧详情页",
+            "点击第一个剧集的'播放'按钮"
+          ],
+          "verification": {
+            "page": "视频播放器显示(有剧集时)",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "尝试播放视频",
+          "tested": false,
+          "result": null,
+          "note": "实际能否播放取决于视频源是否可用"
+        }
+      ]
+    },
+    "favorites_page": {
+      "description": "收藏页功能测试",
+      "preconditions": ["服务已启动"],
+      "test_cases": [
+        {
+          "id": "F-001",
+          "name": "测试收藏页显示",
+          "steps": [
+            "点击侧边栏'我的追番'"
+          ],
+          "verification": {
+            "page": "显示收藏页面(空状态显示'暂无追番')",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "收藏页正常显示",
+          "tested": true,
+          "result": "PASS"
+        }
+      ]
+    },
+    "settings_page": {
+      "description": "设置页功能测试",
+      "preconditions": ["服务已启动"],
+      "test_cases": [
+        {
+          "id": "S-001",
+          "name": "测试设置页显示",
+          "steps": [
+            "点击侧边栏'设置'"
+          ],
+          "verification": {
+            "page": "显示主题选择器、检查更新按钮、关于信息",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "设置页完整显示",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "S-002",
+          "name": "测试主题切换",
+          "steps": [
+            "点击主题选择器",
+            "选择'普通模式'"
+          ],
+          "verification": {
+            "page": "页面主题变化",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "主题切换成功",
+          "tested": false,
+          "result": null
+        }
+      ]
+    },
+    "navigation": {
+      "description": "导航功能测试",
+      "preconditions": ["服务已启动"],
+      "test_cases": [
+        {
+          "id": "N-001",
+          "name": "测试导航到收藏页",
+          "steps": [
+            "点击侧边栏'我的追番'"
+          ],
+          "verification": {
+            "page": "URL 变为 /favorites，显示收藏页面",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "成功导航到收藏页",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "N-002",
+          "name": "测试导航到设置页",
+          "steps": [
+            "点击侧边栏'设置'"
+          ],
+          "verification": {
+            "page": "URL 变为 /settings，显示设置页面",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "成功导航到设置页",
+          "tested": true,
+          "result": "PASS"
+        },
+        {
+          "id": "N-003",
+          "name": "测试导航回首页",
+          "steps": [
+            "点击侧边栏'最新番剧'"
+          ],
+          "verification": {
+            "page": "URL 变为 /，显示首页",
+            "console": "无 JavaScript 错误"
+          },
+          "expected_result": "成功返回首页",
+          "tested": true,
+          "result": "PASS"
+        }
+      ]
+    }
+  },
+  "common_selectors": {
+    "search_input": "input[placeholder*='搜索']",
+    "search_button": "button:has-text('搜索')",
+    "clear_search": "button:has-text('清除搜索')",
+    "pagination": ".el-pagination",
+    "anime_card": "link",
+    "favorite_btn": "button",
+    "back_button": "button:has-text('返回')",
+    "episode_list": ".episode-list, list",
+    "episode_item": "listitem",
+    "video_player": "video",
+    "sidebar": ".sidebar, complementary",
+    "home_menu": ".el-menu-item:has-text('最新番剧')",
+    "favorites_menu": ".el-menu-item:has-text('我的追番')",
+    "settings_menu": ".el-menu-item:has-text('设置')",
+    "collapse_btn": "button",
+    "theme_select": "combobox",
+    "check_update_btn": "button:has-text('检查更新')",
+    "toast": ".el-message",
+    "empty_state": "StaticText:has-text('暂无')"
+  },
+  "console_check": {
+    "error_types": ["Uncaught", "SyntaxError", "TypeError", "ReferenceError", "NetworkError"],
+    "warning_types": ["获取封面失败"],
+    "pass_condition": "无 error 级别的日志",
+    "known_issues": [
+      {
+        "type": "warning",
+        "message": "获取封面失败",
+        "description": "部分番剧封面图片加载失败(来自外部CDN)",
+        "severity": "low",
+        "ignore": true
+      }
+    ]
+  },
+  "execution_template": {
+    "description": "测试执行模板 - 使用 chrome-devtools MCP 工具",
+    "steps": [
+      "1. 调用 mcp__chrome-devtools__new_page 创建浏览器页面",
+      "2. 调用 mcp__chrome-devtools__navigate_page 访问 http://localhost:5173",
+      "3. 调用 mcp__chrome-devtools__take_snapshot 获取页面状态",
+      "4. 调用 mcp__chrome-devtools__list_console_messages 检查控制台错误",
+      "5. 根据测试用例执行交互操作:",
+      "   - mcp__chrome-devtools__click 点击元素",
+      "   - mcp__chrome-devtools__fill 填充输入框",
+      "   - mcp__chrome-devtools__hover 悬停元素",
+      "   - mcp__chrome-devtools__press_key 模拟按键",
+      "6. 调用 mcp__chrome-devtools__wait_for 等待页面加载",
+      "7. 再次 take_snapshot 验证变化",
+      "8. 记录测试结果"
+    ],
+    "per_test_steps": [
+      "1. take_snapshot 获取页面元素 UIDs",
+      "2. 执行交互操作 (click/fill)",
+      "3. wait_for 等待加载",
+      "4. take_snapshot 确认变化",
+      "5. list_console_messages 检查 JS 错误",
+      "6. 记录测试结果"
+    ],
+    "example_flow": {
+      "test_search": [
+        {"tool": "new_page", "args": {}},
+        {"tool": "navigate_page", "args": {"url": "http://localhost:5173", "type": "url"}},
+        {"tool": "take_snapshot", "args": {}},
+        {"tool": "list_console_messages", "args": {"types": ["error", "warn"]}},
+        {"tool": "wait_for", "args": {"text": "搜索", "timeout": 5000}},
+        {"tool": "take_snapshot", "args": {}},
+        {"tool": "close_page", "args": {}}
+      ]
+    }
+  }
+}

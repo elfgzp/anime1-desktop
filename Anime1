@@ -1,0 +1,9 @@
+#!/bin/bash
+# macOS 上设置应用菜单名称
+export __CFBUNDLE_NAME__="Anime1"
+export CFBundleName="Anime1"
+export CFBundleDisplayName="Anime1"
+
+# 使用 uv 运行 dev 脚本（确保使用正确的 venv 环境）
+cd "$(dirname "$0")"
+exec uv run python scripts/dev.py "$@"

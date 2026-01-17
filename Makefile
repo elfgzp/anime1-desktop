@@ -17,16 +17,6 @@
 #   make clean-all     - Clean everything including cache
 #   make test          - Run tests
 
-# Python executable - use venv if available, otherwise use system python3
-VENV := $(PROJECT_ROOT).venv
-ifeq ($(wildcard $(VENV)/bin/python),)
-	PYTHON := python3
-	PYTHON_CMD := python3
-else
-	PYTHON := $(VENV)/bin/python
-	PYTHON_CMD := $(VENV)/bin/python
-endif
-
 # Project root
 PROJECT_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
@@ -34,16 +24,29 @@ PROJECT_ROOT := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 DIST_DIR := $(PROJECT_ROOT)dist
 BUILD_DIR := $(PROJECT_ROOT)build
 
-.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth test-local-build test-local-build-full
+# uv commands (uv auto-detects and uses venv)
+UV_RUN := uv run
+UV_PIP := uv pip
+
+.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth test-local-build test-local-build-full test-install test-coverage lint lint-fix format
 
 help:
-	@echo "Anime1 Cover Browser - Makefile Commands"
+	@echo "Anime1 Desktop - Makefile Commands"
 	@echo ""
 	@echo "Development:"
-	@echo "  make install       - Install dependencies (creates venv if needed)"
-	@echo "  make dev           - Run desktop app in development mode"
+	@echo "  make install       - Install dependencies"
+	@echo "  make dev           - Run in development mode (Flask + Vite)"
+	@echo "                      Options: --browser, --width, --height"
 	@echo "  make run           - Run in browser (CLI mode)"
 	@echo "  make verify-deps   - Verify required packages are installed"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make test-install  - Install test dependencies (pytest, etc.)"
+	@echo "  make test          - Run tests"
+	@echo "  make test-coverage - Run tests with coverage report"
+	@echo "  make lint          - Run linter (ruff)"
+	@echo "  make lint-fix      - Auto-fix linting issues"
+	@echo "  make format        - Format code (ruff)"
 	@echo ""
 	@echo "Build (current platform):"
 	@echo "  make build         - Build desktop application"
@@ -63,7 +66,7 @@ help:
 	@echo "  make clean         - Clean build artifacts"
 	@echo "  make clean-all     - Clean everything (build, dist, cache)"
 	@echo ""
-	@echo "Testing:"
+	@echo "Testing & CI:"
 	@echo "  make test          - Run tests"
 	@echo "  make test-workflow - Test GitHub Actions workflow (需要 gh CLI)"
 	@echo "  make test-gh-auth  - Check GitHub CLI authentication"
@@ -73,44 +76,81 @@ help:
 
 # Dependencies
 deps:
-	@echo "Creating virtual environment..."
-	@if [ ! -d "$(VENV)" ]; then \
-		python3 -m venv $(VENV); \
-		echo "Virtual environment created."; \
-	fi
-	@echo "Installing dependencies..."
-	@if [ -d "$(VENV)" ]; then \
-		$(VENV)/bin/pip install --upgrade pip; \
-		$(VENV)/bin/pip install -e .; \
+	@echo "Installing Python dependencies..."
+	$(UV_PIP) install -e .
+	@echo "Installing frontend dependencies..."
+	@if command -v npm >/dev/null 2>&1; then \
+		cd $(PROJECT_ROOT)frontend && \
+		if [ -f package-lock.json ]; then \
+			npm ci; \
+		else \
+			npm install; \
+		fi && \
+		cd $(PROJECT_ROOT); \
 	else \
-		pip install --upgrade pip; \
-		pip install -e .; \
+		echo "Warning: npm not found, skipping frontend dependencies"; \
+		echo "Install Node.js and npm to build the frontend"; \
 	fi
 
 install: deps
 	@echo "Dependencies installed successfully!"
 
 verify-deps:
-	@$(PYTHON_CMD) -c "import PyInstaller; import webview; print('Dependencies verified: OK')" 2>/dev/null || \
+	@$(UV_RUN) -m compileall -q src 2>/dev/null || \
 		(echo "Missing dependencies. Run: make install" && exit 1)
+	@echo "Dependencies verified: OK"
 
 # Development
+# Usage:
+#   make dev                    # webview with devtools (default)
+#   DEV_BROWSER=1 make dev      # open in browser
+#   DEV_DEBUG=0 make dev        # disable devtools
+#   SKIP_CHECK=1 make dev       # skip dependency check
+
+# Default: devtools enabled unless user explicitly sets DEV_DEBUG=0
+ENABLE_DEBUG ?= $(if $(DEV_DEBUG),$(DEV_DEBUG),1)
+
 dev: verify-deps
-	@echo "Starting desktop application..."
-	@$(PYTHON_CMD) -m src.desktop
+	@echo "Starting Anime1 Desktop development environment..."
+	@echo ""
+	@echo "Options:"
+	@echo "  DEV_BROWSER=1 make dev   Open in browser"
+	@echo "  DEV_DEBUG=0 make dev     Disable devtools"
+	@echo "  SKIP_CHECK=1 make dev    Skip dependency check"
+	@echo "  NO_CLEANUP=1 make dev    Don't clean up residual processes"
+	@echo ""
+	@echo "Press Ctrl+C to stop all servers"
+	@./Anime1 \
+		$(if $(DEV_BROWSER),--browser) \
+		$(if $(ENABLE_DEBUG),--debug-webview) \
+		$(if $(SKIP_CHECK),--skip-check) \
+		$(if $(NO_CLEANUP),--no-cleanup) \
+		$(if $(FORCE),--force)
 
 run: verify-deps
 	@echo "Starting in browser..."
-	@$(PYTHON_CMD) -m src.desktop --remote
+	$(UV_RUN) -m src.desktop --remote
 
 # Build
 build: verify-deps
+	@echo "Building frontend..."
+	@if command -v npm >/dev/null 2>&1; then \
+		cd $(PROJECT_ROOT)frontend && npm ci && npm run build && cd $(PROJECT_ROOT); \
+	else \
+		echo "Warning: npm not found, skipping frontend build"; \
+	fi
 	@echo "Building desktop application..."
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean
+	$(UV_RUN) build.py --clean
 
 build-onefile: verify-deps
+	@echo "Building frontend..."
+	@if command -v npm >/dev/null 2>&1; then \
+		cd $(PROJECT_ROOT)frontend && npm ci && npm run build && cd $(PROJECT_ROOT); \
+	else \
+		echo "Warning: npm not found, skipping frontend build"; \
+	fi
 	@echo "Building as single executable..."
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean --onefile
+	$(UV_RUN) build.py --clean --onefile
 
 # Cross-platform builds (requires Docker or cloud CI/CD)
 # Note: These require cross-compilation toolchains
@@ -119,23 +159,23 @@ build-win: verify-deps
 	@echo "[INFO] Building for Windows (x64)..."
 	@echo "[INFO] Note: Cross-compilation requires Docker or cloud CI/CD"
 	@echo "[INFO] Use GitHub Actions for Windows builds"
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean --onefile
+	$(UV_RUN) build.py --clean --onefile
 
 build-linux: verify-deps
 	@echo "[INFO] Building for Linux (x64)..."
 	@echo "[INFO] Note: Cross-compilation requires Docker or cloud CI/CD"
 	@echo "[INFO] Use GitHub Actions for Linux builds"
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean --onefile
+	$(UV_RUN) build.py --clean --onefile
 
 build-macos: verify-deps
 	@echo "[INFO] Building for macOS (Intel x64)..."
 	@echo "[INFO] Note: Current platform is Apple Silicon"
 	@echo "[INFO] Building arm64 version instead..."
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean
+	$(UV_RUN) build.py --clean
 
 build-macos-arm: verify-deps
 	@echo "[INFO] Building for macOS (Apple Silicon M-series)..."
-	@$(PYTHON_CMD) $(PROJECT_ROOT)build.py --clean
+	$(UV_RUN) build.py --clean
 
 # Create DMG for macOS (requires create-dmg)
 dmg: build
@@ -190,7 +230,7 @@ clean-all: clean
 # Testing
 test:
 	@echo "Running tests..."
-	@$(PYTHON_CMD) -m pytest $(PROJECT_ROOT)tests -v 2>/dev/null || echo "No tests found or pytest not installed."
+	$(UV_RUN) pytest tests -v 2>/dev/null || echo "No tests found or pytest not installed."
 
 # GitHub Actions Workflow Testing
 test-workflow:
