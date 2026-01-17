@@ -18,19 +18,35 @@ NSIS_SCRIPT = PROJECT_ROOT / "scripts" / "create_installer.nsi"
 
 def run_nsis():
     """Run NSIS to create the installer."""
-    # Check if NSIS is installed
-    try:
-        result = subprocess.run(["makensis", "/VERSION"], capture_output=True, text=True)
-        if result.returncode != 0 and "makensis" not in result.stderr.lower():
-            print("[ERROR] NSIS not found. Install with: brew install nsis")
+    # Check if NSIS is installed in common locations
+    nsis_paths = [
+        "makinson",  # Just in case
+        r"C:\Program Files (x86)\NSIS\makensis.exe",
+        r"C:\Program Files\NSIS\makensis.exe",
+    ]
+
+    # First try command line
+    import shutil
+    makensis_path = shutil.which("makensis")
+    if makensis_path:
+        print(f"[OK] NSIS found: {makensis_path}")
+    else:
+        # Check common installation paths
+        for path in nsis_paths[1:]:  # Skip the first placeholder
+            if Path(path).exists():
+                makensis_path = path
+                print(f"[OK] NSIS found: {makensis_path}")
+                break
+
+        if not makensis_path:
+            # Try using choco to find the installation
+            print("[ERROR] NSIS not found in PATH or common locations.")
+            print("[ERROR] NSIS was installed but makensis may not be in PATH.")
+            print("[INFO] Try restarting the shell or running: refreshenv")
             return False
-        print(f"[OK] NSIS version: {result.stdout.strip()}")
-    except FileNotFoundError:
-        print("[ERROR] NSIS not found. Install with: brew install nsis")
-        return False
 
     # Run NSIS
-    cmd = ["makensis", str(NSIS_SCRIPT)]
+    cmd = [makensis_path, str(NSIS_SCRIPT)]
     print(f"[BUILD] Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True)
 
