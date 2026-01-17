@@ -28,9 +28,19 @@
 
 ### macOS
 
-1. 从 [GitHub Releases](https://github.com/elfgzp/anime1-desktop/releases) 下载对应版本：
-   - **Intel Mac**: `anime1-macos-x64.dmg`
-   - **Apple Silicon (M1/M2/M3)**: `anime1-macos-arm64.dmg`
+#### Homebrew 安装（推荐）
+
+```bash
+# 添加 tap
+brew tap elfgzp/homebrew-tap
+
+# 安装 anime1
+brew install --cask anime1
+```
+
+#### 手动安装
+
+1. 从 [GitHub Releases](https://github.com/elfgzp/anime1-desktop/releases) 下载 `anime1-macos-{version}.dmg`
 2. 双击 DMG 文件挂载
 3. 将 `Anime1.app` 拖拽到应用程序文件夹
 4. 在启动台或应用程序文件夹中打开应用
