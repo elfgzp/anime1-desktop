@@ -13,6 +13,12 @@
     const API_COVERS = '/api/anime/covers';
     const API_UPDATE_CHECK = '/api/update/check';
     const API_UPDATE_INFO = '/api/update/info';
+    const API_FAVORITE_ADD = '/api/favorite/add';
+    const API_FAVORITE_REMOVE = '/api/favorite/remove';
+    const API_FAVORITE_LIST = '/api/favorite/list';
+    const API_FAVORITE_CHECK = '/api/favorite/check';
+    const API_FAVORITE_IS_FAVORITE = '/api/favorite/is_favorite';
+    const API_SETTINGS_THEME = '/api/settings/theme';
 
     // Adult content detection
     const ADULT_MARKER = '🔞';
@@ -169,9 +175,9 @@
             renderGrid(data.anime_list);
             updatePagination();
 
-            // Parallel fetch covers (过滤掉18x番剧)
+            // Parallel fetch covers (过滤掉18x番剧) - 不等待，直接异步加载
             if (data.anime_list.length > 0) {
-                await fetchCoversParallel(data.anime_list);
+                fetchCoversParallel(data.anime_list);
             }
         } catch (error) {
             console.error(TEXT_LOADING_FAILED, error);
@@ -212,29 +218,26 @@
         fetchAnimeList(INITIAL_PAGE);
     }
 
-    async function fetchCoversParallel(animeList) {
+    function fetchCoversParallel(animeList) {
         // 过滤掉18x番剧（标题包含🔞或链接到 anime1.pw）
         const normalAnime = animeList.filter(anime =>
             !anime.title.includes(ADULT_MARKER) && !anime.detail_url.includes(ADULT_SITE_DOMAIN)
         );
 
-        const promises = normalAnime.map(anime =>
+        // 为每个动漫创建独立的请求，不等待顺序，直接处理返回结果
+        normalAnime.forEach(anime => {
             fetch(API_COVERS + '?ids=' + anime.id)
                 .then(res => res.json())
-                .then(data => ({ animeId: anime.id, data: data[0] || null }))
-                .catch(() => ({ animeId: anime.id, data: null }))
-        );
-
-        for (const promise of promises) {
-            try {
-                const result = await promise;
-                if (result.data && result.data.cover_url) {
-                    updateAnimeRow(result.animeId, result.data);
-                }
-            } catch (e) {
-                console.error(TEXT_IMAGE_FAILED, e);
-            }
-        }
+                .then(data => {
+                    const result = data[0] || null;
+                    if (result && result.cover_url) {
+                        updateAnimeRow(anime.id, result);
+                    }
+                })
+                .catch(() => {
+                    // 静默失败，不显示错误
+                });
+        });
     }
 
     function updateAnimeRow(animeId, animeData) {
@@ -296,7 +299,8 @@
                 coverHtml = '';
             }
 
-            return '<a id="anime-card-' + animeId + '" class="anime-card' + (isAdult ? '' : ' card-loading') + '" href="/anime/' + animeId + '">' +
+            return '<div id="anime-card-wrapper-' + animeId + '" class="anime-card-wrapper">' +
+                '<a id="anime-card-' + animeId + '" class="anime-card' + (isAdult ? '' : ' card-loading') + '" href="/anime/' + animeId + '">' +
                 '<div class="card-cover">' + coverHtml + '</div>' +
                 '<div class="card-content">' +
                 '<div class="card-title">' + anime.title + '</div>' +
@@ -307,8 +311,13 @@
                 '<span class="tag tag-subtitle">' + subtitleValue + '</span>' +
                 '</div>' +
                 '</div>' +
-                '</a>';
+                '</a>' +
+                '<button class="favorite-btn" data-anime-id="' + animeId + '" title="追番">⭐</button>' +
+                '</div>';
         }).join('');
+        
+        // Bind favorite button events after rendering
+        bindFavoriteButtons();
     }
 
     // ============================================
@@ -490,12 +499,130 @@
     }
 
     // ============================================
+    // Favorite Functions
+    // ============================================
+
+    async function checkFavoriteUpdates() {
+        try {
+            const response = await fetch(API_FAVORITE_CHECK);
+            const data = await response.json();
+            
+            if (data.success && data.has_updates) {
+                const badge = document.getElementById('favoritesBadge');
+                if (badge) {
+                    badge.classList.add('show');
+                }
+            }
+        } catch (error) {
+            console.error('Error checking favorite updates:', error);
+        }
+    }
+
+    async function toggleFavorite(animeId, isFavorite) {
+        try {
+            const endpoint = isFavorite ? API_FAVORITE_REMOVE : API_FAVORITE_ADD;
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ anime_id: animeId })
+            });
+            
+            const data = await response.json();
+            return data.success;
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            return false;
+        }
+    }
+
+    async function checkIsFavorite(animeId) {
+        try {
+            const response = await fetch(API_FAVORITE_IS_FAVORITE + '?anime_id=' + animeId);
+            const data = await response.json();
+            return data.success && data.data && data.data.is_favorite;
+        } catch (error) {
+            console.error('Error checking favorite status:', error);
+            return false;
+        }
+    }
+
+    async function updateFavoriteButton(animeId, isFavorite) {
+        const btn = document.querySelector('.favorite-btn[data-anime-id="' + animeId + '"]');
+        if (btn) {
+            btn.classList.toggle('active', isFavorite);
+            btn.title = isFavorite ? '取消追番' : '追番';
+        }
+    }
+
+    async function bindFavoriteButtons() {
+        const buttons = document.querySelectorAll('.favorite-btn');
+        buttons.forEach(btn => {
+            const animeId = btn.getAttribute('data-anime-id');
+            if (animeId) {
+                // Check initial state
+                checkIsFavorite(animeId).then(isFav => {
+                    updateFavoriteButton(animeId, isFav);
+                });
+                
+                // Bind click event
+                btn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const isFav = btn.classList.contains('active');
+                    const success = await toggleFavorite(animeId, isFav);
+                    if (success) {
+                        updateFavoriteButton(animeId, !isFav);
+                    }
+                });
+            }
+        });
+    }
+
+    // ============================================
+    // Theme Functions
+    // ============================================
+
+    async function loadTheme() {
+        try {
+            const response = await fetch(API_SETTINGS_THEME);
+            const data = await response.json();
+            
+            if (data.success && data.data) {
+                applyTheme(data.data.theme);
+            }
+        } catch (error) {
+            console.error('Error loading theme:', error);
+        }
+    }
+
+    function applyTheme(theme) {
+        const html = document.documentElement;
+        html.classList.remove('theme-dark', 'theme-light');
+        
+        if (theme === 'system') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            html.classList.add(prefersDark ? 'theme-dark' : 'theme-light');
+        } else {
+            html.classList.add('theme-' + theme);
+        }
+    }
+
+    // ============================================
     // Initialization
     // ============================================
 
     function init() {
         bindEvents();
         fetchAnimeList(INITIAL_PAGE);
+        
+        // Load theme
+        loadTheme();
+        
+        // Check for favorite updates
+        checkFavoriteUpdates();
         
         // Auto check for updates on startup (after a delay, 不显示弹窗)
         setTimeout(() => {
@@ -520,6 +647,8 @@
         clearSearch,
         openPreview,
         closePreview,
-        checkForUpdate
+        checkForUpdate,
+        toggleFavorite,
+        checkIsFavorite
     };
 })();

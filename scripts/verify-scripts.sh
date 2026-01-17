@@ -76,6 +76,7 @@ check_file "scripts/build.sh"
 check_file "scripts/extract_version.sh"
 check_file "scripts/extract_changelog.sh"
 check_file "scripts/test-workflow.sh"
+check_file "scripts/verify-frontend.sh"
 
 # Python 脚本
 check_file "scripts/prepare_artifacts.py"
@@ -89,6 +90,7 @@ check_syntax "scripts/build.sh" "bash"
 check_syntax "scripts/extract_version.sh" "bash"
 check_syntax "scripts/extract_changelog.sh" "bash"
 check_syntax "scripts/test-workflow.sh" "bash"
+check_syntax "scripts/verify-frontend.sh" "bash"
 
 check_syntax "scripts/prepare_artifacts.py" "python"
 check_syntax "scripts/create_dmg.py" "python"
@@ -101,6 +103,7 @@ check_permission "scripts/build.sh"
 check_permission "scripts/extract_version.sh"
 check_permission "scripts/extract_changelog.sh"
 check_permission "scripts/test-workflow.sh"
+check_permission "scripts/verify-frontend.sh"
 
 echo -e "\n${BLUE}4. 测试脚本功能...${NC}\n"
 
@@ -147,6 +150,12 @@ if [ -f ".github/workflows/release.yml" ]; then
     else
         echo -e "${RED}  ✗${NC} 未引用 build.sh"
         ((ERRORS++))
+    fi
+    # 检查前端构建步骤
+    if grep -q "Build frontend" .github/workflows/release.yml; then
+        echo -e "${GREEN}  ✓${NC} 包含前端构建步骤"
+    else
+        echo -e "${YELLOW}  ○${NC} 未找到前端构建步骤（可能需要更新）"
     fi
 else
     echo -e "${RED}✗${NC} .github/workflows/release.yml 不存在"

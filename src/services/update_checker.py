@@ -21,6 +21,58 @@ import requests
 
 from ..config import DEFAULT_TIMEOUT
 from .. import __version__
+from .constants import (
+    VERSION_PREFIXES,
+    VERSION_SEPARATOR,
+    VERSION_COMPONENT_COUNT,
+    DEFAULT_VERSION_COMPONENT,
+    PRE_RELEASE_ALPHA,
+    PRE_RELEASE_BETA,
+    PRE_RELEASE_RC,
+    PRE_RELEASE_ORDER,
+    PRE_RELEASE_PATTERN,
+    GITHUB_API_BASE,
+    GITHUB_API_ACCEPT_HEADER,
+    GITHUB_USER_AGENT,
+    GITHUB_RELEASES_ENDPOINT,
+    GITHUB_LATEST_RELEASE_ENDPOINT,
+    API_FIELD_TAG_NAME,
+    API_FIELD_ASSETS,
+    API_FIELD_PRERELEASE,
+    API_FIELD_BROWSER_DOWNLOAD_URL,
+    API_FIELD_NAME,
+    API_FIELD_SIZE,
+    API_FIELD_PUBLISHED_AT,
+    API_FIELD_BODY,
+    HTTP_STATUS_FORBIDDEN,
+    HTTP_STATUS_NOT_FOUND,
+    RATE_LIMIT_REMAINING_HEADER,
+    RATE_LIMIT_EXHAUSTED,
+    PLATFORM_WINDOWS_KEYWORDS,
+    PLATFORM_MACOS_KEYWORDS,
+    PLATFORM_LINUX_KEYWORDS,
+    ARCH_X64_KEYWORDS,
+    ARCH_ARM64_KEYWORDS,
+    ARCH_X86_KEYWORDS,
+    PLATFORM_WINDOWS,
+    PLATFORM_MACOS,
+    PLATFORM_LINUX,
+    ARCH_X64,
+    ARCH_ARM64,
+    ARCH_X86,
+    SYSTEM_DARWIN,
+    SYSTEM_WINDOWS,
+    SYSTEM_LINUX,
+    MACHINE_X86_64,
+    MACHINE_AMD64,
+    MACHINE_ARM64,
+    MACHINE_AARCH64,
+    MACHINE_I386,
+    MACHINE_I686,
+    MACHINE_X86,
+    ARCH_EXCLUDE_ARM,
+    ARCH_EXCLUDE_AARCH,
+)
 
 
 class UpdateChannel(Enum):
@@ -59,18 +111,18 @@ class VersionComparator:
                      ("1.0.0-rc.1") -> ([1, 0, 0], "rc", 1)
         """
         # Remove 'v' prefix if present
-        version_str = version_str.lstrip('vV')
+        version_str = version_str.lstrip(VERSION_PREFIXES)
         
         # Split version and pre-release
-        parts = version_str.split('-', 1)
+        parts = version_str.split(VERSION_SEPARATOR, 1)
         base_version = parts[0]
         pre_release = parts[1] if len(parts) > 1 else None
         
         # Parse base version (MAJOR.MINOR.PATCH)
         version_numbers = [int(x) for x in base_version.split('.')]
         # Ensure we have at least 3 components
-        while len(version_numbers) < 3:
-            version_numbers.append(0)
+        while len(version_numbers) < VERSION_COMPONENT_COUNT:
+            version_numbers.append(DEFAULT_VERSION_COMPONENT)
         
         # Parse pre-release if present
         pre_release_type = None
@@ -78,10 +130,10 @@ class VersionComparator:
         
         if pre_release:
             # Match patterns like "rc.1", "beta.2", "alpha.3"
-            match = re.match(r'^(rc|beta|alpha)\.?(\d+)?', pre_release.lower())
+            match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
             if match:
                 pre_release_type = match.group(1)
-                pre_release_number = int(match.group(2)) if match.group(2) else 0
+                pre_release_number = int(match.group(2)) if match.group(2) else DEFAULT_VERSION_COMPONENT
         
         return version_numbers, pre_release_type, pre_release_number
     
@@ -102,7 +154,7 @@ class VersionComparator:
         v2_nums, v2_pre, v2_pre_num = VersionComparator.parse_version(version2)
         
         # Compare base version numbers
-        for i in range(3):
+        for i in range(VERSION_COMPONENT_COUNT):
             if v1_nums[i] < v2_nums[i]:
                 return -1
             elif v1_nums[i] > v2_nums[i]:
@@ -119,9 +171,8 @@ class VersionComparator:
         
         # Both are pre-release, compare type and number
         # Order: alpha < beta < rc
-        pre_order = {"alpha": 1, "beta": 2, "rc": 3}
-        v1_order = pre_order.get(v1_pre, 0)
-        v2_order = pre_order.get(v2_pre, 0)
+        v1_order = PRE_RELEASE_ORDER.get(v1_pre, DEFAULT_VERSION_COMPONENT)
+        v2_order = PRE_RELEASE_ORDER.get(v2_pre, DEFAULT_VERSION_COMPONENT)
         
         if v1_order < v2_order:
             return -1
@@ -165,22 +216,22 @@ class PlatformDetector:
         machine = platform.machine().lower()
         
         # Normalize platform name
-        if system == "darwin":
-            platform_name = "macos"
-        elif system == "windows":
-            platform_name = "windows"
-        elif system == "linux":
-            platform_name = "linux"
+        if system == SYSTEM_DARWIN:
+            platform_name = PLATFORM_MACOS
+        elif system == SYSTEM_WINDOWS:
+            platform_name = PLATFORM_WINDOWS
+        elif system == SYSTEM_LINUX:
+            platform_name = PLATFORM_LINUX
         else:
             platform_name = system
         
         # Normalize architecture
-        if machine in ("x86_64", "amd64"):
-            arch = "x64"
-        elif machine in ("arm64", "aarch64"):
-            arch = "arm64"
-        elif machine in ("i386", "i686", "x86"):
-            arch = "x86"
+        if machine in (MACHINE_X86_64, MACHINE_AMD64):
+            arch = ARCH_X64
+        elif machine in (MACHINE_ARM64, MACHINE_AARCH64):
+            arch = ARCH_ARM64
+        elif machine in (MACHINE_I386, MACHINE_I686, MACHINE_X86):
+            arch = ARCH_X86
         else:
             arch = machine
         
@@ -202,9 +253,9 @@ class PlatformDetector:
         
         # Platform matching
         platform_keywords = {
-            "windows": ["windows", "win"],
-            "macos": ["macos", "mac", "darwin"],
-            "linux": ["linux"]
+            PLATFORM_WINDOWS: PLATFORM_WINDOWS_KEYWORDS,
+            PLATFORM_MACOS: PLATFORM_MACOS_KEYWORDS,
+            PLATFORM_LINUX: PLATFORM_LINUX_KEYWORDS,
         }
         
         platform_match = False
@@ -218,9 +269,9 @@ class PlatformDetector:
         
         # Architecture matching
         arch_keywords = {
-            "x64": ["x64", "amd64", "x86_64"],
-            "arm64": ["arm64", "aarch64", "m1", "m2", "m3", "apple"],
-            "x86": ["x86", "i386", "i686"]
+            ARCH_X64: ARCH_X64_KEYWORDS,
+            ARCH_ARM64: ARCH_ARM64_KEYWORDS,
+            ARCH_X86: ARCH_X86_KEYWORDS,
         }
         
         arch_match = False
@@ -230,9 +281,9 @@ class PlatformDetector:
                 break
         
         # If no architecture keyword found, assume x64 for Windows/Linux
-        if not arch_match and platform_name in ("windows", "linux"):
+        if not arch_match and platform_name in (PLATFORM_WINDOWS, PLATFORM_LINUX):
             # Check if it's explicitly not arm64
-            if "arm" not in asset_lower and "aarch" not in asset_lower:
+            if ARCH_EXCLUDE_ARM not in asset_lower and ARCH_EXCLUDE_AARCH not in asset_lower:
                 arch_match = True
         
         return arch_match
@@ -263,7 +314,7 @@ class UpdateChecker:
         self.current_version = current_version or __version__
         self.channel = channel
         self.timeout = timeout
-        self.api_base = "https://api.github.com"
+        self.api_base = GITHUB_API_BASE
         
     def _get_releases_url(self, latest_only: bool = False) -> str:
         """Get GitHub Releases API URL.
@@ -275,8 +326,10 @@ class UpdateChecker:
             API URL string
         """
         if latest_only:
-            return f"{self.api_base}/repos/{self.repo_owner}/{self.repo_name}/releases/latest"
-        return f"{self.api_base}/repos/{self.repo_owner}/{self.repo_name}/releases"
+            endpoint = GITHUB_LATEST_RELEASE_ENDPOINT
+        else:
+            endpoint = GITHUB_RELEASES_ENDPOINT
+        return f"{self.api_base}/repos/{self.repo_owner}/{self.repo_name}{endpoint}"
     
     def _fetch_releases(self, include_prerelease: bool = False) -> List[Dict]:
         """Fetch releases from GitHub API.
@@ -297,8 +350,8 @@ class UpdateChecker:
             # Use requests without authentication - works for public repos
             # Rate limit: 60 requests/hour for unauthenticated requests
             headers = {
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Anime1-Desktop-Updater/1.0"
+                "Accept": GITHUB_API_ACCEPT_HEADER,
+                "User-Agent": GITHUB_USER_AGENT
             }
             
             if self.channel == UpdateChannel.STABLE and not include_prerelease:
@@ -307,15 +360,15 @@ class UpdateChecker:
                 response = requests.get(url, headers=headers, timeout=self.timeout)
                 
                 # Handle rate limit
-                if response.status_code == 403:
-                    rate_limit_remaining = response.headers.get("X-RateLimit-Remaining", "0")
-                    if rate_limit_remaining == "0":
+                if response.status_code == HTTP_STATUS_FORBIDDEN:
+                    rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
+                    if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
                         raise Exception("GitHub API 速率限制已用完，请稍后再试")
                 
                 response.raise_for_status()
                 release = response.json()
                 # Filter out pre-releases for stable channel
-                if release.get("prerelease", False):
+                if release.get(API_FIELD_PRERELEASE, False):
                     return []
                 return [release]
             else:
@@ -324,9 +377,9 @@ class UpdateChecker:
                 response = requests.get(url, headers=headers, timeout=self.timeout)
                 
                 # Handle rate limit
-                if response.status_code == 403:
-                    rate_limit_remaining = response.headers.get("X-RateLimit-Remaining", "0")
-                    if rate_limit_remaining == "0":
+                if response.status_code == HTTP_STATUS_FORBIDDEN:
+                    rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
+                    if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
                         raise Exception("GitHub API 速率限制已用完，请稍后再试")
                 
                 response.raise_for_status()
@@ -334,7 +387,7 @@ class UpdateChecker:
                 
                 # Filter based on channel
                 if self.channel == UpdateChannel.STABLE:
-                    releases = [r for r in releases if not r.get("prerelease", False)]
+                    releases = [r for r in releases if not r.get(API_FIELD_PRERELEASE, False)]
                 # For test channel, include all releases
                 
                 return releases
@@ -343,9 +396,9 @@ class UpdateChecker:
         except requests.exceptions.ConnectionError:
             raise Exception("网络连接失败，请检查网络设置")
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
+            if e.response.status_code == HTTP_STATUS_NOT_FOUND:
                 raise Exception("仓库或发布版本不存在")
-            elif e.response.status_code == 403:
+            elif e.response.status_code == HTTP_STATUS_FORBIDDEN:
                 raise Exception("GitHub API 速率限制已用完，请稍后再试")
             else:
                 raise Exception(f"GitHub API 请求失败: {e.response.status_code}")
@@ -364,7 +417,7 @@ class UpdateChecker:
         platform_name, arch = PlatformDetector.get_platform_info()
         
         for asset in assets:
-            asset_name = asset.get("name", "")
+            asset_name = asset.get(API_FIELD_NAME, "")
             if PlatformDetector.match_asset(asset_name, platform_name, arch):
                 return asset
         
@@ -392,9 +445,9 @@ class UpdateChecker:
             latest_version = None
             
             for release in releases:
-                tag_name = release.get("tag_name", "")
+                tag_name = release.get(API_FIELD_TAG_NAME, "")
                 # Remove 'v' prefix for comparison
-                version_str = tag_name.lstrip('vV')
+                version_str = tag_name.lstrip(VERSION_PREFIXES)
                 
                 # Skip if not newer than current
                 if VersionComparator.compare_versions(version_str, self.current_version) <= 0:
@@ -412,28 +465,28 @@ class UpdateChecker:
                 )
             
             # Find matching asset
-            assets = latest_release.get("assets", [])
+            assets = latest_release.get(API_FIELD_ASSETS, [])
             matching_asset = self._find_matching_asset(assets)
             
             if not matching_asset:
                 return UpdateInfo(
                     has_update=True,
                     current_version=self.current_version,
-                    latest_version=latest_release.get("tag_name", ""),
-                    is_prerelease=latest_release.get("prerelease", False),
-                    release_notes=latest_release.get("body", ""),
+                    latest_version=latest_release.get(API_FIELD_TAG_NAME, ""),
+                    is_prerelease=latest_release.get(API_FIELD_PRERELEASE, False),
+                    release_notes=latest_release.get(API_FIELD_BODY, ""),
                 )
             
             return UpdateInfo(
                 has_update=True,
                 current_version=self.current_version,
-                latest_version=latest_release.get("tag_name", ""),
-                is_prerelease=latest_release.get("prerelease", False),
-                release_notes=latest_release.get("body", ""),
-                download_url=matching_asset.get("browser_download_url"),
-                asset_name=matching_asset.get("name"),
-                download_size=matching_asset.get("size"),
-                published_at=latest_release.get("published_at"),
+                latest_version=latest_release.get(API_FIELD_TAG_NAME, ""),
+                is_prerelease=latest_release.get(API_FIELD_PRERELEASE, False),
+                release_notes=latest_release.get(API_FIELD_BODY, ""),
+                download_url=matching_asset.get(API_FIELD_BROWSER_DOWNLOAD_URL),
+                asset_name=matching_asset.get(API_FIELD_NAME),
+                download_size=matching_asset.get(API_FIELD_SIZE),
+                published_at=latest_release.get(API_FIELD_PUBLISHED_AT),
             )
             
         except Exception as e:

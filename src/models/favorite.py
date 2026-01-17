@@ -1,27 +1,28 @@
-"""Favorite anime data models."""
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional
+"""Favorite anime model."""
+from peewee import TextField, IntegerField, TimestampField
+
+from src.models.database import BaseModel
 
 
-@dataclass
-class FavoriteAnime:
-    """Favorite anime model."""
-    
-    id: str
-    title: str
-    detail_url: str
-    episode: int
-    cover_url: str = ""
-    year: str = ""
-    season: str = ""
-    subtitle_group: str = ""
-    last_episode: int = 0
-    added_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    has_update: bool = False
-    
-    def to_dict(self) -> dict:
+class FavoriteAnime(BaseModel):
+    """Model for storing favorite anime (追番)."""
+
+    id = TextField(primary_key=True)
+    title = TextField()
+    detail_url = TextField()
+    episode = IntegerField(default=0)
+    cover_url = TextField(default="")
+    year = TextField(default="")
+    season = TextField(default="")
+    subtitle_group = TextField(default="")
+    last_episode = IntegerField(default=0)
+    added_at = TimestampField()
+    updated_at = TimestampField()
+
+    class Meta:
+        table_name = "favorites"
+
+    def to_dict(self):
         """Convert to dictionary."""
         return {
             "id": self.id,
@@ -35,23 +36,4 @@ class FavoriteAnime:
             "last_episode": self.last_episode,
             "added_at": self.added_at.isoformat() if self.added_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "has_update": self.has_update
         }
-    
-    @classmethod
-    def from_anime_dict(cls, anime: dict, last_episode: Optional[int] = None) -> "FavoriteAnime":
-        """Create FavoriteAnime from anime dictionary."""
-        if last_episode is None:
-            last_episode = anime.get("episode", 0)
-        
-        return cls(
-            id=anime["id"],
-            title=anime["title"],
-            detail_url=anime["detail_url"],
-            episode=anime.get("episode", 0),
-            cover_url=anime.get("cover_url", ""),
-            year=anime.get("year", ""),
-            season=anime.get("season", ""),
-            subtitle_group=anime.get("subtitle_group", ""),
-            last_episode=last_episode
-        )

@@ -1,13 +1,14 @@
 """Cover finder for anime from Bangumi website."""
 import json
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional, Any
 
 from bs4 import BeautifulSoup
 
 from ..config import (
     BANGUMI_SEARCH_URL,
     BANGUMI_RESULT_LIMIT,
+    BANGUMI_BASE_URL,
     MIN_MATCH_SCORE,
     MIN_TITLE_LENGTH,
     MIN_ENGLISH_LENGTH,
@@ -62,6 +63,8 @@ class CoverFinder:
         self._bangumi_url = bangumi_url
         # Cache for cover URLs (title -> cover_url)
         self._cover_cache = {}
+        # Cache for Bangumi info (title -> info_dict)
+        self._bangumi_info_cache = {}
 
     @property
     def bangumi_url(self) -> str:
@@ -97,14 +100,15 @@ class CoverFinder:
             }
         return anime
 
-    def _search_bangumi(self, title: str) -> Optional[dict]:
+    def _search_bangumi(self, title: str, include_details: bool = False) -> Optional[dict]:
         """Search Bangumi for cover.
 
         Args:
             title: Anime title to search.
+            include_details: If True, include subject URL and other details.
 
         Returns:
-            Dict with cover_url and score, or None.
+            Dict with cover_url, score, and optionally subject_url, or None.
         """
         # Try multiple search variants (simplified and traditional Chinese)
         search_variants = self._get_search_variants(title)
@@ -130,15 +134,25 @@ class CoverFinder:
                     name_elem = item.select_one("h3 a")
                     result_name = name_elem.get_text(strip=True) if name_elem else ""
 
+                    # Extract subject URL if requested
+                    subject_url = None
+                    if include_details and name_elem:
+                        href = name_elem.get("href", "")
+                        if href:
+                            subject_url = BANGUMI_BASE_URL + href
+
                     # Calculate similarity score
                     score = self._calculate_title_similarity(variant, result_name)
                     if cover_url:
-                        results.append({
+                        result = {
                             "cover_url": cover_url,
                             "score": score,
                             "title": result_name,
                             "variant": variant
-                        })
+                        }
+                        if subject_url:
+                            result["subject_url"] = subject_url
+                        results.append(result)
             except Exception:
                 continue
 
@@ -152,15 +166,145 @@ class CoverFinder:
         if best["score"] > 0:
             return {
                 "cover_url": best["cover_url"],
-                "score": best["score"]
+                "score": best["score"],
+                "title": best["title"],
+                "subject_url": best.get("subject_url")
             }
         else:
             # All results have 0 similarity (different language)
             # Return the first result anyway
             return {
                 "cover_url": results[0]["cover_url"],
-                "score": SCORE_SUBSTRING  # Use a lower score
+                "score": SCORE_SUBSTRING,  # Use a lower score
+                "title": results[0]["title"],
+                "subject_url": results[0].get("subject_url")
             }
+
+    def get_bangumi_info(self, anime: Anime) -> Optional[Dict[str, Any]]:
+        """Get detailed Bangumi info for an anime.
+
+        Args:
+            anime: Anime object to find info for.
+
+        Returns:
+            Dict with Bangumi info (rating, rank, type, date, summary, etc.), or None.
+        """
+        # First, search to find the best match and get subject URL
+        search_result = self._search_bangumi(anime.title, include_details=True)
+        if not search_result or not search_result.get("subject_url"):
+            return None
+
+        subject_url = search_result["subject_url"]
+        try:
+            # Fetch the subject detail page
+            html = self.client.get(subject_url)
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Parse the info
+            info = self._parse_bangumi_subject(soup, search_result)
+
+            # Store in cache
+            self._bangumi_info_cache[anime.title] = info
+
+            return info
+        except Exception as e:
+            logger.error(f"Error fetching Bangumi info for {anime.title}: {e}")
+            return None
+
+    def _parse_bangumi_subject(self, soup: BeautifulSoup, search_result: dict) -> Dict[str, Any]:
+        """Parse Bangumi subject page for detailed info.
+
+        Args:
+            soup: BeautifulSoup object of the subject page.
+            search_result: Search result with cover_url and title.
+
+        Returns:
+            Dict with parsed info.
+        """
+        info = {
+            "cover_url": search_result.get("cover_url"),
+            "title": search_result.get("title"),
+            "subject_url": search_result.get("subject_url"),
+            "rating": None,
+            "rank": None,
+            "type": None,
+            "date": None,
+            "summary": None,
+            "genres": [],
+            "staff": [],
+            "cast": []
+        }
+
+        # Rating: span[property='v:average']
+        rating_elem = soup.select_one('span[property="v:average"]')
+        if rating_elem:
+            rating_text = rating_elem.get_text(strip=True)
+            try:
+                info["rating"] = float(rating_text)
+            except ValueError:
+                pass
+
+        # Rank: small.alarm
+        rank_elem = soup.select_one('small.alarm')
+        if rank_elem:
+            rank_text = rank_elem.get_text(strip=True).replace("#", "")
+            try:
+                info["rank"] = int(rank_text)
+            except ValueError:
+                pass
+
+        # Type: from infobox (e.g., "TV", "剧场版")
+        infobox = soup.select_one('#infobox')
+        if infobox:
+            # Find type in infobox - look for items like "话数", "放送开始"
+            for li in infobox.select('li'):
+                tip = li.select_one('.tip')
+                if tip:
+                    label = tip.get_text(strip=True)
+                    # 放送开始日期
+                    if '放送开始' in label:
+                        date_text = li.get_text(strip=True).replace(label, '').strip()
+                        info["date"] = date_text
+
+        # Summary: div[property='v:summary']
+        summary_elem = soup.select_one('div[property="v:summary"]')
+        if summary_elem:
+            summary = summary_elem.get_text(strip=True)
+            # Remove © Bangumi footer if present
+            summary = re.sub(r"©\s*Bangumi.*", "", summary).strip()
+            info["summary"] = summary if summary else None
+
+        # Parse staff from infobox
+        if infobox:
+            staff_map = {}
+            for li in infobox.select('li'):
+                tip = li.select_one('.tip')
+                if tip:
+                    label = tip.get_text(strip=True).rstrip(':')
+                    # Skip non-staff fields
+                    if label in ['中文名', '话数', '放送开始', '放送星期']:
+                        continue
+                    # Get text content, excluding links
+                    content = li.get_text(strip=True).replace(tip.get_text(strip=True), '').strip()
+                    # Remove extra whitespace
+                    content = re.sub(r'\s+', ' ', content)
+                    if content and content not in ['--', '—']:
+                        # Handle multiple names separated by commas or顿号
+                        names = re.split(r'[,，、／/]', content)
+                        for name in names:
+                            name = name.strip()
+                            if name:
+                                if label not in staff_map:
+                                    staff_map[label] = []
+                                if name not in staff_map[label]:
+                                    staff_map[label].append(name)
+
+            # Convert to staff list format
+            for role, names in staff_map.items():
+                for name in names[:3]:  # Limit to 3 names per role
+                    info["staff"].append({"role": role, "name": name})
+
+        return info
 
     def _get_search_variants(self, title: str) -> List[str]:
         """Get search keyword variants for different Chinese variants.
@@ -427,6 +571,7 @@ class CoverFinder:
         """Close the HTTP client and clear cache."""
         self.client.close()
         self._cover_cache.clear()
+        self._bangumi_info_cache.clear()
 
     def __enter__(self):
         """Context manager entry."""

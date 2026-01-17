@@ -1,318 +1,190 @@
-# Development Guide
+# 开发文档
 
-## 环境要求
-
-- Python 3.8+
-- pip
-- 虚拟环境支持（venv）
-
-## Quick Start
-
-### 1. 创建虚拟环境
-
-```bash
-# 创建 venv 虚拟环境
-python3 -m venv .venv
-
-# 激活虚拟环境
-# macOS/Linux:
-source .venv/bin/activate
-# Windows:
-# .venv\Scripts\activate
-```
-
-### 2. 安装依赖
-
-```bash
-# 方式一：使用 Makefile（推荐，会自动创建 venv）
-make install
-
-# 方式二：手动安装
-pip install --upgrade pip
-pip install -e .
-```
-
-### 3. 运行应用
-
-```bash
-# 运行桌面应用
-make dev
-
-# 或运行在浏览器中
-make run
-```
-
-## Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `make install` | Install dependencies |
-| `make dev` | Run desktop app in development mode |
-| `make run` | Run in browser (CLI mode) |
-| `make verify-deps` | Verify required packages |
-| `make build` | Build desktop application |
-| `make build-onefile` | Build as single executable |
-| `make install-dmg` | Install create-dmg (macOS) |
-| `make dmg` | Create DMG for macOS |
-| `make clean` | Clean build artifacts |
-| `make clean-all` | Clean everything |
-| `make test` | Run tests |
-
-## Project Structure
+## 项目结构
 
 ```
 anime1-desktop/
-├── src/              # Python source code
-│   ├── app.py        # Flask application
-│   ├── desktop.py    # Desktop app entry (pywebview)
-│   ├── config.py     # Configuration
-│   ├── routes/       # Flask routes
-│   ├── parser/       # Anime1.me parsers
-│   ├── models/       # Data models
-│   └── utils/        # Utility functions
-├── templates/        # HTML templates
-├── static/           # CSS, JS, assets
-├── build.py          # PyInstaller build script
-└── Makefile          # Build automation
+├── frontend/          # Vue 3 前端应用
+│   ├── src/
+│   │   ├── components/    # Vue 组件
+│   │   ├── views/        # 页面视图
+│   │   ├── router/       # 路由配置
+│   │   ├── utils/        # 工具函数
+│   │   └── composables/  # 组合式函数
+│   └── index.html
+├── src/              # Python 后端
+│   ├── routes/       # Flask 路由
+│   ├── models/       # 数据模型
+│   └── services/     # 业务逻辑
+├── static/           # 静态资源(构建后)
+└── templates/        # Flask 模板
 ```
-
-## Building for Distribution
-
-### Standard Build (Directory)
-
-```bash
-make build
-```
-
-Output: `dist/Anime1.app` (macOS) or `dist/anime1/` (Linux)
-
-### Single File Build
-
-```bash
-make build-onefile
-```
-
-Output: `dist/anime1` (Linux/macOS) or `dist/anime1.exe` (Windows)
-
-### macOS DMG
-
-```bash
-make install-dmg  # Install create-dmg tool first
-make dmg          # Create DMG
-```
-
-Output: `dist/Anime1.dmg`
 
 ## 开发环境设置
 
-### 使用 venv 虚拟环境（推荐）
-
-项目使用 Python 标准库的 `venv` 模块来管理虚拟环境。
+### 1. 安装依赖
 
 ```bash
-# 1. 创建虚拟环境
-python3 -m venv .venv
-
-# 2. 激活虚拟环境
-source .venv/bin/activate  # macOS/Linux
-# 或
-.venv\Scripts\activate      # Windows
-
-# 3. 安装依赖
-pip install --upgrade pip
+# 安装 Python 依赖
 pip install -e .
 
-# 4. 验证安装
-python -c "import PyInstaller; import webview; print('OK')"
+# 安装前端依赖
+cd frontend
+npm install  # 首次安装，会生成 package-lock.json
+# 或使用 npm ci 进行生产构建（更快，需要 package-lock.json）
+cd ..
 ```
 
-### 依赖说明
+### 2. 开发模式运行
 
-主要依赖包（在 `pyproject.toml` 中定义）：
-- **flask** >= 2.3.0 - Web 框架
-- **beautifulsoup4** >= 4.12.0 - HTML 解析
-- **requests** >= 2.31.0 - HTTP 请求
-- **pywebview** >= 4.0.0 - 桌面 GUI 框架
-- **pyinstaller** >= 6.0.0 - 应用打包工具
-- **pillow** >= 10.0.0 - 图像处理
-- **hanziconv** >= 0.3.2 - 简繁转换
-
-### 开发依赖
+**使用 make dev（推荐）**
 
 ```bash
-pip install -e ".[dev]"
+make dev
 ```
 
-包含：
-- **pytest** >= 7.0.0 - 测试框架
+这会同时启动：
+- Flask 后端: `http://localhost:5172`
+- Vite 前端: `http://localhost:5173`
+- 默认在 webview 窗口中打开
 
-## GitHub Actions 构建和发布
-
-项目使用 GitHub Actions 自动构建和发布到所有平台。
-
-### 正式发布
-
-当推送以 `v` 开头的 tag 时，会自动触发构建流程：
+**环境变量选项：**
 
 ```bash
-# 创建并推送 tag
-git tag v1.0.0
-git push origin v1.0.0
+# 在浏览器中打开（推荐用于调试视频播放）
+DEV_BROWSER=1 make dev
+
+# 启用 webview 开发者工具（macOS: Option+Cmd+I）
+DEV_DEBUG=1 make dev
+
+# 跳过依赖检查和残留进程清理（加速启动）
+DEV_BROWSER=1 SKIP_CHECK=1 NO_CLEANUP=1 make dev
+
+# 组合使用
+DEV_BROWSER=1 DEV_DEBUG=1 SKIP_CHECK=1 NO_CLEANUP=1 make dev
 ```
 
-GitHub Actions 会自动：
-1. 在 Windows、macOS、Linux 三个平台上构建应用
-2. 将构建产物上传到 GitHub Release
-3. 创建 Release 页面，包含所有平台的下载链接
-
-### 构建产物
-
-- **Windows (x64)**: `anime1-windows-x64.zip` - 包含 Anime1.exe 的压缩包
-- **macOS (Intel)**: `anime1-macos-x64.dmg` - DMG 安装包
-- **macOS (Apple Silicon)**: `anime1-macos-arm64.dmg` - DMG 安装包
-- **Linux (x64)**: `anime1-linux-x64.tar.gz` - 包含可执行文件的压缩包
-- **Linux (ARM64)**: `anime1-linux-arm64.tar.gz` - 包含可执行文件的压缩包
-
-### 测试构建
-
-使用 GitHub CLI (gh) 测试构建流程，无需打 tag。
-
-#### 安装 GitHub CLI
+**直接运行脚本（备用方式）：**
 
 ```bash
-# macOS
-brew install gh
+# 在浏览器中打开
+python scripts/dev.py --browser --skip-check --no-cleanup
 
-# Linux / Windows
-# 参考: https://cli.github.com/manual/installation
+# 在 webview 中打开
+python scripts/dev.py --skip-check --no-cleanup
+
+# 查看所有选项
+python scripts/dev.py --help
 ```
 
-#### 快速测试
+**分别启动前后端（手动模式）：**
 
 ```bash
-# 1. 登录 GitHub（首次使用）
-gh auth login
+# 终端1: 启动 Flask 后端（端口 5172）
+python -m src.app --debug
 
-# 2. 触发测试构建（只构建，不创建 Release）
-gh workflow run "Build and Release" \
-  --ref main \
-  -f version=1.0.0-test \
-  -f create_release=false
-
-# 3. 查看运行状态
-gh run list --workflow="Build and Release"
-gh run watch  # 实时查看最新运行
+# 终端2: 启动 Vite 开发服务器（端口 5173）
+cd frontend
+npm run dev
 ```
 
-#### 查看构建日志
+访问 `http://localhost:5173`，Vite 会自动代理 `/api` 请求到 Flask。
+
+**仅启动 Flask（使用构建后的前端）：**
 
 ```bash
-# 查看最新的运行
-gh run view
+# 先构建前端
+cd frontend
+npm run build
+cd ..
 
-# 查看特定运行的日志
-gh run view --log
-
-# 查看特定 workflow 的运行列表
-gh run list --workflow="Build and Release"
+# 启动 Flask
+python -m src.app --debug
 ```
 
-#### 下载构建产物
+访问 `http://localhost:5172`
+
+### 3. 构建生产版本
 
 ```bash
-# 下载最新运行的 artifacts
-gh run download
+# 构建前端
+npm run build
 
-# 下载特定运行的 artifacts
-gh run download <run-id>
+# 构建桌面应用(使用 PyInstaller)
+# 参考项目根目录的构建脚本
 ```
 
-详细测试指南请查看 [.github/workflows/TESTING.md](.github/workflows/TESTING.md)
+## 技术栈
 
-## 故障排查
+### 前端
+- **Vue 3** - 渐进式 JavaScript 框架
+- **Vue Router** - 官方路由管理器
+- **Element Plus** - Vue 3 组件库
+- **Vite** - 下一代前端构建工具
+- **Axios** - HTTP 客户端
 
-### macOS 应用无法启动
+### 后端
+- **Flask** - Python Web 框架
+- **BeautifulSoup4** - HTML 解析
+- **Requests** - HTTP 库
 
-如果编译后的 macOS 应用（`Anime1.app`）无法启动，可以按以下步骤排查：
+## 主要功能
 
-#### 1. 检查应用签名和权限
+### 1. 可折叠侧边栏
+- 点击底部按钮可以折叠/展开侧边栏
+- 折叠后只显示图标
+- 状态保存在 localStorage
 
-```bash
-# 检查签名状态
-codesign -dv --verbose=4 dist/Anime1.app
+### 2. 主题切换
+- 支持暗黑模式、普通模式和跟随系统
+- 使用 Element Plus 的暗色主题
+- 主题设置保存在后端
 
-# 验证签名
-codesign --verify --verbose dist/Anime1.app
+### 3. 番剧列表
+- 分页浏览
+- 搜索功能
+- 收藏功能
+- 封面图片懒加载
 
-# 检查架构（确保是 arm64 或与你的 Mac 匹配）
-file dist/Anime1.app/Contents/MacOS/Anime1
+### 4. 番剧详情
+- 剧集列表
+- 视频播放
+- 收藏管理
 
-# 检查执行权限
-ls -la dist/Anime1.app/Contents/MacOS/Anime1
-```
+## API 端点
 
-#### 2. 检查 Quarantine 属性
+所有 API 端点都在 `/api` 前缀下:
 
-```bash
-# 查看 quarantine 属性
-xattr -l dist/Anime1.app
+- `GET /api/anime` - 获取番剧列表
+- `GET /api/anime/search` - 搜索番剧
+- `GET /api/anime/:id/episodes` - 获取剧集列表
+- `GET /api/favorite/list` - 获取收藏列表
+- `POST /api/favorite/add` - 添加收藏
+- `POST /api/favorite/remove` - 移除收藏
+- `GET /api/settings/theme` - 获取主题设置
+- `POST /api/settings/theme` - 保存主题设置
 
-# 如果存在 quarantine 属性，清除它
-sudo xattr -r -d com.apple.quarantine dist/Anime1.app
-```
+## 开发注意事项
 
-#### 3. 检查 Gatekeeper 状态
+1. **路由**: 所有前端路由由 Vue Router 处理,Flask 只提供 API 和 SPA 入口
+2. **主题**: Element Plus 的暗色主题通过 CSS 变量实现,确保在暗色模式下正确显示
+3. **构建**: 生产构建时,Vite 会将前端资源输出到 `static/dist/`,Flask 会从这个目录提供静态文件
+4. **代理**: 开发模式下,Vite 会代理 `/api` 和 `/proxy` 请求到 Flask 后端
 
-```bash
-# 查看 Gatekeeper 状态
-spctl --status
-```
+## 故障排除
 
-如果应用被 Gatekeeper 拦截：
-- **方法一**：右键点击应用 → "打开"，会触发一次性确认对话框
-- **方法二**：在"系统设置 → 隐私与安全"中，找到被阻止的应用，点击"仍要打开"
+### 前端无法连接后端 API
+- 确保 Flask 后端正在运行在 `http://localhost:5172`
+- 检查 Vite 配置中的代理设置（自动从 `FLASK_PORT` 环境变量读取）
 
-#### 4. 直接运行查看错误信息
+### 端口被占用
+- 运行 `make dev` 会自动检测并清理占用端口的残留进程
+- 如果端口被其他应用占用，可以直接指定端口参数：`python scripts/dev.py --flask-port=5180 --vite-port=5181`
 
-```bash
-# 直接运行可执行文件查看错误
-dist/Anime1.app/Contents/MacOS/Anime1
-```
+### 主题显示不正确
+- 检查 `useTheme.js` 中的主题应用逻辑
+- 确保 Element Plus 的暗色主题 CSS 已正确导入
 
-常见错误：
-- **缺少依赖模块**：检查 `pyproject.toml` 中是否包含所有依赖，并在 `build.py` 的 `hidden_imports` 中添加
-- **模块导入错误**：确保所有 Python 依赖都已正确打包
-
-#### 5. 检查系统日志
-
-```bash
-# 查看系统日志中的应用启动信息
-log show --predicate 'process == "Anime1"' --last 5m --style compact
-```
-
-#### 6. 重新编译
-
-如果以上步骤都无法解决问题，尝试清理后重新编译：
-
-```bash
-make clean
-make build
-```
-
-### 常见问题
-
-**Q: 应用启动后立即退出，没有错误提示？**
-
-A: 这通常是因为缺少 Python 依赖模块。检查：
-1. 所有依赖是否在 `pyproject.toml` 中声明
-2. 所有动态导入的模块是否在 `build.py` 的 `hidden_imports` 中
-
-**Q: macOS 提示"无法打开，因为来自身份不明的开发者"？**
-
-A: 这是正常的，因为应用使用了 adhoc 签名（开发签名）。解决方法：
-1. 右键点击应用 → "打开"
-2. 或在"系统设置 → 隐私与安全"中允许
-
-**Q: 应用签名显示 "adhoc" 是否正常？**
-
-A: 是的，对于开发和测试用途，adhoc 签名是正常的。如果要发布到 App Store 或让用户更容易信任，需要使用 Developer ID 签名和 Apple 公证。
+### 构建失败
+- 确保 Node.js 版本 >= 16
+- 删除 `node_modules` 和 `package-lock.json` 后重新安装

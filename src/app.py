@@ -1,5 +1,6 @@
 """Flask web application for Anime1."""
 import argparse
+import logging
 import os
 import socket
 import sys
@@ -10,12 +11,22 @@ from pathlib import Path
 
 from flask import Flask
 
+logger = logging.getLogger(__name__)
+
 # Add parent directory to path for imports
 PROJECT_ROOT = Path(os.path.abspath(__file__)).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DEFAULT_HOST, DEFAULT_PORT, STATIC_CACHE_DIR, STATIC_RESOURCES
-from src.routes import anime_bp, proxy_bp, update_bp, register_page_routes
+from src.config import DEFAULT_HOST, DEFAULT_PORT, STATIC_CACHE_DIR
+from src.routes import (
+    anime_bp,
+    proxy_bp,
+    update_bp,
+    favorite_bp,
+    settings_bp,
+    playback_bp,
+    register_page_routes
+)
 from src.parser.anime1_parser import Anime1Parser
 from src.parser.cover_finder import CoverFinder
 from src import __version__
@@ -27,7 +38,12 @@ def download_static_resources():
 
     STATIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    for filename, url in STATIC_RESOURCES.items():
+    # Static resources to cache
+    resources = {
+        "videojs.bundle.js": "https://sta.anicdn.com/videojs.bundle.js?ver=8",
+    }
+
+    for filename, url in resources.items():
         filepath = STATIC_CACHE_DIR / filename
         try:
             print(f"Checking {filename}...")
@@ -52,6 +68,12 @@ def download_static_resources():
 def create_app() -> Flask:
     """Create and configure the Flask application."""
     from jinja2 import FileSystemLoader
+    from flask_cors import CORS
+    from flask import Flask, request, g
+
+    # Initialize database first
+    from src.models.database import init_database
+    init_database()
 
     app = Flask(
         __name__,
@@ -61,6 +83,37 @@ def create_app() -> Flask:
     app.config["JSON_SORT_KEYS"] = False
     app.config["TEMPLATES_AUTO_RELOAD"] = True
 
+    # Serve vite-built assets from /assets/* path
+    @app.route('/assets/<path:filename>')
+    def serve_assets(filename):
+        from flask import send_from_directory
+        return send_from_directory(str(PROJECT_ROOT / "static" / "dist" / "assets"), filename)
+
+    # Enable CORS for all routes
+    CORS(app)
+
+    # Request timing middleware - logs all API requests
+    @app.before_request
+    def before_request():
+        """Record start time for request timing."""
+        # Only time API requests (skip static files)
+        if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
+            g.start_time = time.time()
+
+    @app.after_request
+    def after_request(response):
+        """Log request timing."""
+        # Only log API requests
+        if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
+            if hasattr(g, 'start_time'):
+                elapsed = (time.time() - g.start_time) * 1000  # Convert to ms
+                # Log slow requests (>100ms) with warning
+                if elapsed > 100:
+                    logger.warning(f"SLOW REQUEST: {request.method} {request.path} - {elapsed:.2f}ms")
+                else:
+                    logger.info(f"{request.method} {request.path} - {elapsed:.2f}ms")
+        return response
+
     # Fix DispatchingJinjaLoader threading issue
     app.jinja_loader = FileSystemLoader(str(PROJECT_ROOT / "templates"))
 
@@ -68,6 +121,9 @@ def create_app() -> Flask:
     app.register_blueprint(anime_bp)
     app.register_blueprint(proxy_bp)
     app.register_blueprint(update_bp)
+    app.register_blueprint(favorite_bp)
+    app.register_blueprint(settings_bp)
+    app.register_blueprint(playback_bp)
 
     # Register page routes
     register_page_routes(app)
@@ -87,6 +143,10 @@ def shutdown_services():
         parser.close()
         finder.close()
         _services = None
+
+    # Close database connection
+    from src.models.database import close_database
+    close_database()
 
 
 def find_free_port(start_port: int = DEFAULT_PORT) -> int:
@@ -163,7 +223,8 @@ def main():
             port=port,
             debug=args.debug,
             threaded=True,
-            use_reloader=False,
+            # Enable reloader only in debug mode and when not in frozen binary
+            use_reloader=args.debug and not getattr(sys, 'frozen', False),
         )
     except KeyboardInterrupt:
         print("\nShutting down...")

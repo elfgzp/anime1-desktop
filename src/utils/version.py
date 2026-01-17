@@ -4,6 +4,43 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .constants import (
+    ENV_VERSION,
+    VERSION_DEV,
+    VERSION_DEV_PREFIX,
+    GIT_COMMAND,
+    GIT_DESCRIBE_CMD,
+    GIT_DESCRIBE_TAGS_FLAG,
+    GIT_DESCRIBE_ABBREV_FLAG,
+    GIT_REV_PARSE_CMD,
+    GIT_REV_PARSE_SHORT_FLAG,
+    GIT_HEAD_REF,
+    GIT_COMMAND_TIMEOUT,
+    GIT_SUCCESS_CODE,
+    VERSION_PREFIXES,
+    WINDOW_TITLE_BASE,
+    WINDOW_TITLE_VERSION_PREFIX,
+    WINDOW_TITLE_TEST_SUFFIX,
+    COMMIT_ID_DISPLAY_LENGTH,
+)
+
+
+def get_version_file_path() -> Path:
+    """Get the path to the version file.
+
+    For frozen executables, the version file is stored next to the executable.
+    For development mode, it's stored in the project root.
+
+    Returns:
+        Path to the version file
+    """
+    if getattr(sys, 'frozen', False):
+        # Running as frozen executable - version file is next to the executable
+        return Path(sys.executable).parent / "version.txt"
+    else:
+        # Running as normal Python script - version file in project root
+        return Path(__file__).parent.parent.parent / "version.txt"
+
 
 def get_git_version() -> str:
     """Get version from git tag or commit id.
@@ -24,17 +61,17 @@ def get_git_version() -> str:
         # Try to get the latest tag
         try:
             result = subprocess.run(
-                ["git", "describe", "--tags", "--abbrev=0"],
+                [GIT_COMMAND, GIT_DESCRIBE_CMD, GIT_DESCRIBE_TAGS_FLAG, GIT_DESCRIBE_ABBREV_FLAG],
                 cwd=project_root,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=GIT_COMMAND_TIMEOUT,
                 check=False,
             )
-            if result.returncode == 0 and result.stdout.strip():
+            if result.returncode == GIT_SUCCESS_CODE and result.stdout.strip():
                 tag = result.stdout.strip()
                 # Remove 'v' prefix if present
-                version = tag.lstrip('vV')
+                version = tag.lstrip(VERSION_PREFIXES)
                 return version
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
             pass
@@ -42,16 +79,16 @@ def get_git_version() -> str:
         # If no tag, try to get commit id
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
+                [GIT_COMMAND, GIT_REV_PARSE_CMD, GIT_REV_PARSE_SHORT_FLAG, GIT_HEAD_REF],
                 cwd=project_root,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=GIT_COMMAND_TIMEOUT,
                 check=False,
             )
-            if result.returncode == 0 and result.stdout.strip():
+            if result.returncode == GIT_SUCCESS_CODE and result.stdout.strip():
                 commit_id = result.stdout.strip()
-                return f"dev-{commit_id}"
+                return f"{VERSION_DEV_PREFIX}{commit_id}"
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
             pass
         
@@ -59,24 +96,73 @@ def get_git_version() -> str:
         pass
     
     # Fallback to 'dev' if git is not available
-    return "dev"
+    return VERSION_DEV
 
 
 def get_version() -> str:
     """Get application version.
     
     Priority:
-    1. Environment variable ANIME1_VERSION (for build time)
-    2. Git tag or commit id
-    3. Fallback to 'dev'
+    1. Version file (created during build, for frozen executables)
+    2. Environment variable ANIME1_VERSION (for build time)
+    3. Git tag or commit id
+    4. Fallback to 'dev'
     
     Returns:
         Version string
     """
-    # Check environment variable first (set during build)
-    env_version = os.environ.get("ANIME1_VERSION")
+    # Check version file first (for frozen executables)
+    version_file = get_version_file_path()
+    if version_file.exists():
+        try:
+            version = version_file.read_text(encoding='utf-8').strip()
+            if version:
+                return version
+        except Exception:
+            pass
+    
+    # Check environment variable (set during build)
+    env_version = os.environ.get(ENV_VERSION)
     if env_version:
         return env_version
     
     # Try git
     return get_git_version()
+
+
+def get_window_title() -> str:
+    """Get window title with version information.
+    
+    Returns:
+        Window title string:
+        - "Anime1 桌面版 v{version}" if version is a release version
+        - "Anime1 桌面版 测试版 ({commit_id})" if version is dev
+    """
+    version = get_version()
+    
+    # Check if version is a release version (not dev)
+    if version and not version.startswith(VERSION_DEV):
+        # It's a release version, show version number
+        return f"{WINDOW_TITLE_BASE} {WINDOW_TITLE_VERSION_PREFIX}{version}"
+    else:
+        # It's a dev version, get commit id
+        commit_id = None
+        try:
+            project_root = Path(__file__).parent.parent.parent
+            result = subprocess.run(
+                [GIT_COMMAND, GIT_REV_PARSE_CMD, GIT_REV_PARSE_SHORT_FLAG, GIT_HEAD_REF],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=GIT_COMMAND_TIMEOUT,
+                check=False,
+            )
+            if result.returncode == GIT_SUCCESS_CODE and result.stdout.strip():
+                commit_id = result.stdout.strip()[:COMMIT_ID_DISPLAY_LENGTH]
+        except Exception:
+            pass
+        
+        if commit_id:
+            return f"{WINDOW_TITLE_BASE} {WINDOW_TITLE_TEST_SUFFIX} ({commit_id})"
+        else:
+            return f"{WINDOW_TITLE_BASE} {WINDOW_TITLE_TEST_SUFFIX}"

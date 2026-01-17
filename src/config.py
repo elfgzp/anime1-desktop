@@ -12,7 +12,7 @@ STATIC_CACHE_DIR = PROJECT_ROOT / "static" / "vendor"
 # HTTP Configuration
 DEFAULT_TIMEOUT = 30
 DEFAULT_DELAY = 0.3
-DEFAULT_PORT = 5000
+DEFAULT_PORT = 5172
 DEFAULT_HOST = "127.0.0.1"
 
 # HTTP Headers
@@ -96,12 +96,6 @@ DEFAULTS = {
 
 # Page size for pagination
 PAGE_SIZE = 20
-
-# Static resources to cache
-STATIC_RESOURCES = {
-    "videojs.css": "https://sta.anicdn.com/videojs.css",
-    "videojs.bundle.js": "https://sta.anicdn.com/videojs.bundle.js?ver=8",
-}
 
 # Update Checker Configuration
 GITHUB_REPO_OWNER = "elfgzp"

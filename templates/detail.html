@@ -217,8 +217,38 @@
             opacity: 0.5;
         }
 
-        /* Video loading overlay */
-        .video-loading {
+        /* 原生播放器统一样式 - 支持亮色/暗色主题 */
+        #videoPlayer {
+            color-scheme: dark;
+        }
+        #videoPlayer::-webkit-media-controls {
+            background-color: transparent;
+        }
+        #videoPlayer::-webkit-media-controls-play-button {
+            background-color: var(--text-primary);
+            border-radius: 50%;
+        }
+        #videoPlayer::-webkit-media-controls-play-button:hover {
+            background-color: var(--primary-color);
+        }
+        #videoPlayer::-webkit-media-controls-timeline {
+            background: var(--border-color);
+        }
+        #videoPlayer::-webkit-media-controls-current-time-display,
+        #videoPlayer::-webkit-media-controls-time-remaining-display {
+            color: var(--text-primary);
+        }
+        #videoPlayer::-webkit-media-controls-mute-button {
+            background-color: var(--text-primary);
+            border-radius: 50%;
+        }
+        #videoPlayer::-webkit-media-controls-fullscreen-button {
+            background-color: var(--text-primary);
+            border-radius: 4px;
+        }
+
+        /* Video error overlay */
+        .video-error {
             position: absolute;
             top: 0;
             left: 0;
@@ -228,53 +258,80 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: #000;
-            z-index: 10;
+            background: var(--video-bg-error, rgba(0, 0, 0, 0.85));
+            z-index: 20;
+            padding: 40px;
+            box-sizing: border-box;
         }
 
-        .video-loading.active {
+        .video-error.active {
             display: flex;
         }
 
-        .video-loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid rgba(255, 255, 255, 0.2);
-            border-top-color: #ff6b9d;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+        .video-error-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
         }
 
-        .video-loading-text {
-            color: #8888a0;
-            margin-top: 15px;
+        .video-error-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .video-error-message {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            text-align: center;
+            max-width: 500px;
+            line-height: 1.6;
+        }
+
+        .video-error-suggestion {
+            margin-top: 25px;
+            padding: 15px 25px;
+            background: rgba(124, 92, 255, 0.15);
+            border: 1px solid rgba(124, 92, 255, 0.3);
+            border-radius: 10px;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .video-error-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 30px;
+            background: var(--gradient-primary);
+            border-radius: 8px;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .video-error-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(124, 92, 255, 0.4);
+        }
+
+        .video-error-retry {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
             font-size: 0.9rem;
+            transition: all 0.2s;
         }
 
-        .video-loading-percent {
-            font-size: 28px;
-            font-weight: 700;
-            margin-top: 10px;
-            background: linear-gradient(90deg, #ff6b9d, #7c5cff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .video-loading-progress {
-            width: 200px;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
-            margin-top: 15px;
-            overflow: hidden;
-        }
-
-        .video-loading-progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b9d, #7c5cff);
-            border-radius: 2px;
-            width: 0%;
-            animation: progressPulse 1.5s ease-in-out infinite;
+        .video-error-retry:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
         }
 
         @keyframes progressPulse {
@@ -447,6 +504,104 @@
                 text-align: center;
             }
         }
+
+        /* Bangumi Info Section */
+        .bangumi-section {
+            background: var(--card-background);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            padding: 25px;
+            margin-top: 25px;
+        }
+
+        .bangumi-card {
+            padding: 10px 0;
+        }
+
+        .bangumi-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .bangumi-rating {
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+        }
+
+        .rating-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .rating-label {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .rank-value {
+            font-size: 0.9rem;
+            color: #ff9500;
+            margin-left: 5px;
+        }
+
+        .bangumi-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .bangumi-genres {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .bangumi-genre {
+            padding: 4px 12px;
+            background: rgba(124, 92, 255, 0.15);
+            border: 1px solid rgba(124, 92, 255, 0.3);
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: var(--primary-color);
+        }
+
+        .bangumi-summary {
+            font-size: 0.95rem;
+            line-height: 1.7;
+            color: var(--text-primary);
+            text-align: justify;
+        }
+
+        .bangumi-loading {
+            display: flex;
+            align-items: center;
+            padding: 20px 0;
+        }
+
+        .bangumi-error {
+            padding: 20px 0;
+        }
+
+        /* Responsive for Bangumi section */
+        @media (max-width: 600px) {
+            .bangumi-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .bangumi-meta {
+                flex-direction: column;
+                gap: 5px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -461,7 +616,8 @@
             <aside class="episode-sidebar">
                 <div class="sidebar-header">
                     <img id="sidebarCover" class="sidebar-cover" src="" alt="封面" style="display: none;">
-                    <div style="flex: 1; min-width: 0;">
+                    <div style="flex: 1; min-width: 0; position: relative;">
+                        <button id="detailFavoriteBtn" class="detail-favorite-btn" title="追番">⭐</button>
                         <div class="sidebar-title" id="sidebarTitle">加载中...</div>
                         <div class="sidebar-meta-list" id="sidebarMeta">
                             <div class="sidebar-meta-item">
@@ -497,22 +653,22 @@
                         <div class="video-meta" id="currentEpisodeMeta"></div>
                     </div>
                     <div class="video-container" id="videoContainer">
-                        <!-- Loading overlay -->
-                        <div class="video-loading" id="videoLoading">
-                            <div class="video-loading-spinner"></div>
-                            <div class="video-loading-progress">
-                                <div class="video-loading-progress-bar"></div>
+                        <!-- Error overlay -->
+                        <div class="video-error" id="videoError">
+                            <div class="video-error-icon">&#9888;</div>
+                            <div class="video-error-title">无法播放视频</div>
+                            <div class="video-error-message" id="errorMessage">视频加载失败，请稍后重试</div>
+                            <div class="video-error-suggestion">
+                                可能的原因：视频源限制、版权问题或网络连接问题
                             </div>
-                            <div class="video-loading-text" id="loadingText">正在加载视频...</div>
-                            <div class="video-loading-percent" id="loadingPercent">0%</div>
+                            <button class="video-error-retry" id="retryBtn">重新加载</button>
                         </div>
                         <!-- Placeholder -->
                         <div class="video-placeholder" id="videoPlaceholder">
                             <div class="video-placeholder-icon">&#9658;</div>
-                            <div>点击右侧列表选择剧集</div>
                         </div>
                         <!-- Native video player -->
-                        <video id="videoPlayer" controls preload="none" style="width:100%;height:100%;background:#000;display:none;"></video>
+                        <video id="videoPlayer" controls preload="none" style="width:100%;height:100%;background:var(--video-bg, #000);display:none;"></video>
                     </div>
                 </div>
 
@@ -526,6 +682,40 @@
                         <!-- Episode cards will be loaded here -->
                     </div>
                 </div>
+
+                <!-- Bangumi Info Section -->
+                <div class="bangumi-section" id="bangumiSection" style="display: none;">
+                    <div class="section-title">
+                        <span>番剧信息</span>
+                        <a id="bangumiLink" href="#" target="_blank" style="font-size: 0.8rem; color: var(--accent-color); text-decoration: none; margin-left: 10px;">Bangumi</a>
+                    </div>
+                    <div class="bangumi-card">
+                        <div class="bangumi-header" id="bangumiHeader" style="display: none;">
+                            <div class="bangumi-rating">
+                                <span class="rating-value" id="bangumiRating">-</span>
+                                <span class="rating-label">分</span>
+                                <span class="rank-value" id="bangumiRank" style="display: none;">#-</span>
+                            </div>
+                            <div class="bangumi-meta" id="bangumiMeta">
+                                <span class="bangumi-type" id="bangumiType">-</span>
+                                <span class="bangumi-date" id="bangumiDate">-</span>
+                            </div>
+                        </div>
+                        <div class="bangumi-genres" id="bangumiGenres" style="display: none;">
+                            <!-- Genres will be loaded here -->
+                        </div>
+                        <div class="bangumi-summary" id="bangumiSummary" style="display: none;">
+                            <!-- Summary will be loaded here -->
+                        </div>
+                        <div class="bangumi-loading" id="bangumiLoading">
+                            <div class="loading-spinner"></div>
+                            <span style="margin-left: 10px; color: var(--text-secondary);">正在加载番剧信息...</span>
+                        </div>
+                        <div class="bangumi-error" id="bangumiError" style="display: none;">
+                            <span style="color: var(--text-secondary);">暂无法获取番剧信息</span>
+                        </div>
+                    </div>
+                </div>
             </main>
         </div>
     </div>
@@ -536,6 +726,9 @@
 
             const animeId = {{ anime_id | tojson }};
             const API_ANIME_EPISODES = '/api/anime/' + animeId + '/episodes';
+            const API_FAVORITE_ADD = '/api/favorite/add';
+            const API_FAVORITE_REMOVE = '/api/favorite/remove';
+            const API_FAVORITE_IS_FAVORITE = '/api/favorite/is_favorite';
 
             // DOM Elements
             const elements = {
@@ -550,12 +743,13 @@
                 totalEpisodes: document.getElementById('totalEpisodes'),
                 videoContainer: document.getElementById('videoContainer'),
                 videoPlaceholder: document.getElementById('videoPlaceholder'),
-                videoLoading: document.getElementById('videoLoading'),
+                videoError: document.getElementById('videoError'),
+                errorMessage: document.getElementById('errorMessage'),
+                retryBtn: document.getElementById('retryBtn'),
                 videoPlayer: document.getElementById('videoPlayer'),
-                loadingText: document.getElementById('loadingText'),
-                loadingPercent: document.getElementById('loadingPercent'),
                 currentEpisodeTitle: document.getElementById('currentEpisodeTitle'),
-                currentEpisodeMeta: document.getElementById('currentEpisodeMeta')
+                currentEpisodeMeta: document.getElementById('currentEpisodeMeta'),
+                favoriteBtn: document.getElementById('detailFavoriteBtn')
             };
 
             // State
@@ -699,31 +893,26 @@
                 elements.currentEpisodeTitle.textContent = '第 ' + ep.episode + ' 话';
                 elements.currentEpisodeMeta.textContent = ep.date;
 
-                // Hide placeholder and show loading
+                // Hide placeholder and show player (原生播放器自带 loading 动画)
                 elements.videoPlaceholder.style.display = 'none';
-                elements.videoPlayer.style.display = 'none';
-                elements.videoLoading.classList.add('active');
-                elements.loadingText.textContent = '获取视频中...';
-                elements.loadingPercent.textContent = '0%';
+                elements.videoPlayer.style.display = 'block';
+                elements.videoError.classList.remove('active');
 
                 // Stop any existing playback
                 elements.videoPlayer.pause();
-                elements.videoPlayer.src = '';
 
                 // Get video URL and cookies from episode API
                 fetch('/proxy/episode-api?url=' + encodeURIComponent(ep.url))
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
-                        elements.loadingText.textContent = '加载失败: ' + data.error;
+                        showError('无法获取视频', data.error);
                         return;
                     }
                     if (!data.url) {
-                        elements.loadingText.textContent = '无法获取视频';
+                        showError('无法获取视频', '视频地址为空，请稍后重试');
                         return;
                     }
-
-                    elements.loadingText.textContent = '加载视频...';
 
                     // Set video source - use our proxy with cookies to avoid CORS issues
                     let videoSrc = data.url;
@@ -738,40 +927,44 @@
                     elements.videoPlayer.load();
 
                     // Monitor buffering progress
-                    elements.videoPlayer.addEventListener('progress', onProgress);
                     elements.videoPlayer.addEventListener('canplay', onCanPlay);
                     elements.videoPlayer.addEventListener('error', onError);
+                    elements.videoPlayer.addEventListener('stalled', onError);
 
                     // Try to play
                     elements.videoPlayer.play().catch(e => {
                         console.log('Auto-play blocked, waiting for user interaction');
-                        elements.loadingText.textContent = '点击播放按钮开始';
                     });
                 })
                 .catch(e => {
-                    elements.loadingText.textContent = '加载失败: ' + e.message;
+                    showError('加载失败', e.message || '网络连接错误，请检查网络后重试');
                 });
             }
 
-            function onProgress() {
-                const buffered = elements.videoPlayer.buffered;
-                if (buffered.length > 0 && elements.videoPlayer.duration > 0) {
-                    const percent = Math.round((buffered.end(buffered.length - 1) / elements.videoPlayer.duration) * 100);
-                    if (percent > 0 && percent < 100) {
-                        elements.loadingPercent.textContent = percent + '%';
-                    }
-                }
+            // Show error overlay
+            function showError(title, message) {
+                elements.videoPlayer.style.display = 'none';
+                elements.errorMessage.textContent = message || '未知错误';
+                elements.videoError.querySelector('.video-error-title').textContent = title || '无法播放视频';
+                elements.videoError.classList.add('active');
             }
 
             function onCanPlay() {
                 elements.videoPlayer.removeEventListener('canplay', onCanPlay);
-                elements.videoPlayer.removeEventListener('progress', onProgress);
-                elements.videoLoading.classList.remove('active');
-                elements.videoPlayer.style.display = 'block';
             }
 
             function onError() {
-                elements.loadingText.textContent = '播放错误: ' + (elements.videoPlayer.error ? elements.videoPlayer.error.message : '未知错误');
+                showError('播放错误', elements.videoPlayer.error ? elements.videoPlayer.error.message : '视频播放失败，请尝试重新加载');
+            }
+
+            // Bind retry button
+            if (elements.retryBtn) {
+                elements.retryBtn.addEventListener('click', () => {
+                    elements.videoError.classList.remove('active');
+                    if (currentEpisodeIndex >= 0) {
+                        playEpisode(currentEpisodeIndex);
+                    }
+                });
             }
 
             // Fetch data
@@ -808,11 +1001,200 @@
                 }
             }
 
+            // Favorite functions
+            async function checkIsFavorite() {
+                try {
+                    const response = await fetch(API_FAVORITE_IS_FAVORITE + '?anime_id=' + animeId);
+                    const data = await response.json();
+                    return data.success && data.data && data.data.is_favorite;
+                } catch (error) {
+                    console.error('Error checking favorite status:', error);
+                    return false;
+                }
+            }
+
+            async function toggleFavorite() {
+                try {
+                    const isFav = elements.favoriteBtn.classList.contains('active');
+                    const endpoint = isFav ? API_FAVORITE_REMOVE : API_FAVORITE_ADD;
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ anime_id: animeId })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        elements.favoriteBtn.classList.toggle('active', !isFav);
+                        elements.favoriteBtn.title = !isFav ? '取消追番' : '追番';
+                    }
+                } catch (error) {
+                    console.error('Error toggling favorite:', error);
+                }
+            }
+
+            // Bind favorite button
+            if (elements.favoriteBtn) {
+                elements.favoriteBtn.addEventListener('click', toggleFavorite);
+                // Check initial state
+                checkIsFavorite().then(isFav => {
+                    if (isFav) {
+                        elements.favoriteBtn.classList.add('active');
+                        elements.favoriteBtn.title = '取消追番';
+                    }
+                });
+            }
+
+            // Favorite functions
+            async function checkIsFavorite() {
+                try {
+                    const response = await fetch(API_FAVORITE_IS_FAVORITE + '?anime_id=' + animeId);
+                    const data = await response.json();
+                    return data.success && data.data && data.data.is_favorite;
+                } catch (error) {
+                    console.error('Error checking favorite status:', error);
+                    return false;
+                }
+            }
+
+            async function toggleFavorite() {
+                try {
+                    const isFav = elements.favoriteBtn.classList.contains('active');
+                    const endpoint = isFav ? API_FAVORITE_REMOVE : API_FAVORITE_ADD;
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ anime_id: animeId })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        elements.favoriteBtn.classList.toggle('active', !isFav);
+                        elements.favoriteBtn.title = !isFav ? '取消追番' : '追番';
+                    }
+                } catch (error) {
+                    console.error('Error toggling favorite:', error);
+                }
+            }
+
+            // Bind favorite button
+            if (elements.favoriteBtn) {
+                elements.favoriteBtn.addEventListener('click', toggleFavorite);
+                // Check initial state
+                checkIsFavorite().then(isFav => {
+                    if (isFav) {
+                        elements.favoriteBtn.classList.add('active');
+                        elements.favoriteBtn.title = '取消追番';
+                    }
+                });
+            }
+
+            // ============================================
+            // Bangumi Info Functions
+            // ============================================
+
+            async function fetchBangumiInfo() {
+                const bangumiSection = document.getElementById('bangumiSection');
+                if (!bangumiSection) return;
+
+                try {
+                    const response = await fetch('/api/anime/' + animeId + '/bangumi');
+                    const data = await response.json();
+
+                    if (data.error) {
+                        // Show error state
+                        showBangumiError();
+                        return;
+                    }
+
+                    renderBangumiInfo(data);
+                } catch (error) {
+                    console.error('Failed to fetch Bangumi info:', error);
+                    showBangumiError();
+                }
+            }
+
+            function renderBangumiInfo(data) {
+                const bangumiSection = document.getElementById('bangumiSection');
+                if (!bangumiSection) return;
+
+                // Show the section
+                bangumiSection.style.display = 'block';
+
+                // Hide loading, show content
+                document.getElementById('bangumiLoading').style.display = 'none';
+
+                // Update header
+                const header = document.getElementById('bangumiHeader');
+                const ratingEl = document.getElementById('bangumiRating');
+                const rankEl = document.getElementById('bangumiRank');
+                const typeEl = document.getElementById('bangumiType');
+                const dateEl = document.getElementById('bangumiDate');
+
+                if (data.rating) {
+                    ratingEl.textContent = data.rating.toFixed(1);
+                }
+
+                if (data.rank) {
+                    rankEl.textContent = '#' + data.rank;
+                    rankEl.style.display = 'inline';
+                }
+
+                if (data.type) {
+                    typeEl.textContent = data.type;
+                }
+
+                if (data.date) {
+                    dateEl.textContent = data.date;
+                }
+
+                header.style.display = 'flex';
+
+                // Update genres
+                const genresContainer = document.getElementById('bangumiGenres');
+                if (data.genres && data.genres.length > 0) {
+                    genresContainer.innerHTML = data.genres.map(g =>
+                        '<span class="bangumi-genre">' + g + '</span>'
+                    ).join('');
+                    genresContainer.style.display = 'flex';
+                }
+
+                // Update summary
+                const summaryEl = document.getElementById('bangumiSummary');
+                if (data.summary) {
+                    summaryEl.textContent = data.summary;
+                    summaryEl.style.display = 'block';
+                }
+
+                // Update link
+                const linkEl = document.getElementById('bangumiLink');
+                if (data.subject_url) {
+                    linkEl.href = data.subject_url;
+                }
+            }
+
+            function showBangumiError() {
+                const bangumiSection = document.getElementById('bangumiSection');
+                if (!bangumiSection) return;
+
+                bangumiSection.style.display = 'block';
+                document.getElementById('bangumiLoading').style.display = 'none';
+                document.getElementById('bangumiError').style.display = 'block';
+            }
+
             // Initialize
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', fetchData);
+                document.addEventListener('DOMContentLoaded', () => {
+                    fetchData();
+                    fetchBangumiInfo();
+                });
             } else {
                 fetchData();
+                fetchBangumiInfo();
             }
         })();
     </script>
