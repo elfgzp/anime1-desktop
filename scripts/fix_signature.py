@@ -46,7 +46,45 @@ def remove_quarantine(app_path: Path) -> bool:
 
 def remove_signatures(app_path: Path) -> bool:
     """移除所有现有的代码签名"""
-    print(f"[2/2] Removing existing code signatures from {app_path}")
+    print(f"[2/3] Removing existing code signatures from {app_path}")
+
+    # 首先移除 Python.framework 内部的签名（关键步骤）
+    python_framework = app_path / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
+    if python_framework.exists():
+        # 移除 Python.framework 内部的 _CodeSignature
+        code_sig_dir = python_framework / "_CodeSignature"
+        if code_sig_dir.exists():
+            try:
+                shutil.rmtree(code_sig_dir)
+                print("  [OK] Removed Python.framework _CodeSignature")
+            except Exception as e:
+                print(f"  [WARN] Could not remove Python.framework _CodeSignature: {e}")
+
+        # 移除 Python 二进制文件的签名
+        python_binary = python_framework / "Python"
+        if python_binary.exists():
+            try:
+                subprocess.run(
+                    ["codesign", "--remove-signature", str(python_binary)],
+                    capture_output=True,
+                    text=True
+                )
+                print("  [OK] Removed Python binary signature")
+            except Exception as e:
+                print(f"  [WARN] Could not remove Python binary signature: {e}")
+
+        # 移除 libpython 相关的签名（如果有）
+        for lib_file in python_framework.glob("libpython*"):
+            if lib_file.is_file():
+                try:
+                    subprocess.run(
+                        ["codesign", "--remove-signature", str(lib_file)],
+                        capture_output=True,
+                        text=True
+                    )
+                    print(f"  [OK] Removed signature from {lib_file.name}")
+                except Exception:
+                    pass
 
     # 移除主应用的签名
     try:
