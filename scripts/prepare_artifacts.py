@@ -242,21 +242,37 @@ def package_macos(dist_dir: Path, output_dir: Path):
         print(ERROR_APP_NOT_FOUND.format(dist_dir=dist_dir))
         print(ERROR_FILES_IN_DIST.format(files=list(dist_dir.iterdir())))
         sys.exit(1)
-    
+
     # 检测架构
     arch = get_architecture()
     if arch == ARCH_ARM64:
         output_file = output_dir / OUTPUT_MACOS_ARM64
     else:
         output_file = output_dir / OUTPUT_MACOS_X64
-    
+
     print(MSG_DETECTED_ARCH.format(arch=arch))
     print()
 
+    # 复制修复脚本到 app 同级目录
+    script_dir = Path(__file__).parent
+    fix_script_src = script_dir / "fix_signature.sh"
+
+    # 创建临时修复脚本目录
+    temp_scripts_dir = dist_dir / "_fix_scripts"
+    if temp_scripts_dir.exists():
+        shutil.rmtree(temp_scripts_dir)
+    temp_scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    if fix_script_src.exists():
+        fix_script_dst = temp_scripts_dir / "fix_signature.command"
+        shutil.copy2(fix_script_src, fix_script_dst)
+        os.chmod(fix_script_dst, 0o755)
+        print(f"[INFO] Copied fix script to: {fix_script_dst}")
+    else:
+        print(f"[WARN] Fix script not found: {fix_script_src}")
+
     # 注意：不进行签名，因为 adhoc 签名有跨机器兼容性问题
-    # 用户可以通过 Homebrew 安装，或手动运行 xattr 修复
     print("[INFO] Skipping signature (adhoc signature has cross-machine compatibility issues)")
-    print("[INFO] Users can install via Homebrew or run xattr manually if needed")
     print()
 
     # 使用 create_dmg 脚本创建 DMG
@@ -264,7 +280,7 @@ def package_macos(dist_dir: Path, output_dir: Path):
     if not create_dmg_script.exists():
         print(ERROR_CREATE_DMG_NOT_FOUND.format(path=create_dmg_script))
         sys.exit(1)
-    
+
     import subprocess
     result = subprocess.run(
         [sys.executable, str(create_dmg_script), str(app_dir), str(output_file)],
