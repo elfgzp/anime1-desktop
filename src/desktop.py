@@ -378,20 +378,8 @@ def main():
             # Create webview window
             window_title = get_window_title()
 
-            # Get icon path based on platform
-            if sys.platform == "darwin":
-                icon_path = PROJECT_ROOT / "static" / "app.icns"
-                if not icon_path.exists():
-                    icon_path = PROJECT_ROOT / "static" / "favicon.png"
-            elif sys.platform == "win32":
-                icon_path = PROJECT_ROOT / "static" / "app.ico"
-                if not icon_path.exists():
-                    icon_path = PROJECT_ROOT / "static" / "favicon.png"
-            else:
-                icon_path = PROJECT_ROOT / "static" / "favicon.png"
-
-            # Convert Path to string for pywebview
-            icon_path_str = str(icon_path) if icon_path.exists() else None
+            # Note: pywebview 5.0 does not support icon parameter
+            # Icon is set at OS level via the executable's icon (PyInstaller icon)
 
             # Create JS API instance for anime1.pw handling
             js_api = WebviewApi()
@@ -405,7 +393,7 @@ def main():
                 background_color="#1a1a2e",  # 使用暗色主题背景色
                 confirm_close=False,  # 禁用关闭确认对话框
                 js_api=js_api,  # Expose API to JavaScript for anime1.pw handling
-                icon=icon_path_str,  # Window icon
+                # Note: icon parameter removed (not supported in pywebview 5.0)
                 # Apply webview settings for better video playback
                 **WEBVIEW_SETTINGS,
             )

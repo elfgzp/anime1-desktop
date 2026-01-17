@@ -101,8 +101,8 @@ Section "Main Application" SecMain
     ; Set output path
     SetOutPath "$INSTDIR"
 
-    ; Copy entire app directory
-    File /r "${SRCDIR}\\${APPDIR}"
+    ; Copy entire app directory contents directly to INSTDIR (not preserving subdirectory structure)
+    File /r "${SRCDIR}\\${APPDIR}\*.*"
 
     ; Check if app.ico exists
     IfFileExists "$INSTDIR\\app.ico" 0 SkipIcon
