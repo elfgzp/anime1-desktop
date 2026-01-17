@@ -33,13 +33,32 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
-echo "[1/2] 移除 quarantine 属性..."
+echo "[1/4] 移除 quarantine 属性..."
 echo "需要输入密码..."
 sudo xattr -r -d com.apple.quarantine "$APP_PATH"
 echo "  [OK] 完成"
 
 echo ""
-echo "[2/2] 重新签名应用..."
+echo "[2/4] 移除 Python.framework 内部的签名..."
+echo "需要输入密码..."
+# 移除 Python.framework 内部的 _CodeSignature 目录
+sudo rm -rf "$APP_PATH/Contents/Frameworks/Python.framework/Versions/3.11/_CodeSignature" 2>/dev/null || true
+# 移除 Python 二进制文件的签名
+sudo codesign --remove-signature "$APP_PATH/Contents/Frameworks/Python.framework/Versions/3.11/Python" 2>/dev/null || true
+# 移除 Python 相关的其他签名
+sudo rm -rf "$APP_PATH/Contents/Frameworks/Python.framework/Versions/3.11/libpython*" 2>/dev/null || true
+echo "  [OK] 完成"
+
+echo ""
+echo "[3/4] 移除主应用的 CodeSignature 目录..."
+echo "需要输入密码..."
+# 移除主应用的 CodeSignature
+sudo rm -rf "$APP_PATH/Contents/CodeSignature" 2>/dev/null || true
+sudo rm -rf "$APP_PATH/Contents/_CodeSignature" 2>/dev/null || true
+echo "  [OK] 完成"
+
+echo ""
+echo "[4/4] 重新签名应用..."
 echo "需要输入密码..."
 sudo codesign --force --sign - --options runtime --timestamp "$APP_PATH"
 echo "  [OK] 完成"
