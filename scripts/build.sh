@@ -8,6 +8,20 @@ PLATFORM="$1"
 
 echo "Building for platform: $PLATFORM"
 
+# 检测 Python 命令（Windows 上可能是 py 或 python）
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+elif command -v py &> /dev/null; then
+    PYTHON_CMD="py"
+else
+    echo "Error: Python not found"
+    exit 1
+fi
+
+echo "Using Python command: $PYTHON_CMD"
+
 # 构建前端
 echo "Building frontend..."
 if command -v npm &> /dev/null; then
@@ -16,10 +30,10 @@ if command -v npm &> /dev/null; then
     npm run build
     cd ..
     echo "Frontend build completed"
-    
+
     # 注入构建后的资源路径到模板
     echo "Injecting Vite assets into template..."
-    python3 scripts/inject-vite-assets.py || echo "Warning: Failed to inject assets (template may need manual update)"
+    $PYTHON_CMD scripts/inject-vite-assets.py || echo "Warning: Failed to inject assets (template may need manual update)"
 else
     echo "Warning: npm not found, skipping frontend build"
     echo "Make sure to run 'npm install && npm run build' in frontend/ directory first"
@@ -35,15 +49,15 @@ echo "Build version: $VERSION"
 case "$PLATFORM" in
     "Windows"|"windows-latest"|"windows")
         echo "Building Windows (onefile)..."
-        python build.py --clean --onefile
+        $PYTHON_CMD build.py --clean --onefile
         ;;
     "macOS"|"macos-latest"|"macos-12"|"macos")
         echo "Building macOS (onedir)..."
-        python build.py --clean
+        $PYTHON_CMD build.py --clean
         ;;
     "Linux"|"ubuntu-latest"|"linux")
         echo "Building Linux (onefile)..."
-        python build.py --clean --onefile
+        $PYTHON_CMD build.py --clean --onefile
         ;;
     *)
         echo "Unknown platform: $PLATFORM"
