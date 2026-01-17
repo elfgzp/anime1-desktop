@@ -74,42 +74,51 @@ def remove_all_signatures(app_path: Path) -> bool:
     """移除应用及其所有组件的现有签名"""
     print("[STEP 0] Removing existing signatures...")
 
-    # 先移除主应用的签名
+    removed_count = 0
+
+    # 递归移除所有框架和二进制文件的签名
+    import os
+    for root, dirs, files in os.walk(str(app_path)):
+        # 查找 CodeSignature 目录并删除
+        for d in dirs[:]:  # 使用副本遍历避免修改问题
+            if d == "CodeSignature":
+                code_sig_path = Path(root) / d
+                try:
+                    shutil.rmtree(code_sig_path)
+                    rel_path = code_sig_path.relative_to(app_path)
+                    print(f"  [OK] Removed CodeSignature: {rel_path}")
+                    removed_count += 1
+                except Exception as e:
+                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
+
+            # 查找 _CodeSignature 目录并删除（Python framework 使用这个）
+            if d == "_CodeSignature":
+                code_sig_path = Path(root) / d
+                try:
+                    shutil.rmtree(code_sig_path)
+                    rel_path = code_sig_path.relative_to(app_path)
+                    print(f"  [OK] Removed _CodeSignature: {rel_path}")
+                    removed_count += 1
+                except Exception as e:
+                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
+
+    # 移除主应用的签名
     try:
         result = subprocess.run(
             [CODESIGN_COMMAND, CODESIGN_REMOVE_SIGNATURE_FLAG, str(app_path)],
             capture_output=True, text=True
         )
         if result.returncode == 0:
-            print("  [OK] Removed main app signature")
+            print(f"  [OK] Removed main app signature")
+            removed_count += 1
+        elif "cannot find code" in result.stderr.lower() or "no signature" in result.stderr.lower():
+            print(f"  [INFO] App was not signed")
         else:
-            print(f"  [INFO] {result.stderr}")
+            print(f"  [WARN] {result.stderr[:100]}")
     except Exception as e:
         print(f"  [WARN] Could not remove main signature: {e}")
 
-    # 递归移除所有框架和二进制文件的签名
-    import os
-    for root, dirs, files in os.walk(str(app_path)):
-        # 查找 CodeSignature 目录并删除
-        for d in dirs:
-            if d == "CodeSignature":
-                code_sig_path = Path(root) / d
-                try:
-                    shutil.rmtree(code_sig_path)
-                    print(f"  [OK] Removed CodeSignature: {code_sig_path.relative_to(app_path)}")
-                except Exception as e:
-                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
-
-        # 查找 _CodeSignature 目录并删除（Python framework 使用这个）
-        for d in dirs:
-            if d == "_CodeSignature":
-                code_sig_path = Path(root) / d
-                try:
-                    shutil.rmtree(code_sig_path)
-                    print(f"  [OK] Removed _CodeSignature: {code_sig_path.relative_to(app_path)}")
-                except Exception as e:
-                    print(f"  [WARN] Could not remove {code_sig_path}: {e}")
-
+    print(f"  [OK] Removed {removed_count} signature(s)")
     return True
 
 

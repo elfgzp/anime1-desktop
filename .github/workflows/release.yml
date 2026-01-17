@@ -96,30 +96,24 @@ jobs:
       - name: Build application
         env:
           ANIME1_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Disable PyInstaller's automatic code signing (we'll do it ourselves)
-          export PYINST_SIGN_BINARY=no
-          bash scripts/build.sh "${{ runner.os }}"
+        run: bash scripts/build.sh "${{ runner.os }}"
         shell: bash
 
       - name: Sign macOS app (adhoc signature)
         if: runner.os == 'macOS'
         run: |
           if [ -d "dist/Anime1.app" ]; then
-            echo "=== Before signing ==="
-            codesign -dvvv --verbose=4 dist/Anime1.app 2>&1 | head -20 || true
-
-            echo ""
-            echo "=== Running sign_app.py ==="
             python scripts/sign_app.py dist/Anime1.app
 
+            # 验证签名
             echo ""
-            echo "=== After signing ==="
-            codesign -dvvv --verbose=4 dist/Anime1.app 2>&1 | head -20 || true
-
-            echo ""
-            echo "=== Verify signature ==="
-            codesign --verify --verbose=dist=deep dist/Anime1.app && echo "Signature verified!" || echo "Signature verification failed"
+            echo "=== Verifying signature ==="
+            if codesign --verify --verbose=deep dist/Anime1.app 2>&1; then
+              echo "✓ Signature verified successfully!"
+            else
+              echo "✗ Signature verification failed"
+              codesign -dvvv dist/Anime1.app 2>&1 | head -10
+            fi
           else
             echo "Warning: Anime1.app not found, skipping signature"
           fi
