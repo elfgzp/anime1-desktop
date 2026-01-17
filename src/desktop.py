@@ -304,24 +304,26 @@ def _toggle_maximize():
 def start_flask_server(port: int, debug: bool = False):
     """Start Flask server in a background thread."""
     import os
-    # Disable werkzeug reloader to avoid subprocess issues
-    os.environ['WERKZEUG_RUN_MAIN'] = 'disable'
+    # Completely disable werkzeug reloader subprocess
+    os.environ['WERKZEUG_RUN_MAIN'] = 'false'
 
     logger.info(f"Starting Flask server on port {port}...")
     app = create_app()
 
     # Configure Flask logging
     flask_logger = logging.getLogger('werkzeug')
-    flask_logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    flask_logger.setLevel(logging.ERROR)  # Suppress werkzeug info logs
 
-    # Disable reloader and use reloader_type to prevent subprocess spawning
+    # Use quiet mode - disable debug, reloader, and any subprocess spawning
     try:
+        # Use a simple threaded server without debug mode
         app.run(
             host="127.0.0.1",
             port=port,
-            debug=debug,
+            debug=False,  # Must be False to avoid reloader
             threaded=True,
             use_reloader=False,
+            extra_files=[],  # No extra files to watch
             reloader_type='stat',
         )
     except Exception as e:
@@ -380,12 +382,30 @@ def main():
     )
     server_thread.start()
 
-    # Give Flask a moment to start
-    time.sleep(0.5)
-    logger.info("Flask server thread started")
-
+    # Wait for Flask server to be ready
     url = f"http://127.0.0.1:{port}"
     logger.info(f"Web server URL: {url}")
+
+    # Test server connection
+    import socket
+    server_ready = False
+    for i in range(20):  # Wait up to 2 seconds
+        time.sleep(0.1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
+        try:
+            result = sock.connect_ex(('127.0.0.1', port))
+            if result == 0:
+                server_ready = True
+                logger.info("Flask server is ready")
+                break
+        except:
+            pass
+        finally:
+            sock.close()
+
+    if not server_ready:
+        logger.warning("Flask server may not be ready, continuing anyway...")
 
     if args.remote:
         # Open in system browser
