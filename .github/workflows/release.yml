@@ -27,7 +27,7 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    if: ${{ inputs.platform == '' || contains(matrix.os, inputs.platform) }}
+    if: ${{ inputs.platform == '' || matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +45,7 @@ jobs:
           # Apple Silicon Mac 可以通过 Rosetta 运行 x64 应用
           - os: macos-15-intel
             arch: x64
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
