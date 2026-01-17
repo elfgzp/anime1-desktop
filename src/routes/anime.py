@@ -21,6 +21,12 @@ from src.models.anime import Anime, AnimePage
 from src.parser.anime1_parser import Anime1Parser
 from src.parser.cover_finder import CoverFinder
 from src.utils.text_converter import get_search_variants
+from src.services.anime_cache_service import (
+    get_anime_map_cache,
+    get_cache_status,
+    refresh_cache_now,
+    force_refresh_cache,
+)
 from src import __version__
 
 logger = logging.getLogger(__name__)
@@ -41,12 +47,11 @@ def get_services() -> Tuple[Anime1Parser, CoverFinder]:
 
 
 def get_anime_map() -> dict:
-    """Get or create anime map from cache."""
-    global _anime_cache
-    if not _anime_cache:
-        parser, _ = get_services()
-        _anime_cache = parser.parse_page(1)
-    return {a.id: a for a in _anime_cache}
+    """Get or create anime map from cache.
+
+    Uses the centralized anime_cache_service for better performance.
+    """
+    return get_anime_map_cache()
 
 
 @anime_bp.route("/")
@@ -55,19 +60,22 @@ def get_anime_list():
 
     Query params:
         page: Page number (default: 1)
+
+    Uses pre-loaded cache for faster response.
     """
     page = request.args.get("page", 1, type=int)
 
-    parser, _ = get_services()
-    all_anime = parser.parse_page(page)
+    # Use cache service for faster response
+    all_anime = get_anime_map().values()
 
     # Calculate pagination
-    total_items = len(all_anime)
+    all_anime_list = list(all_anime)
+    total_items = len(all_anime_list)
     total_pages = (total_items + PAGE_SIZE - 1) // PAGE_SIZE
 
     start_idx = (page - 1) * PAGE_SIZE
     end_idx = start_idx + PAGE_SIZE
-    page_anime = all_anime[start_idx:end_idx]
+    page_anime = all_anime_list[start_idx:end_idx]
 
     anime_page = AnimePage.create(
         anime_list=page_anime,
@@ -80,11 +88,15 @@ def get_anime_list():
 
 @anime_bp.route("/<anime_id>")
 def get_anime_detail(anime_id: str):
-    """Get detailed info for a specific anime."""
+    """Get detailed info for a specific anime.
+
+    Uses cached anime list for faster lookup.
+    """
     parser, finder = get_services()
 
-    anime_list = parser.parse_page(1)
-    anime = next((a for a in anime_list if a.id == anime_id), None)
+    # Use cached anime map for faster lookup
+    anime_map = get_anime_map()
+    anime = anime_map.get(anime_id)
 
     if anime is None:
         return error_response(ERROR_ANIME_NOT_FOUND, 404)
@@ -113,20 +125,21 @@ def get_anime_episodes(anime_id: str):
 
     Special handling for anime1.pw domains (SSL issues):
         Returns a flag telling frontend to fetch via JavaScript
+
+    Uses cached anime list for faster lookup.
     """
     parser, finder = get_services()
 
     logger.info(f"[anime_id={anime_id}] 正在获取番剧详情")
 
-    anime_list = parser.parse_page(1)
-    logger.info(f"[anime_id={anime_id}] 解析到 {len(anime_list)} 个番剧")
-
-    anime = next((a for a in anime_list if a.id == anime_id), None)
+    # Use cached anime map for faster lookup
+    anime_map = get_anime_map()
+    anime = anime_map.get(anime_id)
     logger.info(f"[anime_id={anime_id}] 查找结果: {'找到' if anime else '未找到'}")
 
     if anime is None:
         # 尝试在更多页中查找
-        logger.warning(f"[anime_id={anime_id}] 未找到该番剧，detail_url 以 anime1.pw 结尾的条目数: {sum(1 for a in anime_list if 'anime1.pw' in a.detail_url)}")
+        logger.warning(f"[anime_id={anime_id}] 未找到该番剧，detail_url 以 anime1.pw 结尾的条目数: {sum(1 for a in anime_map.values() if 'anime1.pw' in a.detail_url)}")
         return error_response(ERROR_ANIME_NOT_FOUND, 404)
 
     # Special handling for anime1.pw (SSL issues - requires frontend fetch)
@@ -503,6 +516,51 @@ def search_anime():
     )
 
     return jsonify(anime_page.to_dict())
+
+
+@anime_bp.route("/cache/status")
+def cache_status():
+    """Get cache status information.
+
+    Returns:
+        JSON with cache status including anime count, cached covers, and last refresh time.
+    """
+    status = get_cache_status()
+    return jsonify(status)
+
+
+@anime_bp.route("/cache/refresh", methods=["POST"])
+def cache_refresh():
+    """Trigger an immediate cache refresh (non-blocking).
+
+    This checks for updates without blocking. Use /cache/force-refresh
+    for a blocking full refresh.
+
+    Returns:
+        JSON with success status.
+    """
+    if refresh_cache_now():
+        return jsonify({"success": True, "message": "Cache refresh triggered", "type": "background"})
+    return jsonify({"success": False, "message": "Cache service not running"})
+
+
+@anime_bp.route("/cache/force-refresh", methods=["POST"])
+def cache_force_refresh():
+    """Force a full cache refresh (blocking).
+
+    This will block until the refresh is complete and return the new count.
+
+    Returns:
+        JSON with success status and new anime count.
+    """
+    if force_refresh_cache():
+        status = get_cache_status()
+        return jsonify({
+            "success": True,
+            "message": "Cache force refresh complete",
+            "anime_count": status["anime_count"],
+        })
+    return jsonify({"success": False, "message": "Cache force refresh failed"})
 
 
 # Page routes (non-API)

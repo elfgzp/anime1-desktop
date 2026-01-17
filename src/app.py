@@ -142,6 +142,10 @@ def shutdown_services():
     from src.models.database import close_database
     close_database()
 
+    # Stop cache service
+    from src.services.anime_cache_service import stop_cache_service
+    stop_cache_service()
+
 
 def find_free_port(start_port: int = DEFAULT_PORT) -> int:
     """Find a free port starting from start_port."""
@@ -188,7 +192,57 @@ def print_banner(host: str, port: int):
     logger.info(banner)
 
 
+def setup_file_logging():
+    """Set up logging to file and console in app data directory."""
+    from src.utils.app_dir import get_app_data_dir
+
+    log_dir = get_app_data_dir() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "app.log"
+
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+
+    # Console handler - show INFO and above
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    # File handler - show DEBUG and above
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", errors="replace")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    # Only log from our application, not third-party libraries
+    # This prevents encoding issues from subprocess output
+    app_logger = logging.getLogger("src")
+    app_logger.addHandler(console_handler)
+    app_logger.addHandler(file_handler)
+    app_logger.setLevel(logging.DEBUG)
+
+    # Also add handler for root logger but filter to only ERROR and above for third-party
+    root_handler = logging.FileHandler(log_file, encoding="utf-8", errors="replace")
+    root_handler.setLevel(logging.ERROR)
+    root_handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(root_handler)
+
+    # Suppress noisy third-party library logs to console
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
+
+    return log_file
+
+
 def main():
+    # Set up file logging
+    log_file = setup_file_logging()
+    print(f"日志文件: {log_file}")
+
     parser = argparse.ArgumentParser(description="Anime1 Desktop App")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to run on")
     parser.add_argument("--host", default=DEFAULT_HOST, help="Host to bind to")
@@ -214,6 +268,10 @@ def main():
     app = create_app()
     # 设置开发模式（用于模板中判断是否使用 Vite dev server）
     app.config['DEV'] = args.dev
+
+    # Start cache service in background
+    from src.services.anime_cache_service import start_cache_service
+    start_cache_service()
 
     try:
         app.run(

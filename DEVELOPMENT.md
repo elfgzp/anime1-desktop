@@ -223,3 +223,41 @@ choco install nsis -y
 ### 构建失败
 - 确保 Node.js 版本 >= 16
 - 删除 `node_modules` 和 `package-lock.json` 后重新安装
+
+## 编码规范
+
+### Python
+
+1. **不要在函数内部导入模块** - 所有 `import` 和 `from ... import` 语句必须放在文件顶部
+   ```python
+   # 错误示范
+   def func():
+       import os
+       ...
+
+   # 正确示范
+   import os
+
+   def func():
+       ...
+   ```
+
+2. **使用常量代替魔法数字** - 将数字字面量定义为具名常量
+   ```python
+   # 错误示范
+   for i in range(5):
+       ...
+
+   # 正确示范
+   CONCURRENT_WORKERS = 5
+   for i in range(CONCURRENT_WORKERS):
+       ...
+   ```
+
+3. **使用常量定义路径和配置** - API 端点、文件路径等应放在 constants 目录
+
+### JavaScript/Vue
+
+1. **使用常量定义 API 端点** - 在 `frontend/src/constants/api.js` 中定义所有 API 路径
+2. **使用 Pinia/Vue 3 Composition API 进行状态管理**
+

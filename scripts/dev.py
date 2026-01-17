@@ -50,7 +50,10 @@ def check_dependencies():
         print("❌ 依赖检查失败:")
         for error in errors:
             print(f"  - {error}")
-        print("\n请先运行: make install")
+
+        # 根据操作系统显示不同的安装命令
+        install_cmd = "cd frontend && npm install" if sys.platform == "win32" else "make install"
+        print(f"\n请先运行: {install_cmd}")
         sys.exit(1)
 
     print("[OK] Dependency check passed")

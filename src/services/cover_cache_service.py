@@ -149,6 +149,14 @@ class CoverCacheService:
             logger.error(f"Error getting cache size: {e}")
         return -1
 
+    def get_cached_ids(self) -> set:
+        """Get all cached anime IDs.
+
+        Returns:
+            Set of anime IDs that have cached data.
+        """
+        return CoverCacheModel.get_all_ids()
+
 
 # Global service instance
 _cover_cache_service: Optional[CoverCacheService] = None

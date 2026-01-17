@@ -33,7 +33,8 @@ export const API_ENDPOINTS = {
     BASE: '/settings',
     THEME: '/settings/theme',
     ABOUT: '/settings/about',
-    CHECK_UPDATE: '/settings/check_update'
+    CHECK_UPDATE: '/settings/check_update',
+    LOGS_OPEN: '/settings/logs/open'
   },
   
   // 更新相关 API
