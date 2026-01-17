@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release (Test: fix/windows-encoding)
 
 on:
   push:
@@ -16,16 +16,18 @@ on:
         required: false
         default: false
         type: boolean
-      test_mode:
-        description: '测试模式：只构建一个平台（用于快速测试）'
+      platform:
+        description: '只构建指定平台（留空则构建所有平台）'
         required: false
-        default: false
-        type: boolean
+        default: ''
+        type: string
+        enum: ['', 'windows', 'macos', 'linux']
 
 jobs:
   build:
     name: Build on ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
+    if: ${{ inputs.platform == '' || contains(matrix.os, inputs.platform) }}
     strategy:
       fail-fast: false
       matrix:

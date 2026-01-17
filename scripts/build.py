@@ -241,15 +241,6 @@ def create_macos_dmg(app_path: Path, version: str):
             tmp_app_path = Path(tmpdir) / "Anime1.app"
             shutil.copytree(app_path, tmp_app_path)
 
-            # Create fix script for macOS
-            fix_script = Path(tmpdir) / "fix_permissions.sh"
-            fix_script.write_text('''#!/bin/bash
-# Fix macOS app permissions for cross-machine usage
-chmod -R u+w "$1/Contents/Resources" 2>/dev/null || true
-echo "Permissions fixed. You can now move Anime1.app to /Applications/"
-''')
-            fix_script.chmod(0o755)
-
             dmg_path = root / "release" / dmg_name
             dmg_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -259,9 +250,7 @@ echo "Permissions fixed. You can now move Anime1.app to /Applications/"
                 "--window-size", "500", "400",
                 "--icon-size", "100",
                 "--icon", "Anime1.app", "150", "150",
-                "--icon", "fix_permissions.sh", "350", "150",
-                "--hide-extension", "Anime1.app",
-                "--app-drop-link", "400", "150",
+                "--app-drop-link", "350", "150",
                 str(dmg_path),
                 str(tmpdir)
             ], capture_output=True, text=True)
@@ -604,15 +593,19 @@ def build_frontend(args) -> bool:
     try:
         # Install dependencies and build
         result = run_subprocess(["npm", "ci"], cwd=frontend_dir, check=False)
-        print(f"[DEBUG] npm ci stdout: {result.stdout[:500] if result.stdout else 'empty'}")
-        print(f"[DEBUG] npm ci stderr: {result.stderr[:500] if result.stderr else 'empty'}")
+        # Windows 控制台默认使用 GBK 编码，无法显示 emoji 等 Unicode 字符
+        # 只在非 Windows 系统打印详细输出
+        if sys.platform != "win32":
+            print(f"[DEBUG] npm ci stdout: {result.stdout[:500] if result.stdout else 'empty'}")
+            print(f"[DEBUG] npm ci stderr: {result.stderr[:500] if result.stderr else 'empty'}")
         if result.returncode != 0:
             print(f"[ERROR] npm ci failed (code={result.returncode})")
             return False
 
         result = run_subprocess(["npm", "run", "build"], cwd=frontend_dir, check=False)
-        print(f"[DEBUG] npm run build stdout: {result.stdout[:500] if result.stdout else 'empty'}")
-        print(f"[DEBUG] npm run build stderr: {result.stderr[:500] if result.stderr else 'empty'}")
+        if sys.platform != "win32":
+            print(f"[DEBUG] npm run build stdout: {result.stdout[:500] if result.stdout else 'empty'}")
+            print(f"[DEBUG] npm run build stderr: {result.stderr[:500] if result.stderr else 'empty'}")
         if result.returncode != 0:
             print(f"[ERROR] npm run build failed (code={result.returncode})")
             return False
@@ -704,9 +697,6 @@ def run_pyinstaller(args):
             cmd.extend(["--icon", icon_path])
 
     # macOS bundle identifier
-    if sys.platform == "darwin":
-        cmd.extend(["--osx-bundle-identifier", "com.anime1.app"])
-        cmd.extend(["--codesign-identity", "-"])
 
     # Hidden imports
     hidden_imports = [
