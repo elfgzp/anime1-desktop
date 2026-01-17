@@ -98,7 +98,7 @@
 
 收藏喜欢的番剧，方便快速访问。
 
-![我的追番](./screenshots/favorites-empty.png)
+![我的追番](./screenshots/favorites.png)
 
 **功能特点：**
 - 一键收藏/取消收藏
@@ -110,7 +110,7 @@
 
 记录观看历史，不再错过任何一集。
 
-![观看历史](./screenshots/history-empty.png)
+![观看历史](./screenshots/history.png)
 
 **功能特点：**
 - 自动记录观看进度
