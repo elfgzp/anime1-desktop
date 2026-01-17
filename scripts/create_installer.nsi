@@ -1,6 +1,9 @@
 ; Anime1 Desktop Windows Installer (NSIS)
 ; Simplified installer without MUI2
 
+; 压缩设置（必须放在最前面）
+SetCompressor /SOLID lzma
+
 !define APPNAME "Anime1"
 !define COMPANYNAME "Anime1"
 !define DESCRIPTION "Anime1 Desktop - 番剧浏览器"
@@ -17,9 +20,6 @@ InstallDir "${INSTDIR}"
 InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 ShowInstDetails show
 ShowUnInstDetails show
-
-; 压缩设置
-SetCompressor /SOLID lzma
 
 ; 版本信息
 VIProductVersion "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
