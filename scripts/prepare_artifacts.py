@@ -336,30 +336,38 @@ def package_macos(dist_dir: Path, output_dir: Path):
     else:
         print(f"  [WARN] Signing: {sign_result.stderr}")
 
-    # 验证签名 - 检查是否有未签名的 Mach-O 文件
-    print("[INFO] Verifying signatures...")
+    # 验证签名 - 只检查 Mach-O 二进制文件（不需要检查 plist、resources 等）
+    print("[INFO] Verifying Mach-O binary signatures...")
     python_framework = app_dir / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
     if python_framework.exists():
-        unsigned_files = []
+        unsigned_binaries = []
         for file in python_framework.rglob("*"):
             if file.is_file():
+                # 只检查 Mach-O 可执行文件
                 try:
                     result = subprocess.run(
-                        ["codesign", "--verify", "--verbose=1", str(file)],
+                        ["file", str(file)],
                         capture_output=True,
                         text=True
                     )
-                    if result.returncode != 0:
-                        unsigned_files.append(str(file.relative_to(python_framework)))
+                    if "Mach-O" in result.stdout:
+                        # 这是一个 Mach-O 文件，检查签名
+                        verify_result = subprocess.run(
+                            ["codesign", "--verify", str(file)],
+                            capture_output=True,
+                            text=True
+                        )
+                        if verify_result.returncode != 0:
+                            unsigned_binaries.append(str(file.relative_to(python_framework)))
                 except Exception:
                     pass
 
-        if unsigned_files:
-            print(f"  [WARN] Found {len(unsigned_files)} unsigned files:")
-            for f in unsigned_files[:5]:  # 只显示前5个
+        if unsigned_binaries:
+            print(f"  [WARN] Found {len(unsigned_binaries)} unsigned Mach-O binaries:")
+            for f in unsigned_binaries[:5]:
                 print(f"    - {f}")
         else:
-            print("  [OK] All files in Python.framework are signed")
+            print("  [OK] All Mach-O binaries in Python.framework are signed")
 
     # 使用 create_dmg 脚本创建 DMG
     create_dmg_script = Path(__file__).parent / SCRIPT_CREATE_DMG
