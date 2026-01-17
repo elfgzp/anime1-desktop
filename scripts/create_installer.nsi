@@ -1,4 +1,5 @@
 ; Anime1 Desktop Windows Installer (NSIS)
+; Simplified installer without MUI2
 
 !define APPNAME "Anime1"
 !define COMPANYNAME "Anime1"
@@ -6,15 +7,9 @@
 !define VERSIONMAJOR 0
 !define VERSIONMINOR 1
 !define INSTALLSIZE 120000
-
-; 安装目录
 !define INSTDIR "$PROGRAMFILES\${APPNAME}"
 
-; MUI settings
-!include "MUI2.nsh"
-!include "WinVer.nsh"
-
-; 安装程序名称
+; 基础设置
 Name "${APPNAME}"
 Caption "${APPNAME} v${VERSIONMAJOR}.${VERSIONMINOR} - 安装向导"
 OutFile "release\anime1-windows-x64-setup.exe"
@@ -22,6 +17,9 @@ InstallDir "${INSTDIR}"
 InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 ShowInstDetails show
 ShowUnInstDetails show
+
+; 压缩设置
+SetCompressor /SOLID lzma
 
 ; 版本信息
 VIProductVersion "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
@@ -47,11 +45,19 @@ Function .onInit
         MessageBox MB_OK|MB_ICONSTOP "此程序需要 Windows Vista 或更高版本。"
         Quit
     ${EndIf}
-
-    ; 设置压缩
-    SetCompressor /SOLID lzma
-
 FunctionEnd
+
+; ----------------------------------------------
+; 安装页面
+
+Page directory
+Page instfiles
+
+; ----------------------------------------------
+; 卸载页面
+
+UninstPage uninstConfirm
+UninstPage instfiles
 
 ; ----------------------------------------------
 ; 安装部分
@@ -59,26 +65,20 @@ FunctionEnd
 Section "Main Application" SecMain
     SectionIn RO
 
-    SetDetailsPrint textonly
-
-    ; 创建安装目录
-    CreateDirectory "$INSTDIR"
-
-    DetailPrint "正在安装主程序文件..."
+    ; 设置输出路径
+    SetOutPath "$INSTDIR"
 
     ; 复制整个应用目录
-    SetOutPath "$INSTDIR"
     File /r "dist\anime1\*.*"
 
-    ; 检查 app.ico 是否存在，不存在则使用内置默认图标
+    ; 检查 app.ico 是否存在
     IfFileExists "$INSTDIR\app.ico" 0 SkipIcon
 
-    ; 创建开始菜单快捷方式（带图标）
+    ; 有图标时创建快捷方式
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
     CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
     CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
-
-    Goto DoneShortcuts
+    Goto AfterShortcuts
 
 SkipIcon:
     ; 没有图标时创建快捷方式
@@ -86,7 +86,7 @@ SkipIcon:
     CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\Anime1.exe"
     CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe"
 
-DoneShortcuts:
+AfterShortcuts:
 
     ; 创建卸载程序
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -119,9 +119,7 @@ DoneShortcuts:
     WriteRegStr HKLM "Software\${COMPANYNAME}\${APPNAME}" \
                      "Version" "${VERSIONMAJOR}.${VERSIONMINOR}"
 
-    SetDetailsPrint both
-    DetailPrint ""
-    DetailPrint "安装完成！"
+    ; 完成
     SetAutoClose true
 
 SectionEnd
@@ -141,25 +139,6 @@ Section "Uninstall"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
     DeleteRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}"
 
-    SetDetailsPrint both
-    DetailPrint ""
-    DetailPrint "卸载完成！感谢使用 ${APPNAME}。"
+    SetAutoClose true
 
 SectionEnd
-
-; ----------------------------------------------
-; 页面（必须在 MUI_LANGUAGE 之前）
-
-!insertmacro MUI_PAGE_FINISH
-
-UninstPage uninstConfirm
-UninstPage uninstFinished
-
-; ----------------------------------------------
-; 界面语言（必须在页面之后）
-
-!insertmacro MUI_LANGUAGE "SimpChinese"
-!insertmacro MUI_LANGUAGE "English"
-
-; ----------------------------------------------
-; 安装脚本结束
