@@ -184,7 +184,7 @@ dmg: build
 		echo "Install with: brew install create-dmg"; \
 		exit 1; \
 	fi
-	@if [ -d "$(DIST_DIR)/anime1-cover.app" ]; then \
+	@if [ -d "$(DIST_DIR)/Anime1.app" ]; then \
 		echo "Creating DMG..."; \
 		create-dmg \
 			--volname "Anime1 Cover Browser" \
@@ -193,10 +193,10 @@ dmg: build
 			--window-size 600 400 \
 			--app-drop-link 400 200 \
 			"$(DIST_DIR)/Anime1 Cover Browser.dmg" \
-			"$(DIST_DIR)/anime1-cover.app"; \
+			"$(DIST_DIR)/Anime1.app"; \
 		echo "DMG created: $(DIST_DIR)/Anime1 Cover Browser.dmg"; \
 	else \
-		echo "Error: anime1-cover.app not found. Run 'make build' first."; \
+		echo "Error: Anime1.app not found. Run 'make build' first."; \
 	fi
 
 # Install create-dmg (macOS only)
