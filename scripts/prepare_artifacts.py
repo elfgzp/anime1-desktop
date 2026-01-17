@@ -275,7 +275,7 @@ def remove_python_framework_signatures(app_path: Path):
             print(f"  [OK] Removed signature from {lib_file.name}")
 
     # 4. 移除其他可能有签名的二进制文件
-    for lib_file in python_framework.glob("lib/*.so") + python_framework.glob("lib/*.dylib"):
+    for lib_file in list(python_framework.glob("lib/*.so")) + list(python_framework.glob("lib/*.dylib")):
         if lib_file.is_file():
             subprocess.run(
                 ["codesign", "--remove-signature", str(lib_file)],
