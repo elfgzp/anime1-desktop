@@ -1,6 +1,9 @@
 ; Anime1 Desktop Windows Installer (NSIS)
 ; Simplified installer without MUI2
 
+; 包含 Windows 版本检查宏
+!include WinVer.nsh
+
 ; 压缩设置（必须放在最前面）
 SetCompressor /SOLID lzma
 
