@@ -561,6 +561,10 @@ def build_frontend(args) -> bool:
     frontend_dir = root / "frontend"
     dist_dir = root / "static" / "dist"
 
+    print(f"[DEBUG] Project root: {root}")
+    print(f"[DEBUG] Frontend dir: {frontend_dir}")
+    print(f"[DEBUG] Expected dist dir: {dist_dir}")
+
     # Check if npm is available
     try:
         result = run_subprocess(["npm", "--version"], timeout=5, check=False)
@@ -585,22 +589,39 @@ def build_frontend(args) -> bool:
     try:
         # Install dependencies and build
         result = run_subprocess(["npm", "ci"], cwd=frontend_dir, check=False)
+        print(f"[DEBUG] npm ci stdout: {result.stdout[:500] if result.stdout else 'empty'}")
+        print(f"[DEBUG] npm ci stderr: {result.stderr[:500] if result.stderr else 'empty'}")
         if result.returncode != 0:
-            print(f"[ERROR] npm ci failed: {result.stderr}")
+            print(f"[ERROR] npm ci failed (code={result.returncode})")
             return False
 
         result = run_subprocess(["npm", "run", "build"], cwd=frontend_dir, check=False)
+        print(f"[DEBUG] npm run build stdout: {result.stdout[:500] if result.stdout else 'empty'}")
+        print(f"[DEBUG] npm run build stderr: {result.stderr[:500] if result.stderr else 'empty'}")
         if result.returncode != 0:
-            print(f"[ERROR] npm run build failed: {result.stderr}")
+            print(f"[ERROR] npm run build failed (code={result.returncode})")
             return False
 
-        # Check if build output exists
-        if not dist_dir.exists():
-            print("[ERROR] Frontend build completed but output directory not found")
-            return False
+        # Check if build output exists, and find/move it if needed
+        frontend_dist = frontend_dir / "dist"
+        print(f"[DEBUG] Checking frontend/dist: {frontend_dist.exists()}")
+        print(f"[DEBUG] Checking static/dist: {dist_dir.exists()}")
 
-        print(f"[BUILD] Frontend built successfully to {dist_dir}")
-        return True
+        if dist_dir.exists():
+            print(f"[BUILD] Frontend built successfully to {dist_dir}")
+            return True
+        elif frontend_dist.exists():
+            # Vite built to frontend/dist, move it to static/dist
+            print(f"[DEBUG] Moving frontend/dist to static/dist...")
+            if dist_dir.exists():
+                shutil.rmtree(dist_dir)
+            dist_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(frontend_dist), str(dist_dir))
+            print(f"[BUILD] Frontend built and moved to {dist_dir}")
+            return True
+        else:
+            print(f"[ERROR] Frontend build completed but output directory not found")
+            return False
 
     except subprocess.TimeoutExpired:
         print("[ERROR] Frontend build timed out")
