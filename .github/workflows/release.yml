@@ -88,8 +88,10 @@ jobs:
       - name: Extract version for release
         id: version
         run: |
-          eval $(bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}")
+          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
+          source /tmp/version_vars.sh
           echo "version=$version" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Build application
         env:
@@ -159,9 +161,11 @@ jobs:
       - name: Extract tag name
         id: tag
         run: |
-          eval $(bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}")
+          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
+          source /tmp/version_vars.sh
           echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
           echo "version=$version" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Extract changelog
         id: changelog
