@@ -11,12 +11,8 @@
 ; 安装目录
 !define INSTDIR "$PROGRAMFILES\${APPNAME}"
 
-; 授权文件
-!define LICENSEFILE "LICENSE"
-
-;  MUI settings
+; MUI settings
 !include "MUI2.nsh"
-!include "FileFunc.nsh"
 !include "WinVer.nsh"
 
 ; 界面设置
@@ -46,12 +42,8 @@ VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2024 ${COMPANYNAME}. 
 
 ; ----------------------------------------------
 ; 界面语言
-!insertmacro MUI_LANGUAGE " SimpChinese"
-!insertmacro MUI_LANGUAGE " English"
-
-; 安装日志
-LogSet on
-LogText "Starting ${APPNAME} installation..."
+!insertmacro MUI_LANGUAGE "SimpChinese"
+!insertmacro MUI_LANGUAGE "English"
 
 ; ----------------------------------------------
 ; 安装前检查
@@ -71,9 +63,6 @@ Function .onInit
         Quit
     ${EndIf}
 
-    ; 初始化安装目录
-    SetOutPath $INSTDIR
-
     ; 设置压缩
     SetCompressor /SOLID lzma
 
@@ -90,43 +79,18 @@ Section "Main Application" SecMain
 
     ; 创建安装目录
     CreateDirectory "$INSTDIR"
-    CreateDirectory "$INSTDIR\resources"
-    CreateDirectory "$INSTDIR\static"
-    CreateDirectory "$INSTDIR\templates"
-    CreateDirectory "$INSTDIR\src"
 
     DetailPrint "正在安装主程序文件..."
 
-    ; 复制应用文件
-    SetOutPath $INSTDIR
-
-    ; 复制所有文件
-    File /r "dist\Anime1\*.*"
-
-    ; 复制资源目录
-    SetOutPath $INSTDIR\resources
-    File /r "resources\*.*"
-
-    ; 复制静态文件
-    SetOutPath $INSTDIR\static
-    File /r "static\*.*"
-
-    ; 复制模板文件
-    SetOutPath $INSTDIR\templates
-    File /r "templates\*.*"
-
-    ; 复制源代码（可选，用于调试）
-    SetOutPath $INSTDIR\src
-    File /r "src\*.*"
-
-    ; 恢复安装目录
-    SetOutPath $INSTDIR
+    ; 复制整个应用目录
+    SetOutPath "$INSTDIR"
+    File /r "dist\anime1\*.*"
 
     ; 创建开始菜单快捷方式
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
     CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
 
-    ; 创建桌面快捷方式（可选，用户可选择）
+    ; 创建桌面快捷方式（可选）
     CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
 
     ; 创建卸载程序
@@ -165,17 +129,8 @@ Section "Main Application" SecMain
     DetailPrint ""
     DetailPrint "安装完成！"
     DetailPrint ""
-
-    ; 显示完成页面
     SetAutoClose true
 
-SectionEnd
-
-; ----------------------------------------------
-; 可选功能
-
-Section /o "创建桌面快捷方式"
-    CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\Anime1.exe" "" "$INSTDIR\app.ico" 0
 SectionEnd
 
 ; ----------------------------------------------
@@ -188,24 +143,9 @@ Section "Uninstall"
     RMDir "$SMPROGRAMS\${APPNAME}"
     Delete "$DESKTOP\${APPNAME}.lnk"
 
-    ; 移除安装目录
-    Delete "$INSTDIR\Uninstall.exe"
-    Delete "$INSTDIR\Anime1.exe"
-    Delete "$INSTDIR\*.dll"
-    Delete "$INSTDIR\*.pyc"
-    Delete "$INSTDIR\anime1.log"
-    Delete "$INSTDIR\app.ico"
-
-    ; 移除子目录
-    RMDir /r "$INSTDIR\resources"
-    RMDir /r "$INSTDIR\static"
-    RMDir /r "$INSTDIR\templates"
-    RMDir /r "$INSTDIR\src"
-    RMDir /r "$INSTDIR\_internal"
-    RMDir /r "$INSTDIR\locale"
-
-    ; 移除安装目录
-    RMDir "$INSTDIR"
+    ; 移除安装目录下的所有文件
+    Delete "$INSTDIR\*.*"
+    RMDir /r "$INSTDIR"
 
     ; 移除注册表项
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
@@ -216,7 +156,6 @@ Section "Uninstall"
     DetailPrint ""
     DetailPrint "卸载完成！"
     DetailPrint "感谢使用 ${APPNAME}。"
-    DetailPrint ""
 
 SectionEnd
 
