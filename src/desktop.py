@@ -12,15 +12,25 @@ from datetime import datetime
 # Configure logging
 def setup_logging():
     """Setup logging to file and console."""
-    # Determine log path
+    import os
+
+    # Determine log path - use APPDATA for installed app (has write permissions)
     if getattr(sys, 'frozen', False):
         # Running as frozen executable
         app_dir = Path(sys.executable).parent
+        # Try APPDATA first for installed app (has write permissions in Program Files)
+        appdata_dir = os.environ.get('APPDATA')
+        if appdata_dir:
+            log_file = Path(appdata_dir) / "Anime1" / "anime1.log"
+        else:
+            log_file = app_dir / "anime1.log"
     else:
         # Running as normal Python script
         app_dir = Path(__file__).parent.parent
+        log_file = app_dir / "anime1.log"
 
-    log_file = app_dir / "anime1.log"
+    # Create log directory if needed
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Create formatter
     formatter = logging.Formatter(
@@ -29,12 +39,13 @@ def setup_logging():
     )
 
     # File handler
+    file_handler = None
     try:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.DEBUG)
     except Exception as e:
-        print(f"[WARN] Could not create log file: {e}")
+        print(f"[WARN] Could not create log file at {log_file}: {e}")
         file_handler = None
 
     # Console handler (for debugging)

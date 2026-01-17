@@ -38,7 +38,7 @@ def download_static_resources():
 
     STATIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Static resources to cache
+    # Static resources to cache (only download if not exists to speed up startup)
     resources = {
         "videojs.bundle.js": "https://sta.anicdn.com/videojs.bundle.js?ver=8",
     }
@@ -46,23 +46,23 @@ def download_static_resources():
     for filename, url in resources.items():
         filepath = STATIC_CACHE_DIR / filename
         try:
-            print(f"Checking {filename}...")
-            response = requests.get(url, timeout=60, allow_redirects=True)
+            # Skip if already exists (speed up startup)
+            if filepath.exists() and filepath.stat().st_size > 0:
+                continue
+
+            print(f"Downloading {filename}...")
+            response = requests.get(url, timeout=10, allow_redirects=True)
             response.raise_for_status()
 
-            content_changed = True
-            if filepath.exists():
-                existing_content = filepath.read_bytes()
-                if existing_content == response.content:
-                    print(f"  {filename} unchanged, skipping")
-                    content_changed = False
-
-            if content_changed:
+            if response.content:
                 filepath.write_bytes(response.content)
                 print(f"  Downloaded {filename} ({len(response.content)} bytes)")
+            else:
+                print(f"  Empty response for {filename}")
 
         except Exception as e:
             print(f"  Failed to download {filename}: {e}")
+            # Continue anyway - the resource might be served from elsewhere
 
 
 def create_app() -> Flask:
