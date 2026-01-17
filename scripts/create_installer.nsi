@@ -29,9 +29,6 @@ InstallDirRegKey HKLM "Software\${COMPANYNAME}\${APPNAME}" "InstallDir"
 ShowInstDetails show
 ShowUnInstDetails show
 
-; 静默安装选项
-!include "Quiet.nsh"
-
 ; 版本信息
 VIProductVersion "${VERSIONMAJOR}.${VERSIONMINOR}.0.0"
 VIAddVersionKey /LANG=2052 "ProductName" "${APPNAME}"
