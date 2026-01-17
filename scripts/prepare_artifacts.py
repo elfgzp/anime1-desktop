@@ -154,22 +154,57 @@ def find_app_dir(dist_dir: Path) -> Path | None:
     return None
 
 
+def find_windows_dir(dist_dir: Path) -> Path | None:
+    """查找 Windows 构建目录（onedir 模式）"""
+    # 尝试查找 anime1 或 Anime1 目录
+    candidates = [
+        dist_dir / f"{APP_NAME_LOWER}",  # anime1
+        dist_dir / f"{APP_NAME_UPPER}",  # Anime1
+    ]
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            # 检查目录下是否有可执行文件
+            exe_files = list(candidate.glob(f"*{EXT_EXE}"))
+            if exe_files:
+                return candidate
+
+    return None
+
+
 def package_windows(dist_dir: Path, output_dir: Path):
     """打包 Windows 构建产物"""
-    exe_file = find_exe_file(dist_dir)
-    if not exe_file:
-        print(ERROR_NO_EXE_FOUND.format(dist_dir=dist_dir))
-        print(ERROR_FILES_IN_DIST.format(files=list(dist_dir.iterdir())))
-        sys.exit(1)
+    # 先尝试找目录（onedir 模式）
+    windows_dir = find_windows_dir(dist_dir)
 
-    # 打包 zip（便携版）
-    output_file = output_dir / OUTPUT_WINDOWS_X64
-    with zipfile.ZipFile(output_file, ZIP_MODE_WRITE, ZIP_COMPRESSION_DEFLATED) as zf:
-        zf.write(exe_file, exe_file.name)
+    if windows_dir:
+        # 打包整个目录（便携版）
+        output_file = output_dir / OUTPUT_WINDOWS_X64
+        with zipfile.ZipFile(output_file, ZIP_MODE_WRITE, ZIP_COMPRESSION_DEFLATED) as zf:
+            for file in windows_dir.rglob("*"):
+                if file.is_file():
+                    arcname = str(file.relative_to(dist_dir))
+                    zf.write(file, arcname)
 
-    size_mb = output_file.stat().st_size / BYTES_PER_MB
-    print(MSG_WINDOWS_PACKAGED.format(output_file=output_file))
-    print(MSG_SIZE_MB.format(size=size_mb))
+        size_mb = output_file.stat().st_size / BYTES_PER_MB
+        print(MSG_WINDOWS_PACKAGED.format(output_file=output_file))
+        print(MSG_SIZE_MB.format(size=size_mb))
+    else:
+        # 回退到 onefile 模式（单个 exe）
+        exe_file = find_exe_file(dist_dir)
+        if not exe_file:
+            print(ERROR_NO_EXE_FOUND.format(dist_dir=dist_dir))
+            print(ERROR_FILES_IN_DIST.format(files=list(dist_dir.iterdir())))
+            sys.exit(1)
+
+        # 打包 exe（便携版）
+        output_file = output_dir / OUTPUT_WINDOWS_X64
+        with zipfile.ZipFile(output_file, ZIP_MODE_WRITE, ZIP_COMPRESSION_DEFLATED) as zf:
+            zf.write(exe_file, exe_file.name)
+
+        size_mb = output_file.stat().st_size / BYTES_PER_MB
+        print(MSG_WINDOWS_PACKAGED.format(output_file=output_file))
+        print(MSG_SIZE_MB.format(size=size_mb))
 
     # 检查是否有安装包
     installer_file = output_dir / OUTPUT_WINDOWS_INSTALLER

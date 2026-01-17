@@ -181,8 +181,9 @@ def run_pyinstaller(args):
         print("[BUILD] Mode: CLI (browser-based)")
     else:
         entry_point = str(root / "src" / "desktop.py")
+        # 统一使用 Anime1 作为目录名（跨平台一致）
         cmd.extend(["--name=Anime1", entry_point])
-        print(f"[BUILD] App name: {app_name}")
+        print(f"[BUILD] App name: Anime1")
 
     # Icon for macOS and Windows
     icon_path = get_icon_path(root)
