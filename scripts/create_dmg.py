@@ -77,6 +77,7 @@ def create_dmg(app_path: Path, output_path: Path, app_name: str = "Anime1") -> b
     print(f"  Using: {create_dmg_cmd}")
 
     cmd = [
+        create_dmg_cmd,
         '--volname', app_name,
         '--window-pos', '200', '120',
         '--window-size', '800', '500',
