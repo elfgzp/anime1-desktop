@@ -253,8 +253,8 @@ def remove_code_signature_from_macho(filename):
             print(f"    [WARN] File too small to be valid Mach-O")
             return False
 
-        offset = 0
         # 解析 mach_header_64 (32 bytes)
+        offset = 0
         magic = struct.unpack('<I', data[offset:offset+4])[0]
         offset += 4
         cputype = struct.unpack('<I', data[offset:offset+4])[0]
@@ -286,7 +286,7 @@ def remove_code_signature_from_macho(filename):
                 'cmd': cmd,
                 'cmdsize': cmdsize,
                 'offset': cmd_offset,
-                'data': data[cmd_offset:cmd_offset+cmdsize]
+                'data': bytearray(data[cmd_offset:cmd_offset+cmdsize])
             })
             cmd_offset += cmdsize
 
@@ -312,6 +312,26 @@ def remove_code_signature_from_macho(filename):
         new_cmds = [c for c in cmds if c['cmd'] != 0x1d]
         new_ncmds = len(new_cmds)
         new_sizeofcmds = sum(c['cmdsize'] for c in new_cmds)
+
+        # 更新 __LINKEDIT segment 的 filesize
+        # LC_SEGMENT_64 = 0x19 (25)
+        for cmd in new_cmds:
+            if cmd['cmd'] == 0x19:  # LC_SEGMENT_64
+                # segment_command_64 结构:
+                # offset 0-15: segname[16]
+                # offset 16-23: vmaddr
+                # offset 24-31: vmsize
+                # offset 32-39: fileoff (我们不修改)
+                # offset 40-47: filesize (需要更新)
+                segname = cmd['data'][:16]
+                if b'__LINKEDIT' in segname or segname.startswith(b'__LINKEDIT\x00'):
+                    # 计算新的 filesize = 签名数据偏移量 - 原始 fileoff
+                    old_filesize = struct.unpack('<Q', cmd['data'][40:48])[0]
+                    fileoff = struct.unpack('<Q', cmd['data'][32:40])[0]
+                    new_filesize = sig_data_off - fileoff
+                    print(f"    [OK] Updating __LINKEDIT filesize: {old_filesize} -> {new_filesize}")
+                    struct.pack_into('<Q', cmd['data'], 40, new_filesize)
+                    break
 
         # 重建文件
         new_data = bytearray()
@@ -341,6 +361,8 @@ def remove_code_signature_from_macho(filename):
 
     except Exception as e:
         print(f"    [WARN] Failed to remove signature: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
