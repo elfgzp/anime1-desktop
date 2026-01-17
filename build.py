@@ -89,14 +89,30 @@ def clean_dist():
 
 def get_icon_path(root: Path) -> str:
     """Get icon path for current platform."""
-    # Check for .icns file first (macOS)
-    icns_path = root / "static" / "app.icns"
-    if icns_path.exists():
-        return str(icns_path)
-    # Fallback to PNG
-    png_path = root / "static" / "favicon.png"
-    if png_path.exists():
-        return str(png_path)
+    # Check for platform-specific icons first
+    if sys.platform == "darwin":
+        # macOS: Check for .icns file first
+        icns_path = root / "static" / "app.icns"
+        if icns_path.exists():
+            return str(icns_path)
+        # Fallback to PNG (will be converted to ICNS later)
+        png_path = root / "static" / "favicon.png"
+        if png_path.exists():
+            return str(png_path)
+    elif sys.platform == "win32":
+        # Windows: Check for .ico file
+        ico_path = root / "static" / "app.ico"
+        if ico_path.exists():
+            return str(ico_path)
+        # Fallback to PNG
+        png_path = root / "static" / "favicon.png"
+        if png_path.exists():
+            return str(png_path)
+    else:
+        # Linux: Use PNG
+        png_path = root / "static" / "favicon.png"
+        if png_path.exists():
+            return str(png_path)
     return ""
 
 
@@ -168,11 +184,15 @@ def run_pyinstaller(args):
         cmd.extend(["--name=Anime1", entry_point])
         print(f"[BUILD] App name: {app_name}")
 
-    # Icon for macOS
+    # Icon for macOS and Windows
     icon_path = get_icon_path(root)
-    if icon_path and sys.platform == "darwin" and not args.onefile:
-        cmd.extend(["--icon", icon_path])
-        print(f"[BUILD] Icon: {icon_path}")
+    if icon_path:
+        if sys.platform == "darwin" and not args.onefile:
+            cmd.extend(["--icon", icon_path])
+            print(f"[BUILD] macOS Icon: {icon_path}")
+        elif sys.platform == "win32":
+            cmd.extend(["--icon", icon_path])
+            print(f"[BUILD] Windows Icon: {icon_path}")
 
     # Custom Info.plist for macOS (to set proper menu bar name)
     plist_path = get_plist_path(root)
