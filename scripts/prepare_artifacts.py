@@ -250,39 +250,37 @@ def remove_python_framework_signatures(app_path: Path):
         print("  [INFO] No Python.framework found, skipping")
         return
 
-    # 1. 移除 _CodeSignature 目录
-    code_sig_dir = python_framework / "_CodeSignature"
-    if code_sig_dir.exists():
-        shutil.rmtree(code_sig_dir)
-        print("  [OK] Removed _CodeSignature directory")
+    # 1. 递归移除所有 _CodeSignature 目录
+    for code_sig_dir in python_framework.rglob("_CodeSignature"):
+        if code_sig_dir.is_dir():
+            shutil.rmtree(code_sig_dir)
+            print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
 
-    # 2. 移除 Python 二进制文件的签名
-    python_binary = python_framework / "Python"
-    if python_binary.exists():
-        subprocess.run(
-            ["codesign", "--remove-signature", str(python_binary)],
-            capture_output=True
-        )
-        print("  [OK] Removed Python binary signature")
+    # 2. 递归移除所有 CodeSignature 目录
+    for code_sig_dir in python_framework.rglob("CodeSignature"):
+        if code_sig_dir.is_dir():
+            shutil.rmtree(code_sig_dir)
+            print(f"  [OK] Removed {code_sig_dir.relative_to(python_framework)}")
 
-    # 3. 移除 libpython*.dylib 的签名
-    for lib_file in python_framework.glob("libpython*.dylib"):
-        if lib_file.is_file():
-            subprocess.run(
-                ["codesign", "--remove-signature", str(lib_file)],
-                capture_output=True
-            )
-            print(f"  [OK] Removed signature from {lib_file.name}")
+    # 3. 使用 codesign --remove-signature 移除所有二进制文件的签名
+    for binary_file in python_framework.rglob("*"):
+        if binary_file.is_file():
+            # 检查是否是 Mach-O 文件
+            try:
+                result = subprocess.run(
+                    ["file", str(binary_file)],
+                    capture_output=True,
+                    text=True
+                )
+                if "Mach-O" in result.stdout:
+                    subprocess.run(
+                        ["codesign", "--remove-signature", str(binary_file)],
+                        capture_output=True
+                    )
+            except Exception:
+                pass
 
-    # 4. 移除其他可能有签名的二进制文件
-    for lib_file in list(python_framework.glob("lib/*.so")) + list(python_framework.glob("lib/*.dylib")):
-        if lib_file.is_file():
-            subprocess.run(
-                ["codesign", "--remove-signature", str(lib_file)],
-                capture_output=True
-            )
-
-    print("  [OK] Python.framework signatures cleaned")
+    print("  [OK] All Python.framework signatures removed")
 
 
 def package_macos(dist_dir: Path, output_dir: Path):
@@ -337,6 +335,31 @@ def package_macos(dist_dir: Path, output_dir: Path):
         print("  [OK] App signed successfully")
     else:
         print(f"  [WARN] Signing: {sign_result.stderr}")
+
+    # 验证签名 - 检查是否有未签名的 Mach-O 文件
+    print("[INFO] Verifying signatures...")
+    python_framework = app_dir / "Contents" / "Frameworks" / "Python.framework" / "Versions" / "3.11"
+    if python_framework.exists():
+        unsigned_files = []
+        for file in python_framework.rglob("*"):
+            if file.is_file():
+                try:
+                    result = subprocess.run(
+                        ["codesign", "--verify", "--verbose=1", str(file)],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        unsigned_files.append(str(file.relative_to(python_framework)))
+                except Exception:
+                    pass
+
+        if unsigned_files:
+            print(f"  [WARN] Found {len(unsigned_files)} unsigned files:")
+            for f in unsigned_files[:5]:  # 只显示前5个
+                print(f"    - {f}")
+        else:
+            print("  [OK] All files in Python.framework are signed")
 
     # 使用 create_dmg 脚本创建 DMG
     create_dmg_script = Path(__file__).parent / SCRIPT_CREATE_DMG
