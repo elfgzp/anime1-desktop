@@ -58,7 +58,7 @@ def run_nsis():
 
 
 def find_build_dir(dist_dir: Path):
-    """Find the Windows build directory."""
+    """Find the Windows build directory or executable."""
     # 尝试多个可能的目录名
     candidates = [
         dist_dir / "anime1",  # onedir 模式（小写）
@@ -71,6 +71,17 @@ def find_build_dir(dist_dir: Path):
             exe_files = list(candidate.glob("*.exe"))
             if exe_files:
                 return candidate
+
+    # 检查是否是 onefile 模式（单个 exe 文件）
+    exe_candidates = [
+        dist_dir / "anime1.exe",
+        dist_dir / "Anime1.exe",
+    ]
+
+    for exe in exe_candidates:
+        if exe.exists() and exe.is_file():
+            # onefile 模式：返回父目录作为虚拟 app_dir
+            return dist_dir
 
     return None
 
@@ -91,6 +102,36 @@ def prepare_files():
         return False
 
     print(f"[OK] Found build directory: {app_dir}")
+
+    # Check if we have a onefile build (single exe in dist dir)
+    exe_file = DIST_DIR / "anime1.exe"
+    if exe_file.exists() and app_dir == DIST_DIR:
+        print("[INFO] Detected onefile build, preparing directory structure...")
+
+        # Create anime1 directory structure for installer
+        anime1_dir = DIST_DIR / "anime1"
+        anime1_dir.mkdir(exist_ok=True)
+
+        # Copy exe and other required files
+        import shutil
+        shutil.copy2(exe_file, anime1_dir / "Anime1.exe")
+
+        # Copy any other files from dist (like pyd files, etc.)
+        for item in DIST_DIR.iterdir():
+            if item.is_file() and item.suffix not in ['.exe']:
+                try:
+                    shutil.copy2(item, anime1_dir / item.name)
+                except Exception as e:
+                    print(f"[WARN] Could not copy {item.name}: {e}")
+
+        # Check for _internal directory (PyInstaller onefile extracts here)
+        internal_dir = DIST_DIR / "_internal"
+        if internal_dir.exists():
+            print(f"[INFO] Copying _internal directory...")
+            shutil.copytree(internal_dir, anime1_dir / "_internal",
+                           dirs_exist_ok=True)
+
+        print(f"[OK] Prepared directory structure: {anime1_dir}")
 
     # Ensure release directory exists
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
