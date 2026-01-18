@@ -56,12 +56,19 @@ def get_size(path: Path) -> str:
 # ============ Version Functions ============
 
 def extract_version() -> str:
-    """Extract version from git tag or commit id."""
+    """Extract version from git tag or commit id.
+
+    Priority:
+    1. If on a release tag (not on a dev commit), use the tag version
+    2. Otherwise, use dev-{commit_id} format for development builds
+    """
     root = get_project_root()
 
+    # First, check if we're exactly on a release tag
+    # This means git describe --tags --exact-match succeeds
     try:
         result = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"],
+            ["git", "describe", "--tags", "--exact-match"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -69,12 +76,15 @@ def extract_version() -> str:
             check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
+            # We're on a release tag, use this version
             tag = result.stdout.strip()
             version = tag.lstrip('vV')
+            print(f"[BUILD] Using release tag version: {version}")
             return version
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
 
+    # If not on a release tag, use dev-{commit_id}
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -86,10 +96,13 @@ def extract_version() -> str:
         )
         if result.returncode == 0 and result.stdout.strip():
             commit_id = result.stdout.strip()
-            return f"dev-{commit_id}"
+            version = f"dev-{commit_id}"
+            print(f"[BUILD] Using dev version: {version}")
+            return version
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
 
+    print("[BUILD] Using fallback version: dev")
     return "dev"
 
 
