@@ -58,9 +58,6 @@ COPY src/ ./src/
 # 从构建阶段复制前端产物
 COPY --from=frontend-builder /app/frontend/dist ./static/dist/
 
-# 复制静态文件模板
-COPY static/templates/ ./static/templates/
-
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

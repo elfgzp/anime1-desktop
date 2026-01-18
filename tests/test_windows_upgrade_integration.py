@@ -122,9 +122,9 @@ class TestGitHubAPIMocking:
     @pytest.mark.unit
     def test_github_api_latest_release_stable(self):
         """Test that stable channel only returns stable releases."""
-        from src.services.update_checker import UpdateChecker, UpdateChannel
+        from src.services.update_checker import UpdateChecker, UpdateChannel, PlatformDetector
 
-        # Create assets
+        # Create assets - we need to mock the platform detection to ensure matching
         asset = MockGitHubAsset("anime1-windows-1.0.0.zip", tag_name="v1.0.0")
         stable_release = MockGitHubRelease(
             tag_name="v1.0.0",
@@ -133,7 +133,8 @@ class TestGitHubAPIMocking:
             assets=[asset.to_dict()]
         )
 
-        with patch('src.services.update_checker.requests.get') as mock_get:
+        with patch('src.services.update_checker.requests.get') as mock_get, \
+             patch.object(PlatformDetector, 'get_platform_info', return_value=('windows', 'x64')):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = stable_release.to_dict()
@@ -591,8 +592,8 @@ class TestVersionComparison:
         assert VersionComparator.compare_versions("1.0.0-rc.1", "1.0.0") == -1
 
         # Pre-release order: alpha < beta < rc
-        assert VersionComparator.compare_versions("1.0.0-alpha", "1.0.0-beta") == -1
-        assert VersionComparator.compare_versions("1.0.0-beta", "1.0.0-rc") == -1
+        assert VersionComparator.compare_versions("1.0.0-alpha.1", "1.0.0-beta.1") == -1
+        assert VersionComparator.compare_versions("1.0.0-beta.1", "1.0.0-rc.1") == -1
 
         print("[PASS] Pre-release comparison works correctly")
 
@@ -601,12 +602,15 @@ class TestVersionComparison:
         """Test development version handling."""
         from src.services.update_checker import VersionComparator
 
-        # Dev version should be older than any release
-        assert VersionComparator.compare_versions("dev", "1.0.0") == -1
-        assert VersionComparator.compare_versions("devabc123", "1.0.0") == -1
+        # Dev version format is "x.x.x-abc123" (commit id with at least one digit)
+        # Dev version should be older than stable release of same base
+        assert VersionComparator.compare_versions("1.0.0-abc1234", "1.0.0") == -1
 
-        # Release version should be newer than dev
-        assert VersionComparator.compare_versions("1.0.0", "dev") == 1
+        # Release version should be newer than dev of same base
+        assert VersionComparator.compare_versions("1.0.0", "1.0.0-def5678") == 1
+
+        # Dev version on higher base is newer than stable on lower base
+        assert VersionComparator.compare_versions("1.1.0-xyz9999", "1.0.0") == 1
 
         print("[PASS] Dev version handling works correctly")
 

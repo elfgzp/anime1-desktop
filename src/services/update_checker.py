@@ -154,19 +154,20 @@ class VersionComparator:
         pre_release_extra = None
 
         if pre_release:
+            # First check for known pre-release patterns: rc, beta, alpha
+            # Match patterns like "rc.1", "beta.2", "alpha.3", "rc", "beta", "alpha"
+            match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
+            if match:
+                pre_release_type = match.group(1)
+                pre_release_extra = match.group(2) or str(DEFAULT_VERSION_COMPONENT)
             # Check for dev version: commit id format (e.g., "abc123", "xyz456")
             # Dev versions are identified by having a commit id after the base version
             # Format: "x.x.x-abc123" where abc123 is a git short commit id (4-40 alphanumeric chars)
             # Git short commit ids are typically 7 chars but can be 4-40
-            if re.match(r'^[0-9a-z]{4,40}$', pre_release, re.IGNORECASE):
+            # Must contain at least one digit to distinguish from words like "alpha", "beta"
+            elif re.match(r'^[0-9a-z]{4,40}$', pre_release, re.IGNORECASE) and re.search(r'\d', pre_release):
                 pre_release_type = PRE_RELEASE_DEV
                 pre_release_extra = pre_release
-            else:
-                # Match patterns like "rc.1", "beta.2", "alpha.3"
-                match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
-                if match:
-                    pre_release_type = match.group(1)
-                    pre_release_extra = match.group(2) or str(DEFAULT_VERSION_COMPONENT)
 
         return version_numbers, pre_release_type, pre_release_extra
 
