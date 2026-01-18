@@ -97,46 +97,48 @@ class UpdateInfo:
 
 
 class VersionComparator:
-    """Semantic version comparator supporting pre-release versions."""
-    
-    # Development version prefix (from git describe --tags without tag)
+    """Semantic version comparator supporting pre-release versions.
+
+    Version format support:
+    - Release: "1.0.0", "0.2.0"
+    - Pre-release: "1.0.0-rc.1", "1.0.0-beta.2", "1.0.0-alpha.3"
+    - Dev version: "1.0.0-dev-abc123" (development build based on 1.0.0)
+
+    Comparison order (oldest to newest):
+    - 1.0.0-dev-abc123 (dev version on 1.0.0)
+    - 1.0.0 (release)
+    - 1.0.0-rc.1 (pre-release on next version)
+    - 1.0.1-dev-xyz456 (dev version on 1.0.1)
+    - 1.0.1 (release)
+    """
+
+    # Development version prefix
     VERSION_DEV_PREFIX = "dev"
 
     @staticmethod
-    def parse_version(version_str: str) -> Tuple[List[int], Optional[str], Optional[int]]:
+    def parse_version(version_str: str) -> Tuple[List[int], Optional[str], Optional[str]]:
         """Parse version string into components.
 
         Args:
-            version_str: Version string like "1.0.0", "1.0.0-rc.1", or "abc123" (dev commit)
+            version_str: Version string like "1.0.0", "1.0.0-rc.1", or "1.0.0-dev-abc123"
 
         Returns:
-            Tuple of (version_numbers, pre_release_type, pre_release_number)
-            Example: ("1.0.0") -> ([1, 0, 0], None, None)
-                     ("1.0.0-rc.1") -> ([1, 0, 0], "rc", 1)
-                     ("abc123") -> ([0, 0, 0], "dev", 0)  # Dev versions are oldest
+            Tuple of (version_numbers, pre_release_type, pre_release_extra)
+            - version_numbers: List of version components [major, minor, patch]
+            - pre_release_type: Pre-release type (e.g., "rc", "beta", "alpha", "dev")
+            - pre_release_extra: Additional info (e.g., number for rc/beta/alpha, commit id for dev)
+
+            Example:
+            - ("1.0.0") -> ([1, 0, 0], None, None)
+            - ("1.0.0-rc.1") -> ([1, 0, 0], "rc", "1")
+            - ("1.0.0-dev-abc123") -> ([1, 0, 0], "dev", "abc123")
         """
+        import re
+
         # Remove 'v' prefix if present
         version_str = version_str.lstrip(VERSION_PREFIXES)
 
-        def is_dev_version(s: str) -> bool:
-            """Check if this is a development version (commit id or non-standard format)."""
-            if s.startswith(VersionComparator.VERSION_DEV_PREFIX):
-                return True
-            # Check if it's a standard version (num.num.num or num.num.num-prerelease)
-            # Standard versions only contain digits, dots, and prerelease identifiers
-            import re
-            # Match patterns like: 1.0.0, 1.0, 1.0.0-rc.1, 1.0.0-beta.2
-            standard_pattern = r'^\d+(\.\d+)*(-(rc|beta|alpha)\.?(\d+)?)?$'
-            return not bool(re.match(standard_pattern, s, re.IGNORECASE))
-
-        # Check for dev/development version (e.g., commit id like "abc123" or "devabc123")
-        # These are development builds without a proper version tag
-        if is_dev_version(version_str):
-            # This is a development version, treat it as older than any release
-            # Return (0, 0, 0) with "dev" pre-release to ensure it's less than any stable version
-            return [0, 0, 0], PRE_RELEASE_DEV, 0
-
-        # Split version and pre-release
+        # Split version and pre-release (only split on first "-")
         parts = version_str.split(VERSION_SEPARATOR, 1)
         base_version = parts[0]
         pre_release = parts[1] if len(parts) > 1 else None
@@ -149,67 +151,84 @@ class VersionComparator:
 
         # Parse pre-release if present
         pre_release_type = None
-        pre_release_number = None
+        pre_release_extra = None
 
         if pre_release:
-            # Match patterns like "rc.1", "beta.2", "alpha.3"
-            match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
-            if match:
-                pre_release_type = match.group(1)
-                pre_release_number = int(match.group(2)) if match.group(2) else DEFAULT_VERSION_COMPONENT
+            # Check for dev version: "dev-abc123"
+            if pre_release.lower().startswith(VERSION_DEV_PREFIX + VERSION_SEPARATOR):
+                pre_release_type = PRE_RELEASE_DEV
+                pre_release_extra = pre_release[len(PRE_RELEASE_DEV) + 1:]  # After "dev-"
+            else:
+                # Match patterns like "rc.1", "beta.2", "alpha.3"
+                match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
+                if match:
+                    pre_release_type = match.group(1)
+                    pre_release_extra = match.group(2) or str(DEFAULT_VERSION_COMPONENT)
 
-        return version_numbers, pre_release_type, pre_release_number
-    
+        return version_numbers, pre_release_type, pre_release_extra
+
     @staticmethod
     def compare_versions(version1: str, version2: str) -> int:
         """Compare two version strings.
-        
+
+        Version comparison rules:
+        1. Compare base version numbers first (major.minor.patch)
+        2. If base versions are equal:
+           - Stable release > Dev version > Pre-release (rc/beta/alpha)
+           - Pre-release order: alpha < beta < rc
+
         Args:
             version1: First version string
             version2: Second version string
-            
+
         Returns:
             -1 if version1 < version2
             0 if version1 == version2
             1 if version1 > version2
         """
-        v1_nums, v1_pre, v1_pre_num = VersionComparator.parse_version(version1)
-        v2_nums, v2_pre, v2_pre_num = VersionComparator.parse_version(version2)
-        
+        v1_nums, v1_pre, v1_extra = VersionComparator.parse_version(version1)
+        v2_nums, v2_pre, v2_extra = VersionComparator.parse_version(version2)
+
         # Compare base version numbers
         for i in range(VERSION_COMPONENT_COUNT):
             if v1_nums[i] < v2_nums[i]:
                 return -1
             elif v1_nums[i] > v2_nums[i]:
                 return 1
-        
-        # If base versions are equal, compare pre-release
-        # Stable version (no pre-release) > pre-release version
-        if v1_pre is None and v2_pre is None:
-            return 0
-        elif v1_pre is None:
-            return 1  # v1 is stable, v2 is pre-release
-        elif v2_pre is None:
-            return -1  # v1 is pre-release, v2 is stable
-        
-        # Both are pre-release, compare type and number
-        # Order: alpha < beta < rc
-        v1_order = PRE_RELEASE_ORDER.get(v1_pre, DEFAULT_VERSION_COMPONENT)
-        v2_order = PRE_RELEASE_ORDER.get(v2_pre, DEFAULT_VERSION_COMPONENT)
-        
+
+        # Base versions are equal, compare pre-release types
+        # Order: dev < alpha < beta < rc < None (stable)
+        pre_release_order = {
+            PRE_RELEASE_DEV: 0,
+            PRE_RELEASE_ALPHA: 1,
+            PRE_RELEASE_BETA: 2,
+            PRE_RELEASE_RC: 3,
+            None: 4,  # Stable release is highest
+        }
+
+        v1_order = pre_release_order.get(v1_pre, 5)  # 5 = unknown, treated as lowest
+        v2_order = pre_release_order.get(v2_pre, 5)
+
         if v1_order < v2_order:
             return -1
         elif v1_order > v2_order:
             return 1
-        
-        # Same pre-release type, compare numbers
-        if v1_pre_num < v2_pre_num:
-            return -1
-        elif v1_pre_num > v2_pre_num:
-            return 1
-        
+
+        # Same pre-release type, compare numbers (for rc/alpha/beta)
+        if v1_pre in (PRE_RELEASE_ALPHA, PRE_RELEASE_BETA, PRE_RELEASE_RC):
+            try:
+                v1_num = int(v1_extra) if v1_extra else 0
+                v2_num = int(v2_extra) if v2_extra else 0
+                if v1_num < v2_num:
+                    return -1
+                elif v1_num > v2_num:
+                    return 1
+            except (ValueError, TypeError):
+                pass
+
+        # For dev versions, we don't compare commit ids (they're all considered equal)
         return 0
-    
+
     @staticmethod
     def is_prerelease(version_str: str) -> bool:
         """Check if version is a pre-release version.

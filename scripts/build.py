@@ -59,13 +59,32 @@ def extract_version() -> str:
     """Extract version from git tag or commit id.
 
     Priority:
-    1. If on a release tag (not on a dev commit), use the tag version
-    2. Otherwise, use dev-{commit_id} format for development builds
+    1. If on a release tag (not on a dev commit), use the tag version (e.g., "0.2.0")
+    2. Otherwise, use base_version-dev-{commit_id} format (e.g., "0.2.0-dev-abc123")
+
+    This ensures dev versions are correctly compared against release versions:
+    - v0.2.0-dev-abc123 < v0.2.0 < v0.2.1-dev-xyz456
     """
     root = get_project_root()
 
-    # First, check if we're exactly on a release tag
-    # This means git describe --tags --exact-match succeeds
+    # First, get the base version from the latest tag
+    base_version = "0.0.0"
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            tag = result.stdout.strip()
+            base_version = tag.lstrip('vV')
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        pass
+
+    # Check if we're exactly on a release tag
     try:
         result = subprocess.run(
             ["git", "describe", "--tags", "--exact-match"],
@@ -84,7 +103,7 @@ def extract_version() -> str:
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
 
-    # If not on a release tag, use dev-{commit_id}
+    # If not on a release tag, use base_version-dev-{commit_id}
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -96,14 +115,14 @@ def extract_version() -> str:
         )
         if result.returncode == 0 and result.stdout.strip():
             commit_id = result.stdout.strip()
-            version = f"dev-{commit_id}"
+            version = f"{base_version}-dev-{commit_id}"
             print(f"[BUILD] Using dev version: {version}")
             return version
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
 
-    print("[BUILD] Using fallback version: dev")
-    return "dev"
+    print("[BUILD] Using fallback version: 0.0.0-dev")
+    return "0.0.0-dev"
 
 
 # ============ Icon Generation ============
