@@ -685,7 +685,7 @@ def run_pyinstaller(args):
     print(f"[BUILD] Version: {version}")
 
     # Create version file
-    version_file = root / "src" / "_version.txt"
+    version_file = root / "src" / "version.txt"
     version_file.write_text(version, encoding='utf-8')
 
     # Generate icons before build

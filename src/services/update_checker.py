@@ -29,6 +29,7 @@ from .constants import (
     PRE_RELEASE_ALPHA,
     PRE_RELEASE_BETA,
     PRE_RELEASE_RC,
+    PRE_RELEASE_DEV,
     PRE_RELEASE_ORDER,
     PRE_RELEASE_PATTERN,
     GITHUB_API_BASE,
@@ -98,43 +99,65 @@ class UpdateInfo:
 class VersionComparator:
     """Semantic version comparator supporting pre-release versions."""
     
+    # Development version prefix (from git describe --tags without tag)
+    VERSION_DEV_PREFIX = "dev"
+
     @staticmethod
     def parse_version(version_str: str) -> Tuple[List[int], Optional[str], Optional[int]]:
         """Parse version string into components.
-        
+
         Args:
-            version_str: Version string like "1.0.0" or "1.0.0-rc.1"
-            
+            version_str: Version string like "1.0.0", "1.0.0-rc.1", or "abc123" (dev commit)
+
         Returns:
             Tuple of (version_numbers, pre_release_type, pre_release_number)
             Example: ("1.0.0") -> ([1, 0, 0], None, None)
                      ("1.0.0-rc.1") -> ([1, 0, 0], "rc", 1)
+                     ("abc123") -> ([0, 0, 0], "dev", 0)  # Dev versions are oldest
         """
         # Remove 'v' prefix if present
         version_str = version_str.lstrip(VERSION_PREFIXES)
-        
+
+        def is_dev_version(s: str) -> bool:
+            """Check if this is a development version (commit id or non-standard format)."""
+            if s.startswith(VersionComparator.VERSION_DEV_PREFIX):
+                return True
+            # Check if it's a standard version (num.num.num or num.num.num-prerelease)
+            # Standard versions only contain digits, dots, and prerelease identifiers
+            import re
+            # Match patterns like: 1.0.0, 1.0, 1.0.0-rc.1, 1.0.0-beta.2
+            standard_pattern = r'^\d+(\.\d+)*(-(rc|beta|alpha)\.?(\d+)?)?$'
+            return not bool(re.match(standard_pattern, s, re.IGNORECASE))
+
+        # Check for dev/development version (e.g., commit id like "abc123" or "devabc123")
+        # These are development builds without a proper version tag
+        if is_dev_version(version_str):
+            # This is a development version, treat it as older than any release
+            # Return (0, 0, 0) with "dev" pre-release to ensure it's less than any stable version
+            return [0, 0, 0], PRE_RELEASE_DEV, 0
+
         # Split version and pre-release
         parts = version_str.split(VERSION_SEPARATOR, 1)
         base_version = parts[0]
         pre_release = parts[1] if len(parts) > 1 else None
-        
+
         # Parse base version (MAJOR.MINOR.PATCH)
         version_numbers = [int(x) for x in base_version.split('.')]
         # Ensure we have at least 3 components
         while len(version_numbers) < VERSION_COMPONENT_COUNT:
             version_numbers.append(DEFAULT_VERSION_COMPONENT)
-        
+
         # Parse pre-release if present
         pre_release_type = None
         pre_release_number = None
-        
+
         if pre_release:
             # Match patterns like "rc.1", "beta.2", "alpha.3"
             match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
             if match:
                 pre_release_type = match.group(1)
                 pre_release_number = int(match.group(2)) if match.group(2) else DEFAULT_VERSION_COMPONENT
-        
+
         return version_numbers, pre_release_type, pre_release_number
     
     @staticmethod
