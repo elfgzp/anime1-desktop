@@ -419,6 +419,10 @@ def proxy_video_stream():
                 headers=response_headers,
             )
 
+        except requests.exceptions.ChunkedEncodingError as e:
+            # 连接在流式传输过程中被中断，这通常是上游服务器的问题
+            logger.error(f"[proxy/video-stream] 流式传输连接被中断: {e}")
+            return jsonify({KEY_ERROR: "视频流连接中断，请重试"}), 503
         except requests.RequestException as e:
             logger.error(f"[proxy/video-stream] 获取视频失败: {e}")
             return jsonify({KEY_ERROR: str(e)}), 500
@@ -490,6 +494,10 @@ def proxy_video_stream():
             },
         )
 
+    except requests.exceptions.ChunkedEncodingError as e:
+        # 连接在流式传输过程中被中断，这通常是上游服务器的问题
+        logger.error(f"[proxy/video-stream] POST流式传输连接被中断: {e}")
+        return jsonify({KEY_ERROR: "视频流连接中断，请重试"}), 503
     except requests.RequestException as e:
         logger.error(f"[proxy/video-stream] POST请求失败: {e}")
         return jsonify({KEY_ERROR: str(e)}), 500
