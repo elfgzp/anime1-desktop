@@ -380,33 +380,42 @@ def open_logs_folder():
 
 @settings_bp.route("/update/download", methods=["POST"])
 def download_update():
-    """Download the update installer.
+    """Download and optionally auto-install the update.
 
     Request body:
-        url: Download URL for the update installer
+        url: Download URL for the update (required)
+        auto_install: Whether to auto-install after download (optional, default: false)
 
     Returns:
-        Path to the downloaded file.
+        Path to the downloaded file or install result.
     """
     try:
         import requests
         import uuid
-        from src.utils.app_dir import get_download_dir
+        import zipfile
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
 
-        data = request.get_json()
-        url = data.get("url") if data else None
+        from src.utils.app_dir import get_download_dir, get_install_dir
+
+        data = request.get_json() or {}
+        url = data.get("url")
+        auto_install = data.get("auto_install", False)
 
         if not url:
             return error_response("url is required", 400)
 
-        # Get download directory
-        download_dir = get_download_dir()
-
         # Get filename from URL
         filename = url.split("/")[-1].split("?")[0]
         if not filename:
-            filename = f"anime1_update_{uuid.uuid4().hex[:8]}.pkg"
+            filename = f"anime1_update_{uuid.uuid4().hex[:8]}.zip"
 
+        # Get download directory
+        download_dir = get_download_dir()
+        download_dir.mkdir(parents=True, exist_ok=True)
         file_path = download_dir / filename
 
         # Download the file
@@ -415,9 +424,7 @@ def download_update():
         response = requests.get(url, stream=True, timeout=300)
         response.raise_for_status()
 
-        total_size = int(response.headers.get('content-length', 0))
         downloaded_size = 0
-
         with open(file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
@@ -426,19 +433,158 @@ def download_update():
 
         logger.info(f"Downloaded {downloaded_size} bytes to {file_path}")
 
-        return success_response(
-            message="下载完成",
-            data={
-                "file_path": str(file_path),
-                "file_size": downloaded_size,
-                "open_path": str(file_path)  # Path to open the file
-            }
-        )
+        if auto_install:
+            # Auto-install mode
+            logger.info(f"Auto-installing update from {file_path}")
+
+            install_dir = get_install_dir()
+            logger.info(f"Installation directory: {install_dir}")
+
+            if sys.platform == 'win32':
+                # Windows: Create a batch file that handles the update after app exits
+                # This is necessary because Windows doesn't allow replacing running files
+
+                # Create a temp directory for the updater
+                temp_dir = Path(tempfile.mkdtemp(prefix='anime1_update_'))
+                updater_batch = temp_dir / 'update.bat'
+                zip_copy = temp_dir / file_path.name
+
+                # Copy the zip to temp location
+                shutil.copy2(file_path, zip_copy)
+
+                # Get the executable path
+                exe_path = Path(sys.executable)
+
+                # Create batch file content
+                batch_content = f'''@echo off
+timeout /t 3 /nobreak >nul
+echo 正在安装更新...
+"{sys.executable}" -c "import zipfile; import shutil; import sys; zf=zipfile.ZipFile(r'{zip_copy}'); zf.extractall(r'{install_dir}'); import os; os.remove(r'{zip_copy}'); os.rmdir(r'{temp_dir}')"
+if exist r"{exe_path}" start "" "{exe_path}"
+del "%~f0"
+'''
+                updater_batch.write_text(batch_content, encoding='utf-8')
+
+                logger.info(f"Created updater batch at {updater_batch}")
+
+                # Clean up the original download
+                file_path.unlink()
+
+                # Return info that app needs to restart
+                return success_response(
+                    message="更新已准备就绪，正在重启应用...",
+                    data={
+                        "success": True,
+                        "restarting": True,
+                        "updater_path": str(updater_batch)
+                    }
+                )
+            else:
+                # Non-Windows: Direct update and restart
+                # Create backup of current installation
+                backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                logger.info(f"Creating backup at {backup_dir}")
+                try:
+                    shutil.copytree(install_dir, backup_dir)
+                    backup_created = True
+                except Exception as e:
+                    logger.warning(f"Could not create backup: {e}")
+                    backup_created = False
+
+                # Extract new version
+                try:
+                    with zipfile.ZipFile(file_path, 'r') as zf:
+                        zf.extractall(install_dir)
+                    logger.info(f"Extracted update to {install_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to extract update: {e}")
+                    # Restore from backup if extraction failed
+                    if backup_created and backup_dir.exists():
+                        logger.info("Restoring from backup...")
+                        shutil.rmtree(install_dir)
+                        shutil.copytree(backup_dir, install_dir)
+                        shutil.rmtree(backup_dir)
+                    return error_response(f"安装失败: {str(e)}", 500)
+
+                # Clean up backup if extraction succeeded
+                if backup_created and backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+
+                # Clean up downloaded file
+                file_path.unlink()
+
+                # Restart the application
+                exe_path = Path(sys.executable)
+                logger.info(f"Restarting application: {exe_path}")
+                subprocess.Popen([str(exe_path)], cwd=str(install_dir))
+
+                return success_response(
+                    message="更新完成，正在重启...",
+                    data={
+                        "success": True,
+                        "restarting": True
+                    }
+                )
+        else:
+            # Manual mode: just download and let user handle it
+            return success_response(
+                message="下载完成",
+                data={
+                    "file_path": str(file_path),
+                    "file_size": downloaded_size,
+                    "open_path": str(file_path)
+                }
+            )
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Error downloading update: {e}")
         return error_response(f"下载失败: {str(e)}", 500)
     except Exception as e:
         logger.error(f"Error downloading update: {e}")
+        return error_response(str(e), 500)
+
+
+@settings_bp.route("/update/run-updater", methods=["POST"])
+def run_updater():
+    """Run the updater batch file and exit the application.
+
+    This is used on Windows to run the updater after the app has exited.
+
+    Request body:
+        updater_path: Path to the updater batch file
+
+    Returns:
+        Success message (app will exit after this).
+    """
+    try:
+        import os
+        import subprocess
+        import sys
+
+        data = request.get_json() or {}
+        updater_path = data.get("updater_path")
+
+        if not updater_path:
+            return error_response("updater_path is required", 400)
+
+        updater = Path(updater_path)
+        if not updater.exists():
+            return error_response(f"Updater not found: {updater_path}", 404)
+
+        logger.info(f"Running updater: {updater}")
+
+        # Run the updater and exit
+        if sys.platform == 'win32':
+            subprocess.Popen(['cmd', '/c', str(updater)], detached=True, creationflags=subprocess.DETACHED_PROCESS)
+        else:
+            subprocess.Popen([str(updater)], detached=True)
+
+        # Exit the application
+        logger.info("Exiting application for update...")
+        sys.exit(0)
+
+    except Exception as e:
+        logger.error(f"Error running updater: {e}")
         return error_response(str(e), 500)
 
 

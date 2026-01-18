@@ -248,24 +248,43 @@ const handleDownloadUpdate = async () => {
 
   downloadingUpdate.value = true
   try {
-    // 通知后端开始下载（后端会下载文件并返回路径）
-    const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url)
-    if (response.data.success) {
-      const filePath = response.data.file_path
-      // 提示用户打开下载的安装程序
-      const confirmed = await ElMessageBox.confirm(
-        `更新已下载到: ${filePath}\n\n是否打开安装程序？`,
-        '下载完成',
-        {
-          confirmButtonText: '打开',
-          cancelButtonText: '关闭',
-          type: 'success'
-        }
-      ).then(() => true).catch(() => false)
+    // 使用自动安装模式（默认）
+    const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, true)
 
-      if (confirmed && response.data.open_path) {
-        // 通知后端打开文件
-        await settingsAPI.openPath(response.data.open_path)
+    if (response.data.success) {
+      if (response.data.restarting) {
+        // 自动安装模式，后端已完成安装准备
+        ElMessage.success(response.data.message || '更新完成，正在重启...')
+
+        // 检查是否是 Windows（需要运行 updater 并退出）
+        if (window.ipcRenderer) {
+          // Windows 桌面应用：需要运行 updater 并退出
+          if (response.data.updater_path) {
+            // 调用后端运行 updater 并退出应用
+            await settingsAPI.runUpdater(response.data.updater_path)
+            // 应用将在后端调用 sys.exit(0) 后关闭
+          }
+        } else {
+          // Web 模式：刷新页面
+          setTimeout(() => {
+            window.location.reload()
+          }, 2000)
+        }
+      } else {
+        // 手动模式（不应该发生）
+        const confirmed = await ElMessageBox.confirm(
+          `更新已下载到: ${response.data.file_path}\n\n是否打开？`,
+          '下载完成',
+          {
+            confirmButtonText: '打开',
+            cancelButtonText: '关闭',
+            type: 'success'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed && response.data.open_path) {
+          await settingsAPI.openPath(response.data.open_path)
+        }
       }
     } else {
       ElMessage.error('下载失败: ' + (response.data.error || '未知错误'))
@@ -273,7 +292,6 @@ const handleDownloadUpdate = async () => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('下载更新失败:', error)
-      // 如果后端下载失败，直接在浏览器中打开下载链接
       ElMessage.warning('自动下载失败，将打开浏览器下载...')
       window.open(updateInfo.value.download_url, '_blank')
     }

@@ -263,17 +263,21 @@ class PlatformDetector:
     @staticmethod
     def match_asset(asset_name: str, platform_name: str, arch: str) -> bool:
         """Check if asset name matches current platform.
-        
+
         Args:
             asset_name: Asset filename
             platform_name: Target platform (windows, macos, linux)
             arch: Target architecture (x64, arm64, x86)
-            
+
         Returns:
             True if asset matches platform and architecture
         """
         asset_lower = asset_name.lower()
-        
+
+        # Skip installer files (Windows setup.exe)
+        if "-setup.exe" in asset_lower:
+            return False
+
         # Platform matching
         platform_keywords = {
             PLATFORM_WINDOWS: PLATFORM_WINDOWS_KEYWORDS,

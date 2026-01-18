@@ -150,8 +150,15 @@ export const settingsAPI = {
   checkUpdate: () => api.get(API_ENDPOINTS.SETTINGS.CHECK_UPDATE),
 
   // 下载更新
-  downloadUpdate: (url) => api.post(API_ENDPOINTS.SETTINGS.UPDATE_DOWNLOAD, {
-    url: url
+  // autoInstall: 是否自动安装（默认 true，自动安装并重启）
+  downloadUpdate: (url, autoInstall = true) => api.post(API_ENDPOINTS.SETTINGS.UPDATE_DOWNLOAD, {
+    url: url,
+    auto_install: autoInstall
+  }),
+
+  // 运行更新程序并退出应用（Windows 需要）
+  runUpdater: (updaterPath) => api.post('/settings/update/run-updater', {
+    updater_path: updaterPath
   }),
 
   // 打开文件或路径
