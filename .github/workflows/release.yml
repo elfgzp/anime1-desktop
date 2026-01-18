@@ -146,11 +146,18 @@ jobs:
         run: |
           python scripts/build.py
 
-      - name: Upload artifacts
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-x64-build
-          path: release/
+          name: windows-x64-portable
+          path: release/*.zip
+          retention-days: 7
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-setup
+          path: release/*.exe
           retention-days: 7
 
   build-macos-arm64:

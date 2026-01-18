@@ -365,7 +365,7 @@ def create_windows_installer(version: str):
 
 Name "${{APPNAME}} v${{VERSION}}"
 Caption "${{APPNAME}} v${{VERSION}} - Installation Wizard"
-OutFile "{release_path_abs}\\anime1-windows-x64-setup.exe"
+OutFile "{release_path_abs}\\anime1-windows-{version}-setup.exe"
 InstallDir "${{INSTDIR}}"
 InstallDirRegKey HKLM "Software\\${{COMPANYNAME}}\\${{APPNAME}}" "InstallDir"
 ShowInstDetails show
@@ -452,7 +452,7 @@ SectionEnd
             text=True
         )
 
-        installer_path = root / "release" / "anime1-windows-x64-setup.exe"
+        installer_path = root / "release" / f"anime1-windows-{version}-setup.exe"
         if installer_path.exists():
             size = installer_path.stat().st_size / (1024 * 1024)
             print(f"[OK] Created installer: {installer_path}")
@@ -528,7 +528,7 @@ def create_portable_zip(exe_path: Path, version: str):
     """Create portable zip package (Windows/Linux)."""
     root = get_project_root()
     dist_path = root / "dist"
-    zip_name = f"anime1-windows-x64.zip" if sys.platform == "win32" else f"anime1-linux-x64.tar.gz"
+    zip_name = f"anime1-windows-{version}.zip" if sys.platform == "win32" else f"anime1-linux-{version}.tar.gz"
 
     try:
         zip_path = root / "release" / zip_name
