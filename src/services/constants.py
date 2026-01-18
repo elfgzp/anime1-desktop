@@ -10,9 +10,13 @@ DEFAULT_VERSION_COMPONENT = 0
 PRE_RELEASE_ALPHA = "alpha"
 PRE_RELEASE_BETA = "beta"
 PRE_RELEASE_RC = "rc"
+PRE_RELEASE_DEV = "dev"  # Development version (e.g., git commit id)
 
 # Pre-release type order (for comparison)
+# Lower number = older version
+# dev < alpha < beta < rc
 PRE_RELEASE_ORDER = {
+    PRE_RELEASE_DEV: 0,
     PRE_RELEASE_ALPHA: 1,
     PRE_RELEASE_BETA: 2,
     PRE_RELEASE_RC: 3,
