@@ -69,13 +69,42 @@
         <router-view />
       </el-main>
     </el-container>
+
+    <!-- 更新弹窗 -->
+    <el-dialog
+      v-model="updateDialogVisible"
+      title="发现新版本"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <div class="update-dialog-header">
+        <el-icon color="#67c23a" size="20"><CircleCheckFilled /></el-icon>
+        <span style="margin-left: 8px;">发现新版本</span>
+        <el-tag v-if="updateDialogData.is_prerelease" type="warning" size="small" style="margin-left: 8px;">预发布</el-tag>
+      </div>
+      <div class="update-dialog-content">
+        <div class="version-info">
+          <p><strong>当前版本:</strong> {{ updateDialogData.current_version || '-' }}</p>
+          <p><strong>最新版本:</strong> {{ updateDialogData.latest_version || '-' }}</p>
+        </div>
+        <el-divider />
+        <div class="release-notes" v-html="formatReleaseNotes(updateDialogData.release_notes)"></div>
+      </div>
+      <template #footer>
+        <el-button @click="updateDialogVisible = false">暂不更新</el-button>
+        <el-button type="primary" @click="handleDownloadUpdate">
+          下载更新
+          <el-icon style="margin-left: 4px;"><Download /></el-icon>
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { VideoPlay, Star, Clock, Setting, Expand, Fold, Monitor } from '@element-plus/icons-vue'
+import { VideoPlay, Star, Clock, Setting, Expand, Fold, Monitor, CircleCheckFilled, Download } from '@element-plus/icons-vue'
 import { updateAPI, favoriteAPI } from '../utils/api'
 import { ROUTES } from '../constants/api'
 import { ElMessage } from 'element-plus'
@@ -107,20 +136,77 @@ const toggleSidebar = () => {
   localStorage.setItem('sidebarCollapsed', sidebarCollapsed.value.toString())
 }
 
+// 更新弹窗相关
+const updateDialogVisible = ref(false)
+const updateDialogData = ref({
+  latest_version: '',
+  current_version: '',
+  download_url: '',
+  asset_name: '',
+  download_size: '',
+  release_notes: '',
+  is_prerelease: false
+})
+
+const showUpdateDialog = (data) => {
+  console.log('[更新弹窗] 显示弹窗，数据:', data)
+  updateDialogData.value = {
+    latest_version: data.latest_version || '',
+    current_version: data.current_version || '',
+    download_url: data.download_url || '',
+    asset_name: data.asset_name || '',
+    download_size: data.download_size || '',
+    release_notes: data.release_notes || '',
+    is_prerelease: data.is_prerelease || false
+  }
+  updateDialogVisible.value = true
+}
+
+const handleDownloadUpdate = () => {
+  const url = updateDialogData.value.download_url
+  if (url) {
+    console.log('[更新弹窗] 打开下载链接:', url)
+    window.open(url, '_blank')
+    updateDialogVisible.value = false
+  } else {
+    ElMessage.error('下载链接不可用')
+  }
+}
+
+// 格式化 release notes（将 markdown 链接转换为 HTML）
+const formatReleaseNotes = (notes) => {
+  if (!notes) return '<p style="color: #909399;">暂无更新说明</p>'
+  const html = notes
+    .replace(/\n/g, '<br>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #4ecdc4;">$1</a>')
+  return html || '<p style="color: #909399;">暂无更新说明</p>'
+}
+
 const checkUpdate = async (showModal = false) => {
+  console.log('[更新检查] 开始检查更新, showModal:', showModal)
   try {
     const response = await updateAPI.check()
+    console.log('[更新检查] API响应:', response.data)
     if (response.data.has_update) {
       updateBadge.value = true
+      console.log('[更新检查] 发现新版本:', response.data.latest_version, '当前版本:', response.data.current_version)
       if (showModal) {
-        // TODO: 显示更新弹窗
-        ElMessage.info(`发现新版本: ${response.data.latest_version}`)
+        // 显示更新弹窗 - 调用后端渲染页面的弹窗函数
+        if (typeof window.showUpdateModal === 'function') {
+          console.log('[更新检查] 调用后端渲染页面的弹窗函数')
+          window.showUpdateModal(response.data)
+        } else {
+          // 如果后端弹窗函数不存在，使用 Element Plus 弹窗
+          console.log('[更新检查] 后端弹窗函数不存在，使用 Element Plus Dialog')
+          showUpdateDialog(response.data)
+        }
       }
     } else {
       updateBadge.value = false
+      console.log('[更新检查] 已是最新版本')
     }
   } catch (error) {
-    console.error('检查更新失败:', error)
+    console.error('[更新检查] 检查更新失败:', error)
   }
 }
 
@@ -288,5 +374,44 @@ onMounted(() => {
   .main-container {
     margin-left: 0;
   }
+}
+
+/* 更新弹窗样式 */
+.update-dialog-header {
+  display: flex;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.update-dialog-content {
+  padding: 0 10px;
+}
+
+.version-info {
+  margin-bottom: 8px;
+}
+
+.version-info p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+}
+
+.release-notes {
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
+.release-notes a {
+  color: #4ecdc4;
+  text-decoration: none;
+}
+
+.release-notes a:hover {
+  text-decoration: underline;
 }
 </style>
