@@ -4,6 +4,7 @@
 
 使用 create-dmg 工具创建 DMG 安装包
 """
+import shutil
 import subprocess
 import sys
 from pathlib import Path
