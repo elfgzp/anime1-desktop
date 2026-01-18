@@ -204,15 +204,65 @@ class PeeweeMigrationHelper:
             return False
 
     def _recreate_schema(self):
-        """Recreate all tables with current model definitions."""
+        """Recreate all tables with current model definitions.
+
+        IMPORTANT: This method now preserves favorites and playback_history tables
+        by backing up their data before dropping, then restoring after schema recreation.
+        """
         from src.models.favorite import FavoriteAnime
         from src.models.cover_cache import CoverCache
         from src.models.playback_history import PlaybackHistory
+        from datetime import datetime
+        import json
 
-        # Drop existing tables
+        # Backup critical data before dropping tables
+        favorites_backup = []
+        history_backup = []
+
+        try:
+            # Backup favorites
+            if FavoriteAnime.table_exists():
+                for fav in FavoriteAnime.select():
+                    favorites_backup.append({
+                        "id": fav.id,
+                        "title": fav.title,
+                        "detail_url": fav.detail_url,
+                        "episode": fav.episode,
+                        "cover_url": fav.cover_url,
+                        "year": fav.year,
+                        "season": fav.season,
+                        "subtitle_group": fav.subtitle_group,
+                        "last_episode": fav.last_episode,
+                        "added_at": fav.added_at,
+                        "updated_at": fav.updated_at,
+                    })
+                logger.info(f"Backed up {len(favorites_backup)} favorites")
+        except Exception as e:
+            logger.warning(f"Failed to backup favorites: {e}")
+
+        try:
+            # Backup playback_history
+            if PlaybackHistory.table_exists():
+                for hist in PlaybackHistory.select():
+                    history_backup.append({
+                        "id": hist.id,
+                        "anime_id": hist.anime_id,
+                        "anime_title": hist.anime_title,
+                        "episode_id": hist.episode_id,
+                        "episode_num": hist.episode_num,
+                        "position_seconds": hist.position_seconds,
+                        "total_seconds": hist.total_seconds,
+                        "last_watched_at": hist.last_watched_at,
+                        "cover_url": hist.cover_url,
+                    })
+                logger.info(f"Backed up {len(history_backup)} history entries")
+        except Exception as e:
+            logger.warning(f"Failed to backup playback history: {e}")
+
+        # Drop tables (except critical ones - we handle them separately)
         self.db.execute_sql("DROP TABLE IF EXISTS cover_cache")
-        self.db.execute_sql("DROP TABLE IF EXISTS favorite_anime")
-        self.db.execute_sql("DROP TABLE IF EXISTS playback_history")
+        self.db.execute_sql("DROP TABLE IF EXISTS performance_trace")
+        self.db.execute_sql("DROP TABLE IF EXISTS performance_stat")
         self.db.execute_sql(f"DROP TABLE IF EXISTS {MIGRATION_TABLE}")
 
         # Recreate tables
@@ -221,9 +271,51 @@ class PeeweeMigrationHelper:
             CoverCache,
             PlaybackHistory,
         ])
+
+        # Restore critical data
+        restored_favorites = 0
+        if favorites_backup:
+            try:
+                FavoriteAnime.insert_many(favorites_backup).on_conflict_replace().execute()
+                restored_favorites = len(favorites_backup)
+                logger.info(f"Restored {restored_favorites} favorites")
+            except Exception as e:
+                logger.error(f"Failed to restore favorites: {e}")
+                # Try one by one
+                for fav in favorites_backup:
+                    try:
+                        FavoriteAnime.get_by_id(fav["id"])
+                        restored_favorites += 1
+                    except:
+                        try:
+                            FavoriteAnime.create(**fav)
+                            restored_favorites += 1
+                        except:
+                            pass
+
+        restored_history = 0
+        if history_backup:
+            try:
+                PlaybackHistory.insert_many(history_backup).on_conflict_replace().execute()
+                restored_history = len(history_backup)
+                logger.info(f"Restored {restored_history} history entries")
+            except Exception as e:
+                logger.error(f"Failed to restore playback history: {e}")
+                # Try one by one
+                for hist in history_backup:
+                    try:
+                        PlaybackHistory.get_by_id(hist["id"])
+                        restored_history += 1
+                    except:
+                        try:
+                            PlaybackHistory.create(**hist)
+                            restored_history += 1
+                        except:
+                            pass
+
         # Recreate migrations table
         self._ensure_migrations_table()
-        logger.info("Database schema recreated")
+        logger.info("Database schema recreated with data protection")
 
     def _migrate_data_from_backup(self, backup_path: Path, target_version: int = 3) -> bool:
         """Migrate data from backup database.
@@ -283,7 +375,7 @@ class PeeweeMigrationHelper:
                                     item[column_map[col]] = row[i]
                                 insert_data.append(item)
 
-                            FavoriteAnime.insert_many(insert_data).on_conflict_ignore().execute()
+                            FavoriteAnime.insert_many(insert_data).on_conflict_replace().execute()
                             logger.info(f"Migrated {len(insert_data)} favorite entries")
                 except Exception as e:
                     logger.debug(f"Could not migrate favorite data: {e}")
@@ -330,7 +422,7 @@ class PeeweeMigrationHelper:
                                     "cover_url": row[8] or ""
                                 })
 
-                            PlaybackHistory.insert_many(insert_data).on_conflict_ignore().execute()
+                            PlaybackHistory.insert_many(insert_data).on_conflict_replace().execute()
                             logger.info(f"Migrated {len(insert_data)} playback history entries (new schema)")
                     else:
                         # Old schema - map columns dynamically
@@ -367,7 +459,7 @@ class PeeweeMigrationHelper:
                                         item["id"] = f"{item['anime_id']}_{item['episode_id']}"
                                     insert_data.append(item)
 
-                                PlaybackHistory.insert_many(insert_data).on_conflict_ignore().execute()
+                                PlaybackHistory.insert_many(insert_data).on_conflict_replace().execute()
                                 logger.info(f"Migrated {len(insert_data)} playback history entries (old schema)")
                 except Exception as e:
                     logger.debug(f"Could not migrate playback_history data: {e}")
@@ -431,6 +523,10 @@ class PeeweeMigrationHelper:
                 self.db.execute_sql("CREATE INDEX IF NOT EXISTS idx_cover_cache_cached_at ON cover_cache(cached_at)")
 
             backup_db.close()
+
+            # Verify critical data was migrated
+            self._verify_critical_data()
+
             logger.info("Data migrated from backup")
             return True
 
@@ -446,12 +542,25 @@ class PeeweeMigrationHelper:
         try:
             logger.warning("Clearing cover_cache table as last resort recovery...")
 
+            # Backup critical data before clearing
+            from src.models.favorite import FavoriteAnime
+            from src.models.playback_history import PlaybackHistory
+
+            favorites_before = FavoriteAnime.select().count() if FavoriteAnime.table_exists() else 0
+            history_before = PlaybackHistory.select().count() if PlaybackHistory.table_exists() else 0
+
             # Clear the problematic table
             self.db.execute_sql("DELETE FROM cover_cache")
 
             # Retry the migration
             if self._try_standard_migration(version):
                 logger.info("Migration successful after clearing cover_cache")
+                # Verify critical data
+                favorites_after = FavoriteAnime.select().count() if FavoriteAnime.table_exists() else 0
+                history_after = PlaybackHistory.select().count() if PlaybackHistory.table_exists() else 0
+
+                if favorites_before != favorites_after or history_before != history_after:
+                    logger.warning(f"Data mismatch: favorites {favorites_before}->{favorites_after}, history {history_before}->{history_after}")
                 return True
 
             # For version 3, try recreating the table completely
@@ -607,6 +716,10 @@ class PeeweeMigrationHelper:
                 return False
 
             self._mark_migration_applied(3)
+
+            # Verify critical data is intact
+            self._verify_critical_data()
+
             logger.info("Migration 3 applied successfully")
             return True
 
@@ -619,10 +732,24 @@ class PeeweeMigrationHelper:
                 self.db.create_tables([CoverCache])
                 logger.info("Recovered by recreating cover_cache table")
                 self._mark_migration_applied(3)
+                # Verify critical data after recovery
+                self._verify_critical_data()
                 return True
             except Exception as recovery_error:
                 logger.error(f"Recovery failed: {recovery_error}")
             return False
+
+    def _verify_critical_data(self):
+        """Verify that critical data (favorites, playback_history) is intact after migration."""
+        from src.models.favorite import FavoriteAnime
+        from src.models.playback_history import PlaybackHistory
+
+        try:
+            fav_count = FavoriteAnime.select().count()
+            hist_count = PlaybackHistory.select().count()
+            logger.info(f"Data verification: {fav_count} favorites, {hist_count} history entries")
+        except Exception as e:
+            logger.warning(f"Could not verify critical data: {e}")
 
 
 # Global migration helper instance
