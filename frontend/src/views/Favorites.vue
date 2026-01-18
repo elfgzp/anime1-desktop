@@ -34,13 +34,44 @@
           </div>
           <div class="card-content">
             <div class="card-title">{{ anime.title }}</div>
-            <div class="card-meta">
-              <el-tag size="small" type="info">第{{ anime.episode }}集</el-tag>
+
+            <!-- 观看进度显示 -->
+            <div v-if="anime.playback_progress" class="playback-progress">
+              <div class="progress-header">
+                <span class="progress-episode">第{{ anime.playback_progress.episode_num }}集</span>
+                <span class="progress-time">{{ anime.playback_progress.position_formatted }}</span>
+              </div>
+              <el-progress
+                :percentage="anime.playback_progress.progress_percent"
+                :stroke-width="4"
+                :show-text="false"
+                class="progress-bar"
+              />
+            </div>
+
+            <!-- 更新提示 -->
+            <div v-if="anime.has_update" class="update-badge">
+              <el-tag size="small" type="danger" effect="dark">
+                <el-icon><Bell /></el-icon>
+                {{ anime.new_episode_count }}集更新
+              </el-tag>
+            </div>
+
+            <!-- 元信息（无进度时显示集数） -->
+            <div v-if="!anime.playback_progress" class="card-meta">
+              <el-tag size="small" type="info">第{{ anime.current_episode || anime.episode }}集</el-tag>
               <el-tag v-if="anime.year" size="small" type="danger">{{ anime.year }}</el-tag>
               <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
               <el-tag v-if="anime.subtitle_group" size="small" type="warning">
                 {{ anime.subtitle_group }}
               </el-tag>
+            </div>
+
+            <!-- 无更新、无进度时显示当前集数 -->
+            <div v-else-if="!anime.has_update" class="card-meta">
+              <el-tag size="small" type="info">共{{ anime.current_episode || anime.episode }}集</el-tag>
+              <el-tag v-if="anime.year" size="small" type="danger">{{ anime.year }}</el-tag>
+              <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
             </div>
           </div>
         </router-link>
@@ -55,16 +86,18 @@
 
     <!-- 空状态 -->
     <el-empty v-else :description="UI_TEXT.NO_FAVORITES" />
+    <el-backtop :right="20" :bottom="20" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { StarFilled, Picture } from '@element-plus/icons-vue'
+import { StarFilled, Picture, Bell } from '@element-plus/icons-vue'
 import { favoriteAPI, animeAPI } from '../utils/api'
 import { ROUTES, ERROR_MESSAGES, UI_TEXT } from '../constants/api'
 import DOMPurify from 'dompurify'
 import { ElMessage } from 'element-plus'
+import { onCacheCleared } from '../utils/cacheEventBus'
 
 const loading = ref(false)
 const favoritesList = ref([])
@@ -133,6 +166,20 @@ const handleImageError = (anime) => {
 }
 
 onMounted(() => {
+  // 监听缓存清理事件，清理后重新加载封面数据
+  onCacheCleared(() => {
+    console.log('[Favorites] 收到缓存清理事件，刷新封面数据...')
+    // 清除现有封面数据
+    favoritesList.value.forEach(anime => {
+      anime.cover_url = null
+      anime.year = null
+      anime.season = null
+      anime.subtitle_group = null
+    })
+    // 重新加载收藏数据
+    fetchFavorites()
+  })
+
   fetchFavorites()
 })
 </script>
@@ -232,6 +279,47 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
+}
+
+.playback-progress {
+  margin-bottom: 8px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.progress-episode {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.progress-time {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.progress-bar {
+  width: 100%;
+}
+
+.update-badge {
+  margin-bottom: 8px;
+}
+
+.update-badge .el-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.update-badge .el-icon {
+  margin-right: 2px;
+  font-size: 10px;
 }
 
 .favorite-btn {

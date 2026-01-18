@@ -5,6 +5,7 @@ import Favorites from '../views/Favorites.vue'
 import Settings from '../views/Settings.vue'
 import Detail from '../views/Detail.vue'
 import PlaybackHistory from '../views/PlaybackHistory.vue'
+import Performance from '../views/Performance.vue'
 
 const routes = [
   {
@@ -35,6 +36,12 @@ const routes = [
         path: 'anime/:id',
         name: 'Detail',
         component: Detail
+      },
+      {
+        path: 'dev/performance',
+        name: 'Performance',
+        component: Performance,
+        meta: { devOnly: true }
       }
     ]
   }
@@ -43,6 +50,19 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// 开发模式路由守卫
+router.beforeEach((to, from, next) => {
+  if (to.meta.devOnly) {
+    const isDev = import.meta.env.DEV || window.location.port === '5173'
+    if (!isDev) {
+      // 非开发模式，重定向到首页
+      next({ path: '/' })
+      return
+    }
+  }
+  next()
 })
 
 export default router

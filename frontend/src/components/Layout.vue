@@ -39,6 +39,17 @@
           <el-icon><Setting /></el-icon>
           <template #title>设置</template>
         </el-menu-item>
+
+        <!-- 开发者工具（仅开发模式显示） -->
+        <el-sub-menu v-if="isDev" index="dev">
+          <template #title>
+            <el-icon><Monitor /></el-icon>
+            <span>开发者工具</span>
+          </template>
+          <el-menu-item index="/dev/performance">
+            <template #title>性能分析</template>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
       <div class="sidebar-footer">
@@ -64,10 +75,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { VideoPlay, Star, Clock, Setting, Expand, Fold } from '@element-plus/icons-vue'
+import { VideoPlay, Star, Clock, Setting, Expand, Fold, Monitor } from '@element-plus/icons-vue'
 import { updateAPI, favoriteAPI } from '../utils/api'
 import { ROUTES } from '../constants/api'
 import { ElMessage } from 'element-plus'
+
+// 开发模式检测
+const isDev = computed(() => import.meta.env.DEV || window.location.port === '5173')
 
 const route = useRoute()
 const sidebarCollapsed = ref(true)  // 默认收缩，只显示 logo
@@ -79,6 +93,10 @@ const activeMenu = computed(() => {
   // 检查是否是番剧详情页
   if (path.startsWith('/anime/')) {
     return ROUTES.HOME
+  }
+  // 检查是否是开发者工具页
+  if (path.startsWith('/dev/')) {
+    return path
   }
   return path
 })
@@ -237,6 +255,19 @@ onMounted(() => {
 
 :deep(.el-menu-item:hover) {
   background: var(--el-fill-color-light);
+}
+
+/* 子菜单样式 */
+:deep(.el-sub-menu__title) {
+  color: var(--el-text-color-regular);
+}
+
+:deep(.el-sub-menu__title:hover) {
+  background: var(--el-fill-color-light);
+}
+
+:deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: var(--el-color-primary);
 }
 
 /* 响应式 */

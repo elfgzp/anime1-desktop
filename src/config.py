@@ -35,6 +35,10 @@ ANIME1_API_URL = "https://anime1.me/animelist.json"
 BANGUMI_BASE_URL = "https://bangumi.tv"
 BANGUMI_SEARCH_URL = "https://bangumi.tv/subject_search/{keyword}?cat=2"
 
+# Wikipedia Configuration
+WIKIPEDIA_BASE_URL = "https://zh.wikipedia.org"
+WIKIPEDIA_SEARCH_URL = "https://zh.wikipedia.org/w/index.php?search={keyword}&title=Special%3ASearch&profile=advanced&fulltext=1&ns0=1"
+
 # Cover Finder Configuration
 BANGUMI_RESULT_LIMIT = 5
 MIN_MATCH_SCORE = 30

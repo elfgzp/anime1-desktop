@@ -67,7 +67,11 @@ help:
 	@echo "  make clean-all     - Clean everything (build, dist, cache)"
 	@echo ""
 	@echo "Testing & CI:"
-	@echo "  make test          - Run tests"
+	@echo "  make test          - Run unit tests"
+	@echo "  make test-unit     - Run unit tests only (fast)"
+	@echo "  make test-integration - Run integration tests (slower)"
+	@echo "  make test-coverage - Run tests with coverage report"
+	@echo "  make test-install  - Install test dependencies"
 	@echo "  make test-workflow - Test GitHub Actions workflow (需要 gh CLI)"
 	@echo "  make trigger-workflow WORKFLOW=test-build.yml - Trigger workflow"
 	@echo "  make test-gh-auth  - Check GitHub CLI authentication"
@@ -230,8 +234,25 @@ clean-all: clean
 
 # Testing
 test:
-	@echo "Running tests..."
-	$(UV_RUN) pytest tests -v 2>/dev/null || echo "No tests found or pytest not installed."
+	@echo "Running unit tests..."
+	$(UV_RUN) pytest tests -v -m unit 2>/dev/null || echo "No unit tests found or pytest not installed."
+
+test-unit:
+	@echo "Running unit tests (fast, no external services)..."
+	$(UV_RUN) pytest tests -v -m unit --tb=short 2>/dev/null || echo "No unit tests found."
+
+test-integration:
+	@echo "Running integration tests (requires database)..."
+	$(UV_RUN) pytest tests -v -m integration --tb=short 2>/dev/null || echo "No integration tests found."
+
+test-coverage:
+	@echo "Running unit tests with coverage..."
+	$(UV_RUN) pytest tests -v -m unit --tb=short --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml 2>/dev/null || echo "Tests failed or pytest not installed."
+
+test-install:
+	@echo "Installing test dependencies..."
+	$(UV_PIP) install pytest pytest-cov coverage 2>/dev/null || pip install pytest pytest-cov coverage
+	@echo "Test dependencies installed."
 
 # GitHub Actions Workflow Testing
 test-workflow:

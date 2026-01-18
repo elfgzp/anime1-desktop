@@ -298,3 +298,14 @@ class CoverCache(BaseModel):
         from datetime import timedelta
         threshold = datetime.now() - timedelta(hours=hours)
         return list(cls.select().where(cls.updated_at < threshold))
+
+    @classmethod
+    def vacuum(cls):
+        """Execute VACUUM to shrink the database file.
+
+        SQLite doesn't automatically shrink the database file when data is deleted.
+        VACUUM rebuilds the database file, reclaiming unused space.
+        """
+        from src.models.database import get_database
+        db = get_database()
+        db.execute_sql("VACUUM")

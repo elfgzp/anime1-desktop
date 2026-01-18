@@ -1,17 +1,76 @@
 <template>
   <el-config-provider :locale="locale">
     <router-view />
+    <!-- 鼠标侧键提示 Toast -->
+    <Transition name="toast-fade">
+      <div v-if="sidebarToast.show" class="sidebar-toast">
+        {{ sidebarToast.message }}
+      </div>
+    </Transition>
   </el-config-provider>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useThemeStore } from './composables/useTheme'
+import { reportAllMetrics } from './utils/performance'
 
 const themeStore = useThemeStore()
 
 const locale = computed(() => zhCn)
+
+// 鼠标侧键 toast 状态
+const sidebarToast = reactive({
+  show: false,
+  message: ''
+})
+
+let toastTimer = null
+
+const showSidebarToast = (message) => {
+  sidebarToast.message = message
+  sidebarToast.show = true
+
+  // 清除之前的定时器
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+  }
+
+  // 1.5秒后自动隐藏
+  toastTimer = setTimeout(() => {
+    sidebarToast.show = false
+  }, 1500)
+}
+
+const handleMouseDown = (e) => {
+  // button 3 = 后退键, button 4 = 前进键
+  if (e.button === 3) {
+    e.preventDefault()
+    showSidebarToast('← 点击了后退键')
+  } else if (e.button === 4) {
+    e.preventDefault()
+    showSidebarToast('点击了前进键 →')
+  }
+}
+
+// 上报 Core Web Vitals
+onMounted(() => {
+  // 延迟上报，确保后端服务已启动
+  setTimeout(() => {
+    reportAllMetrics()
+  }, 2000)
+
+  // 监听鼠标侧键
+  window.addEventListener('mousedown', handleMouseDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mousedown', handleMouseDown)
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+  }
+})
 </script>
 
 <style>
@@ -182,5 +241,46 @@ html.dark {
 
 .el-link--primary:hover {
   color: #6a4fd6;
+}
+
+/* 鼠标侧键提示 Toast */
+.sidebar-toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
+  background-color: rgba(124, 92, 255, 0.85);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.3);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+/* 暗色模式 toast */
+html.dark .sidebar-toast {
+  background-color: rgba(124, 92, 255, 0.9);
+}
+
+/* 亮色模式 toast */
+html.light .sidebar-toast {
+  background-color: rgba(124, 92, 255, 0.9);
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.2);
+}
+
+/* Toast 动画 */
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-10px);
 }
 </style>

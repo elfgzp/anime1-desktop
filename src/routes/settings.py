@@ -9,6 +9,7 @@ from flask import Blueprint, request
 from src.services.settings_service import get_settings_service
 from src.services.cover_cache_service import get_cover_cache_service
 from src.services.favorite_service import get_favorite_service
+from src.services.playback_history_service import get_playback_history_service
 from src.config import GITHUB_REPO_OWNER, GITHUB_REPO_NAME
 from src.constants.api import (
     success_response,
@@ -160,7 +161,9 @@ def clear_cache():
     """Clear the cover cache.
 
     Request body (optional):
-        type: Type of cache to clear ("covers", "favorites", or "all")
+        type: Type of cache to clear ("covers" or "all")
+        - "covers": Clear only cover cache (default)
+        - "all": Clear cover cache, playback history, and performance data
 
     Returns:
         Number of entries cleared.
@@ -170,22 +173,45 @@ def clear_cache():
         cache_type = data.get("type", "covers")
 
         cover_service = get_cover_cache_service()
-        favorite_service = get_favorite_service()
+        playback_service = get_playback_history_service()
 
         cleared_count = 0
+        message_parts = []
 
         if cache_type in ("covers", "all"):
-            cleared_count += cover_service.clear_all()
+            cover_cleared = cover_service.clear_all()
+            cleared_count += cover_cleared
+            message_parts.append(f"{cover_cleared} 条封面缓存")
 
-        if cache_type in ("favorites", "all"):
-            # Get all favorites and delete them
-            favorites = favorite_service.get_favorites()
-            for fav in favorites:
-                favorite_service.remove_favorite(fav.id)
-            cleared_count += len(favorites)
+        if cache_type == "all":
+            # Clear all playback history
+            playback_service.delete_history()
+            message_parts.append("播放记录")
+
+            # Clear performance tracking data
+            from src.models.performance_trace import clear_performance_traces, clear_performance_stats
+            traces_cleared = clear_performance_traces()
+            stats_cleared = clear_performance_stats()
+            if traces_cleared > 0 or stats_cleared > 0:
+                message_parts.append(f"性能追踪数据 ({traces_cleared} 条)")
+                cleared_count += traces_cleared + stats_cleared
+
+        # Execute VACUUM to shrink database and WAL checkpoint to release WAL file
+        from src.models.database import get_database
+        db = get_database()
+        try:
+            # TRUNCATE checkpoint writes changes and truncates WAL file to 0
+            # This is the key to actually release disk space
+            db.execute_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+            # VACUUM to shrink database
+            db.execute_sql("VACUUM")
+        except Exception as e:
+            logger.error(f"Error shrinking database: {e}")
+
+        message = "已清理 " + " + ".join(message_parts)
 
         return success_response(
-            message=f"已清理 {cleared_count} 条缓存",
+            message=message,
             data={"cleared_count": cleared_count}
         )
     except Exception as e:

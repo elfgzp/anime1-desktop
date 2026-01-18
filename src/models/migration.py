@@ -229,77 +229,199 @@ class PeeweeMigrationHelper:
         """Migrate data from backup database.
 
         This preserves user data (favorites, history) while fixing schema issues.
+        Uses ORM for data insertion where possible.
         """
         import json
-        from datetime import datetime
-        from peewee import SqliteDatabase
+
+        # Import models for ORM operations
+        from src.models.favorite import FavoriteAnime
+        from src.models.cover_cache import CoverCache
+        from src.models.playback_history import PlaybackHistory
+
+        def table_exists(db: SqliteDatabase, table_name: str) -> bool:
+            """Check if a table exists using raw SQL (required for PRAGMA)."""
+            cursor = db.execute_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+                (table_name,)
+            )
+            return cursor.fetchone() is not None
+
+        def get_table_columns(db: SqliteDatabase, table_name: str) -> set:
+            """Get column names for a table using raw SQL (PRAGMA doesn't have ORM equivalent)."""
+            cursor = db.execute_sql(f"PRAGMA table_info({table_name})")
+            return {row[1] for row in cursor.fetchall()}
 
         try:
             # Connect to backup DB
             backup_db = SqliteDatabase(str(backup_path))
 
-            # Migrate favorites
-            cursor = backup_db.execute_sql("SELECT anime_id, title, url, cover_image, added_at FROM favorite_anime")
-            for row in cursor.fetchall():
+            # Migrate favorites - only if table exists
+            if table_exists(backup_db, "favorite_anime"):
                 try:
-                    self.db.execute_sql(
-                        "INSERT OR IGNORE INTO favorite_anime (anime_id, title, url, cover_image, added_at) VALUES (?, ?, ?, ?, ?)",
-                        row
-                    )
-                except:
-                    pass
+                    columns = get_table_columns(backup_db, "favorite_anime")
+                    # Map old column names to new ones
+                    column_map = {
+                        "anime_id": "anime_id",
+                        "title": "title",
+                        "url": "url",
+                        "cover_image": "cover_image",
+                        "added_at": "added_at"
+                    }
+                    select_cols = [col for col in column_map.keys() if col in columns]
+                    if select_cols:
+                        cursor = backup_db.execute_sql(
+                            f"SELECT {', '.join(select_cols)} FROM favorite_anime"
+                        )
+                        rows = list(cursor.fetchall())
 
-            # Migrate playback_history
-            cursor = backup_db.execute_sql("SELECT anime_id, title, url, last_watched_at, progress_seconds FROM playback_history")
-            for row in cursor.fetchall():
+                        if rows:
+                            # Use ORM insert_many
+                            insert_data = []
+                            for row in rows:
+                                item = {}
+                                for i, col in enumerate(select_cols):
+                                    item[column_map[col]] = row[i]
+                                insert_data.append(item)
+
+                            FavoriteAnime.insert_many(insert_data).on_conflict_ignore().execute()
+                            logger.info(f"Migrated {len(insert_data)} favorite entries")
+                except Exception as e:
+                    logger.debug(f"Could not migrate favorite data: {e}")
+
+            # Migrate playback_history - handle both old and new schemas
+            if table_exists(backup_db, "playback_history"):
                 try:
-                    self.db.execute_sql(
-                        "INSERT OR IGNORE INTO playback_history (anime_id, title, url, last_watched_at, progress_seconds) VALUES (?, ?, ?, ?, ?)",
-                        row
-                    )
-                except:
-                    pass
+                    columns = get_table_columns(backup_db, "playback_history")
 
-            # Migrate cover_cache based on version
-            if target_version >= 3:
-                # New schema with indexed fields
-                cursor = backup_db.execute_sql("SELECT anime_id, cover_data, bangumi_info, cached_at FROM cover_cache")
-                for row in cursor.fetchall():
-                    try:
-                        cover_data = json.loads(row[1]) if row[1] else {}
-                        title = cover_data.get("title", "")
-                        year = cover_data.get("year", "")
-                        season = cover_data.get("season", "")
-                        cover_url = cover_data.get("cover_url")
-                        episode = cover_data.get("episode", 0)
+                    if "episode_id" in columns:
+                        # New-ish schema - use ORM directly
+                        cursor = backup_db.execute_sql(
+                            "SELECT id, anime_id, anime_title, episode_id, episode_num, "
+                            "position_seconds, total_seconds, last_watched_at, cover_url FROM playback_history"
+                        )
+                        rows = list(cursor.fetchall())
 
-                        self.db.execute_sql(
-                            """INSERT OR IGNORE INTO cover_cache
-                               (anime_id, title, year, season, cover_url, episode, cover_data, bangumi_info, cached_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (row[0], title, year, season, cover_url, episode,
-                             row[1], row[2], row[3], datetime.now())
-                        )
-                    except Exception as e:
-                        logger.debug(f"Could not migrate cover_cache row: {e}")
-                        continue
-            else:
-                # Old schema without indexed fields
-                cursor = backup_db.execute_sql("SELECT anime_id, cover_data, bangumi_info, cached_at FROM cover_cache")
-                for row in cursor.fetchall():
-                    try:
-                        self.db.execute_sql(
-                            "INSERT OR IGNORE INTO cover_cache (anime_id, cover_data, bangumi_info, cached_at) VALUES (?, ?, ?, ?)",
-                            row
-                        )
-                    except:
-                        try:
-                            self.db.execute_sql(
-                                "INSERT OR IGNORE INTO cover_cache (anime_id, cover_data, cached_at) VALUES (?, ?, ?)",
-                                (row[0], row[1], row[3])
+                        if rows:
+                            insert_data = []
+                            for row in rows:
+                                # Convert last_watched_at to Unix timestamp (handle ISO string or existing timestamp)
+                                last_watched = row[7]
+                                if isinstance(last_watched, str):
+                                    # Parse ISO format string to timestamp
+                                    try:
+                                        from dateutil.parser import isoparse
+                                        last_watched = int(isoparse(last_watched).timestamp())
+                                    except ImportError:
+                                        # Fallback: try to parse as simple timestamp
+                                        try:
+                                            last_watched = int(float(last_watched))
+                                        except (ValueError, TypeError):
+                                            last_watched = int(datetime.now().timestamp())
+
+                                insert_data.append({
+                                    "id": row[0],
+                                    "anime_id": row[1],
+                                    "anime_title": row[2],
+                                    "episode_id": row[3],
+                                    "episode_num": row[4],
+                                    "position_seconds": row[5],
+                                    "total_seconds": row[6],
+                                    "last_watched_at": last_watched,
+                                    "cover_url": row[8] or ""
+                                })
+
+                            PlaybackHistory.insert_many(insert_data).on_conflict_ignore().execute()
+                            logger.info(f"Migrated {len(insert_data)} playback history entries (new schema)")
+                    else:
+                        # Old schema - map columns dynamically
+                        column_mapping = {
+                            "anime_id": "anime_id",
+                            "title": "anime_title",
+                            "episode_id": "episode_id",
+                            "episode_num": "episode_num",
+                            "position_seconds": "position_seconds",
+                            "progress_seconds": "position_seconds",
+                            "total_seconds": "total_seconds",
+                            "last_watched_at": "last_watched_at",
+                            "cover_url": "cover_url",
+                            "url": "cover_url"
+                        }
+
+                        select_cols = [col for col in column_mapping.keys() if col in columns]
+                        if select_cols:
+                            cursor = backup_db.execute_sql(
+                                f"SELECT {', '.join(select_cols)} FROM playback_history"
                             )
-                        except:
-                            pass
+                            rows = list(cursor.fetchall())
+
+                            if rows:
+                                insert_data = []
+                                for row in rows:
+                                    item = {"id": None, "anime_id": "", "anime_title": "", "episode_id": "",
+                                           "episode_num": 0, "position_seconds": 0.0, "total_seconds": 0.0,
+                                           "last_watched_at": datetime.now(), "cover_url": ""}
+                                    for i, col in enumerate(select_cols):
+                                        item[column_mapping[col]] = row[i] if row[i] is not None else item.get(column_mapping[col])
+                                    # Generate ID if not present
+                                    if item["anime_id"] and item.get("episode_id"):
+                                        item["id"] = f"{item['anime_id']}_{item['episode_id']}"
+                                    insert_data.append(item)
+
+                                PlaybackHistory.insert_many(insert_data).on_conflict_ignore().execute()
+                                logger.info(f"Migrated {len(insert_data)} playback history entries (old schema)")
+                except Exception as e:
+                    logger.debug(f"Could not migrate playback_history data: {e}")
+
+            # Migrate cover_cache - only if table exists
+            if table_exists(backup_db, "cover_cache"):
+                try:
+                    if target_version >= 3:
+                        # New schema with indexed fields
+                        cursor = backup_db.execute_sql(
+                            "SELECT anime_id, cover_data, bangumi_info, cached_at FROM cover_cache"
+                        )
+                        rows = list(cursor.fetchall())
+
+                        if rows:
+                            insert_data = []
+                            for row in rows:
+                                cover_data = json.loads(row[1]) if row[1] else {}
+                                insert_data.append({
+                                    "anime_id": row[0],
+                                    "title": cover_data.get("title", ""),
+                                    "year": cover_data.get("year", ""),
+                                    "season": cover_data.get("season", ""),
+                                    "cover_url": cover_data.get("cover_url") or "",
+                                    "episode": cover_data.get("episode", 0),
+                                    "cover_data": row[1] or "",
+                                    "bangumi_info": row[2] or "",
+                                    "cached_at": row[3],
+                                    "updated_at": datetime.now()
+                                })
+
+                            CoverCache.insert_many(insert_data).on_conflict_ignore().execute()
+                            logger.info(f"Migrated {len(insert_data)} cover_cache entries")
+                    else:
+                        # Old schema without indexed fields
+                        cursor = backup_db.execute_sql(
+                            "SELECT anime_id, cover_data, bangumi_info, cached_at FROM cover_cache"
+                        )
+                        rows = list(cursor.fetchall())
+
+                        if rows:
+                            insert_data = []
+                            for row in rows:
+                                insert_data.append({
+                                    "anime_id": row[0],
+                                    "cover_data": row[1] or "",
+                                    "bangumi_info": row[2] or "",
+                                    "cached_at": row[3]
+                                })
+
+                            CoverCache.insert_many(insert_data).on_conflict_ignore().execute()
+                            logger.info(f"Migrated {len(insert_data)} cover_cache entries (old schema)")
+                except Exception as e:
+                    logger.debug(f"Could not migrate cover_cache data: {e}")
 
             # Create indexes for version 3+
             if target_version >= 3:

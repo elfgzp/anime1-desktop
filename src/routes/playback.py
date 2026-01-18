@@ -1,6 +1,6 @@
 """Playback history API routes."""
 import logging
-from flask import Blueprint, request
+from flask import Blueprint, request, make_response
 
 from src.services.playback_history_service import get_playback_history_service
 from src.constants.api import (
@@ -11,6 +11,14 @@ from src.constants.api import (
 logger = logging.getLogger(__name__)
 
 playback_bp = Blueprint("playback", __name__, url_prefix="/api/playback")
+
+
+def add_no_cache_headers(response):
+    """为响应添加防缓存头"""
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @playback_bp.route("/update", methods=["POST"])
@@ -82,7 +90,8 @@ def list_history():
         service = get_playback_history_service()
         history = service.get_history(limit=limit)
 
-        return success_response(data=[entry.to_dict() for entry in history])
+        response = make_response(success_response(data=[entry.to_dict() for entry in history]))
+        return add_no_cache_headers(response)
     except Exception as e:
         logger.error(f"Error listing playback history: {e}")
         return error_response(str(e), 500)
@@ -109,9 +118,10 @@ def get_episode_progress():
         entry = service.get_episode_progress(anime_id, episode_id)
 
         if entry:
-            return success_response(data=entry.to_dict())
+            response = make_response(success_response(data=entry.to_dict()))
         else:
-            return success_response(data=None)
+            response = make_response(success_response(data=None))
+        return add_no_cache_headers(response)
 
     except Exception as e:
         logger.error(f"Error getting episode progress: {e}")
@@ -135,9 +145,10 @@ def get_latest():
         entry = service.get_latest_for_anime(anime_id)
 
         if entry:
-            return success_response(data=entry.to_dict())
+            response = make_response(success_response(data=entry.to_dict()))
         else:
-            return success_response(data=None)
+            response = make_response(success_response(data=None))
+        return add_no_cache_headers(response)
 
     except Exception as e:
         logger.error(f"Error getting latest progress: {e}")
@@ -155,7 +166,8 @@ def get_history_by_anime(anime_id: str):
         service = get_playback_history_service()
         history = service.get_history_by_anime(anime_id)
 
-        return success_response(data=[entry.to_dict() for entry in history])
+        response = make_response(success_response(data=[entry.to_dict() for entry in history]))
+        return add_no_cache_headers(response)
     except Exception as e:
         logger.error(f"Error getting playback history for anime {anime_id}: {e}")
         return error_response(str(e), 500)
@@ -173,12 +185,14 @@ def get_batch_progress():
         ids_str = request.args.get("ids", "")
 
         if not ids_str:
-            return success_response(data={})
+            response = make_response(success_response(data={}))
+            return add_no_cache_headers(response)
 
         # Parse IDs
         id_list = [i.strip() for i in ids_str.split(",") if i.strip() and ":" in i]
         if not id_list:
-            return success_response(data={})
+            response = make_response(success_response(data={}))
+            return add_no_cache_headers(response)
 
         # Limit to prevent abuse
         max_ids = 50
@@ -196,7 +210,8 @@ def get_batch_progress():
                 if entry:
                     result[id_pair] = entry.to_dict()
 
-        return success_response(data=result)
+        response = make_response(success_response(data=result))
+        return add_no_cache_headers(response)
 
     except Exception as e:
         logger.error(f"Error batch getting playback progress: {e}")

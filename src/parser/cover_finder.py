@@ -9,6 +9,8 @@ from ..config import (
     BANGUMI_SEARCH_URL,
     BANGUMI_RESULT_LIMIT,
     BANGUMI_BASE_URL,
+    WIKIPEDIA_SEARCH_URL,
+    WIKIPEDIA_BASE_URL,
     MIN_MATCH_SCORE,
     MIN_TITLE_LENGTH,
     MIN_ENGLISH_LENGTH,
@@ -41,6 +43,9 @@ THREAD_POOL_WORKERS = 5
 
 # Print formatting
 PRINT_TITLE_TRUNCATE = 25
+
+# Maximum search keyword length (Bangumi works better with shorter queries)
+MAX_KEYWORD_LENGTH = 15
 
 
 class CoverFinder:
@@ -103,6 +108,12 @@ class CoverFinder:
     def _search_bangumi(self, title: str, include_details: bool = False) -> Optional[dict]:
         """Search Bangumi for cover.
 
+        Search strategy:
+        1. First try with simplified Chinese (Bangumi uses simplified Chinese)
+        2. Try full title search (original)
+        3. Try core keyword search
+        4. Try Wikipedia search as fallback
+
         Args:
             title: Anime title to search.
             include_details: If True, include subject URL and other details.
@@ -110,75 +121,201 @@ class CoverFinder:
         Returns:
             Dict with cover_url, score, and optionally subject_url, or None.
         """
-        # Try multiple search variants (simplified and traditional Chinese)
-        search_variants = self._get_search_variants(title)
-        results = []
+        # Strategy 1: Try with simplified Chinese first (Bangumi uses simplified Chinese)
+        title_simplified = self._to_simplified_chinese(title)
+        if title_simplified and title_simplified != title:
+            result = self._search_with_keyword(title_simplified, include_details)
+            if result:
+                return result
 
-        for variant in search_variants:
-            keyword = self._extract_keywords(variant)
-            if not keyword:
-                continue
+        # Strategy 2: Try full title
+        result = self._search_with_keyword(title, include_details)
+        if result:
+            return result
 
-            encoded_keyword = re.sub(PATTERNS["non_word_chars"], "", keyword).strip()
-            if not encoded_keyword:
-                continue
+        # Strategy 3: Try core keywords if full title failed
+        core_keywords = self._extract_core_keywords(title)
+        if core_keywords and core_keywords != title:
+            result = self._search_with_keyword(core_keywords, include_details)
+            if result:
+                return result
 
-            url = self._bangumi_url.format(keyword=encoded_keyword)
-            try:
-                html = self.client.get(url)
-                soup = BeautifulSoup(html, "html.parser")
-                items = soup.select("li.item")
+        # Strategy 4: Try Wikipedia search as fallback
+        result = self._search_wikipedia(title, include_details)
+        if result:
+            return result
 
-                for item in items[:BANGUMI_RESULT_LIMIT]:
-                    cover_url = self._extract_cover_from_item(item)
-                    name_elem = item.select_one("h3 a")
-                    result_name = name_elem.get_text(strip=True) if name_elem else ""
+        return None
 
-                    # Extract subject URL if requested
-                    subject_url = None
-                    if include_details and name_elem:
-                        href = name_elem.get("href", "")
-                        if href:
-                            subject_url = BANGUMI_BASE_URL + href
+    def _to_simplified_chinese(self, text: str) -> str:
+        """Convert Traditional Chinese to Simplified Chinese.
 
-                    # Calculate similarity score
-                    score = self._calculate_title_similarity(variant, result_name)
-                    if cover_url:
-                        result = {
-                            "cover_url": cover_url,
-                            "score": score,
-                            "title": result_name,
-                            "variant": variant
-                        }
-                        if subject_url:
-                            result["subject_url"] = subject_url
-                        results.append(result)
-            except Exception:
-                continue
+        Uses hanziconv library for conversion.
 
-        if not results:
+        Args:
+            text: Traditional Chinese text.
+
+        Returns:
+            Simplified Chinese text.
+        """
+        if not text:
+            return ""
+
+        # Try using hanziconv if available
+        try:
+            from hanziconv import HanziConv
+            return HanziConv.toSimplified(text)
+        except ImportError:
+            # If hanziconv is not available, return original text
+            return text
+
+    def _search_wikipedia(self, title: str, include_details: bool = False) -> Optional[dict]:
+        """Search Wikipedia for anime info as fallback.
+
+        Args:
+            title: Anime title to search.
+            include_details: If True, include subject URL.
+
+        Returns:
+            Dict with cover_url and title, or None if not found.
+        """
+        if not title:
             return None
 
-        # Return the best match, or the first result if all have low similarity
-        # This handles cases where the anime title is in a different language
-        # (e.g., English title on anime1.me, Chinese title on Bangumi)
-        best = max(results, key=lambda x: x["score"])
-        if best["score"] > 0:
+        # URL encode the keyword
+        from urllib.parse import quote
+        encoded_keyword = quote(title, safe='')
+        url = WIKIPEDIA_SEARCH_URL.format(keyword=encoded_keyword)
+
+        try:
+            html = self.client.get(url)
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Try to find the first result link
+            result_link = soup.select_one('div.mw-search-result-heading a')
+            if not result_link:
+                return None
+
+            result_title = result_link.get_text(strip=True)
+            result_url = WIKIPEDIA_BASE_URL + result_link.get('href', '')
+
+            # Fetch the article page to get the cover image
+            article_html = self.client.get(result_url)
+            article_soup = BeautifulSoup(article_html, "html.parser")
+
+            # Try to find the featured image or first image in the infobox
+            cover_url = None
+
+            # Try to find image in infobox
+            infobox = article_soup.select_one('table.infobox')
+            if infobox:
+                # Try to find the first image in infobox
+                first_img = infobox.select_one('img')
+                if first_img:
+                    src = first_img.get('src', '')
+                    if src:
+                        cover_url = self._normalize_cover_url(src)
+
+            # Try to find file link for the main image
+            if not cover_url:
+                file_link = article_soup.select_one('a.image[href*="File:"]')
+                if file_link:
+                    # Try to find the image in the file page
+                    file_href = file_link.get('href', '')
+                    if file_href:
+                        file_url = WIKIPEDIA_BASE_URL + file_href
+                        file_html = self.client.get(file_url)
+                        file_soup = BeautifulSoup(file_html, "html.parser")
+                        img = file_soup.select_one('img[typeof="mw:File"]') or file_soup.select_one('div#file img')
+                        if img:
+                            src = img.get('src', '') or img.get('data-src', '')
+                            if src:
+                                cover_url = self._normalize_wikipedia_url(src)
+
             return {
-                "cover_url": best["cover_url"],
-                "score": best["score"],
-                "title": best["title"],
-                "subject_url": best.get("subject_url")
+                "cover_url": cover_url,
+                "title": result_title,
+                "subject_url": result_url
             }
-        else:
-            # All results have 0 similarity (different language)
-            # Return the first result anyway
+        except Exception:
+            return None
+
+    def _normalize_wikipedia_url(self, url: str) -> str:
+        """Normalize Wikipedia image URL to get a larger version.
+
+        Args:
+            url: Wikipedia image URL.
+
+        Returns:
+            Normalized URL pointing to a larger image.
+        """
+        if not url:
+            return ""
+
+        # Wikipedia URLs often contain parameters, try to get a larger version
+        # Example: //upload.wikimedia.org/wikipedia/commons/thumb/xxx/yyy/zzz.jpg/320px-zzz.jpg
+        # We can try to increase the size by changing the thumbnail parameter
+
+        if url.startswith('//'):
+            url = 'https:' + url
+
+        # Try to increase thumbnail size from 320px to 640px or original
+        if '/thumb/' in url:
+            # Remove the thumbnail size prefix
+            url = re.sub(r'/thumb/([^/]+)/([^/]+)/([^/]+)/[^/]+$', r'/thumb/\1/\2/\3', url)
+            # Remove the size suffix from filename
+            url = re.sub(r'/\d+px-([^/]+)$', r'/\1', url)
+
+        return url
+
+    def _search_with_keyword(self, keyword: str, include_details: bool = False) -> Optional[dict]:
+        """Search Bangumi with a specific keyword.
+
+        Args:
+            keyword: Search keyword.
+            include_details: If True, include subject URL.
+
+        Returns:
+            Dict with cover_url and title, or None if no results.
+        """
+        if not keyword:
+            return None
+
+        encoded_keyword = re.sub(PATTERNS["non_word_chars"], "", keyword).strip()
+        if not encoded_keyword:
+            return None
+
+        url = self._bangumi_url.format(keyword=encoded_keyword)
+        try:
+            html = self.client.get(url)
+            soup = BeautifulSoup(html, "html.parser")
+            items = soup.select("li.item")
+
+            if not items:
+                return None
+
+            # Take the first result
+            first_item = items[0]
+            cover_url = self._extract_cover_from_item(first_item)
+            if not cover_url:
+                return None
+
+            name_elem = first_item.select_one("h3 a")
+            result_name = name_elem.get_text(strip=True) if name_elem else ""
+
+            subject_url = None
+            if include_details and name_elem:
+                href = name_elem.get("href", "")
+                if href:
+                    subject_url = BANGUMI_BASE_URL + href
+
             return {
-                "cover_url": results[0]["cover_url"],
-                "score": SCORE_SUBSTRING,  # Use a lower score
-                "title": results[0]["title"],
-                "subject_url": results[0].get("subject_url")
+                "cover_url": cover_url,
+                "title": result_name,
+                "subject_url": subject_url
             }
+        except Exception:
+            return None
 
     def get_bangumi_info(self, anime: Anime, update_anime: bool = True) -> Optional[Dict[str, Any]]:
         """Get detailed Bangumi info for an anime, including cover.
@@ -367,6 +504,16 @@ class CoverFinder:
         """
         variants = [title]
 
+        # Extract core keywords (main title before brackets)
+        core_keywords = self._extract_core_keywords(title)
+        if core_keywords and core_keywords != title:
+            variants.append(core_keywords)
+
+        # Also try with truncated keywords (important for long titles)
+        truncated = self._truncate_keywords(core_keywords or title)
+        if truncated and truncated != title and truncated != core_keywords:
+            variants.append(truncated)
+
         # Use text_converter if available
         try:
             from src.utils.text_converter import get_search_variants
@@ -374,10 +521,73 @@ class CoverFinder:
             for v in converter_variants:
                 if v not in variants:
                     variants.append(v)
+            # Also try converter variants with core keywords
+            core_converter_variants = get_search_variants(core_keywords or title)
+            for v in core_converter_variants:
+                if v not in variants:
+                    variants.append(v)
         except ImportError:
             pass
 
         return variants
+
+    def _extract_core_keywords(self, title: str) -> str:
+        """Extract core keywords from title.
+
+        For titles like "地獄模式 ～喜歡挑戰...～", extract "地獄模式".
+        Keeps season info like "第一季", "第二季".
+
+        Args:
+            title: Original title.
+
+        Returns:
+            Core keywords string.
+        """
+        if not title:
+            return ""
+
+        # Remove content inside brackets (full width and half width)
+        # Keep season info (第一季, 第二季, etc.)
+        core = re.sub(r"[【】\(\)（）\[\]～~].*$", "", title)
+        core = core.strip()
+
+        return core if core else title
+
+    def _truncate_keywords(self, keywords: str) -> str:
+        """Truncate keywords to maximum length for better search results.
+
+        Args:
+            keywords: Keywords string.
+
+        Returns:
+            Truncated keywords string.
+        """
+        if not keywords:
+            return ""
+
+        # Remove special characters first
+        cleaned = re.sub(r"[【】\(\)（）\[\]～~!\！\?]", "", keywords)
+        cleaned = cleaned.strip()
+
+        if len(cleaned) <= MAX_KEYWORD_LENGTH:
+            return cleaned
+
+        # Truncate to max length, keeping complete words
+        truncated = cleaned[:MAX_KEYWORD_LENGTH * 2]  # Allow some buffer
+
+        # Find the last complete word boundary
+        # Split by common delimiters
+        import re as re_module
+        parts = re_module.split(r"[\s,，、]", truncated)
+
+        if len(parts) > 1:
+            # Remove the last partial part
+            result = " ".join(parts[:-1])
+            if result:
+                return result.strip()
+
+        # If no good boundary found, just return first MAX_KEYWORD_LENGTH chars
+        return cleaned[:MAX_KEYWORD_LENGTH]
 
     def _calculate_title_similarity(self, query: str, result: str) -> int:
         """Calculate similarity score between query and result title.
@@ -393,8 +603,8 @@ class CoverFinder:
             return 0
 
         # Remove special characters for comparison (including spaces)
-        query_clean = re.sub(r"[【】\(\)（）\[\]!!！\s]", "", query).strip()
-        result_clean = re.sub(r"[【】\(\)（）\[\]!!！\s]", "", result).strip()
+        query_clean = re.sub(r"[【】\(\)（）\[\]!!！\s～~]", "", query).strip()
+        result_clean = re.sub(r"[【】\(\)（）\[\]!!！\s～~]", "", result).strip()
 
         # Exact match (after cleaning)
         if query_clean == result_clean:
@@ -404,12 +614,48 @@ class CoverFinder:
         if query_clean in result_clean or result_clean in query_clean:
             return SCORE_SUBSTRING
 
-        # Word overlap
+        # Extract core (first part before brackets) for comparison
+        query_core = self._extract_core_keywords(query_clean)
+        result_core = self._extract_core_keywords(result_clean)
+
+        # If cores match exactly, give high score
+        if query_core and result_core and query_core == result_core:
+            return SCORE_CONTAINS
+
+        # If cores contain each other
+        if query_core and result_core:
+            if query_core in result_core or result_core in query_core:
+                return SCORE_SUBSTRING - 5
+
+        # Character-level overlap for Chinese/Japanese characters
+        # This helps match titles in different languages
+        c1 = set(c for c in query_clean if "\u4e00" <= c <= "\u9fff")
+        c2 = set(c for c in result_clean if "\u4e00" <= c <= "\u9fff")
+
+        if c1 and c2:
+            # Calculate character overlap ratio
+            overlap = len(c1 & c2)
+            total = max(len(c1), len(c2))
+            if total > 0:
+                ratio = overlap / total
+                # If high character overlap, return high score
+                if ratio >= 0.5:
+                    return int(ratio * SCORE_EXACT)
+                elif ratio >= 0.3:
+                    return int(ratio * SCORE_CONTAINS)
+                elif ratio >= 0.2 and overlap >= 3:
+                    return SCORE_CHINESE_OVERLAP
+
+        # Word overlap (character-based for CJK)
         query_words = set(query_clean)
         result_words = set(result_clean)
         if query_words & result_words:
-            overlap = len(query_words & result_words) / len(query_words | result_words)
-            return int(overlap * SCORE_WORD_OVERLAP)
+            overlap = len(query_words & result_words)
+            total = len(query_words | result_words)
+            if total > 0:
+                ratio = overlap / total
+                if ratio >= 0.3:
+                    return int(ratio * SCORE_WORD_OVERLAP)
 
         return 0
 

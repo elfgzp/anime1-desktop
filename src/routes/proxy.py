@@ -1,9 +1,11 @@
 """Video proxy routes for streaming anime content."""
 import json
 import logging
+import re
 import urllib.parse
 from typing import Optional
 
+import m3u8
 import requests
 from bs4 import BeautifulSoup
 from flask import Blueprint, Response, jsonify, request, after_this_request
@@ -40,6 +42,7 @@ from src.constants.messages import (
     VIDEO_API_PARAM_S,
     DOMAIN_ANIME1_ME,
     DOMAIN_ANIME1_PW,
+    HLS_DEFAULT_CODECS,
 )
 from src.constants.headers import (
     HEADER_USER_AGENT,
@@ -855,4 +858,138 @@ def proxy_embed():
         return Response(html, mimetype="text/html")
 
     except requests.RequestException as e:
+        return jsonify({KEY_ERROR: str(e)}), 500
+
+
+@proxy_bp.route("/hls")
+def proxy_hls_playlist():
+    """Proxy HLS playlist files and rewrite relative paths.
+
+    Uses m3u8 library to parse and serialize HLS playlists,
+    rewriting relative paths to proxy URLs.
+
+    Query params:
+        url: The playlist URL to proxy
+        cookies: Optional JSON string of cookies to use
+    """
+    playlist_url = request.args.get("url", "").strip()
+
+    if not playlist_url:
+        return jsonify({KEY_ERROR: ERROR_URL_REQUIRED}), 400
+
+    # Check domain
+    if DOMAIN_ANIME1_ME not in playlist_url and DOMAIN_ANIME1_PW not in playlist_url:
+        return jsonify({KEY_ERROR: ERROR_INVALID_DOMAIN}), 403
+
+    try:
+        headers = {
+            HEADER_USER_AGENT: VALUE_USER_AGENT_DEFAULT,
+            HEADER_ACCEPT: "*/*",
+            HEADER_ACCEPT_LANGUAGE: VALUE_ACCEPT_LANGUAGE_ZH_TW,
+            HEADER_REFERER: ANIME1_BASE_URL,
+        }
+
+        # Parse cookies from query param
+        cookies = {}
+        cookies_param = request.args.get("cookies", "").strip()
+        if cookies_param:
+            try:
+                cookies = json.loads(urllib.parse.unquote(cookies_param))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        response = requests.get(playlist_url, headers=headers, cookies=cookies, timeout=10)
+        response.raise_for_status()
+
+        # Handle both string and binary responses
+        # For text content (playlists), prefer response.text
+        # For binary content (segments), use response.content
+        if hasattr(response, 'content') and isinstance(response.content, bytes):
+            content = response.content
+            is_binary = True
+        else:
+            content = response.text
+            is_binary = False
+
+        # Only parse as HLS playlist if it looks like one
+        content_check = content if isinstance(content, (str, bytes)) else ""
+        if isinstance(content_check, str):
+            is_playlist = "#EXTM3U" in content_check or ".m3u8" in content_check
+        else:
+            is_playlist = b"#EXTM3U" in content_check or b".m3u8" in content_check
+
+        if not is_playlist:
+            # Not an HLS playlist, return as-is (binary content)
+            @after_this_request
+            def add_cors_headers(response):
+                response.headers[HEADER_ACCESS_CONTROL_ALLOW_ORIGIN] = "*"
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                return response
+            return Response(content, mimetype="video/mp2t")
+
+        # Parse HLS playlist using m3u8 library
+        # m3u8.loads can accept both string and bytes
+        if isinstance(content, bytes):
+            content_str = content.decode('utf-8', errors='replace')
+            playlist = m3u8.loads(content_str)
+        else:
+            playlist = m3u8.loads(content)
+
+        # Helper to rewrite a URI to proxy URL
+        def rewrite_uri(uri: str) -> str:
+            if uri.startswith("http://") or uri.startswith("https://"):
+                # Absolute URL - proxy it
+                encoded_url = urllib.parse.quote_plus(uri)
+            elif uri.startswith("/"):
+                # Absolute path on same domain
+                parsed = urllib.parse.urlparse(playlist_url)
+                encoded_url = urllib.parse.quote_plus(f"{parsed.scheme}://{parsed.netloc}{uri}")
+            else:
+                # Relative path - convert to absolute using base URL
+                parsed = urllib.parse.urlparse(playlist_url)
+                base_dir = parsed.path.rsplit('/', 1)[0]
+                absolute_uri = f"{base_dir}/{uri}"
+                encoded_url = urllib.parse.quote_plus(f"{parsed.scheme}://{parsed.netloc}{absolute_uri}")
+
+            cookies_str = urllib.parse.quote_plus(json.dumps(cookies)) if cookies else ""
+            return f"/proxy/hls?url={encoded_url}&cookies={cookies_str}"
+
+        # Rewrite segment URIs
+        if playlist.segments:
+            for segment in playlist.segments:
+                if segment.uri:
+                    segment.uri = rewrite_uri(segment.uri)
+
+        # Rewrite playlist URIs (variant streams)
+        if playlist.playlists:
+            for variant in playlist.playlists:
+                if variant.uri:
+                    variant.uri = rewrite_uri(variant.uri)
+                # Add CODECS attribute if missing (required by video.js)
+                stream_info = variant.stream_info
+                if stream_info and not getattr(stream_info, 'codecs', None):
+                    # Add default H.264 + AAC codec string
+                    # Most anime1.me videos use H.264/AAC
+                    stream_info.codecs = HLS_DEFAULT_CODECS
+
+        # Serialize back to string
+        content = playlist.dumps()
+
+        @after_this_request
+        def add_cors_headers(response):
+            response.headers[HEADER_ACCESS_CONTROL_ALLOW_ORIGIN] = "*"
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
+
+        return Response(content, mimetype="application/vnd.apple.mpegurl")
+
+    except m3u8.ParseError as e:
+        logger.error(f"[proxy/hls] M3U8 解析错误: {e}")
+        # Fallback: return original content if parsing fails
+        return Response(response.content, mimetype="application/vnd.apple.mpegurl")
+    except requests.RequestException as e:
+        logger.error(f"[proxy/hls] 获取playlist失败: {e}")
+        return jsonify({KEY_ERROR: str(e)}), 500
+    except Exception as e:
+        logger.error(f"[proxy/hls] 未知错误: {e}", exc_info=True)
         return jsonify({KEY_ERROR: str(e)}), 500

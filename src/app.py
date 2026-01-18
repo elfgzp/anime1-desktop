@@ -25,6 +25,7 @@ from src.routes import (
     favorite_bp,
     settings_bp,
     playback_bp,
+    performance_bp,
     register_page_routes
 )
 from src.parser.anime1_parser import Anime1Parser
@@ -92,23 +93,50 @@ def create_app() -> Flask:
     # Request timing middleware - logs all API requests
     @app.before_request
     def before_request():
-        """Record start time for request timing."""
+        """Record start time for request timing and setup tracing."""
         # Only time API requests (skip static files)
         if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
             g.start_time = time.time()
 
+            # Setup tracing - get trace_id from header or generate new
+            from src.utils.trace import start_trace, get_trace_id
+            trace_id = request.headers.get('X-Trace-ID')
+            start_trace(trace_id)
+            g.trace_id = get_trace_id()
+
     @app.after_request
     def after_request(response):
-        """Log request timing."""
+        """Log request timing and record trace span."""
+        from src.utils.trace import end_trace, TraceSpan
+
         # Only log API requests
         if request.path.startswith("/api/") or request.path.startswith("/proxy/"):
-            if hasattr(g, 'start_time'):
-                elapsed = (time.time() - g.start_time) * 1000  # Convert to ms
+            # Record trace span for the API call
+            if hasattr(g, 'trace_id') and hasattr(g, 'start_time'):
+                elapsed = (time.time() - g.start_time) * 1000
+                method = request.method
+                path = request.path
+
+                # Create span for the API call
+                with TraceSpan(f'{method} {path}', 'api_call', {
+                    'method': method,
+                    'path': path,
+                    'status_code': response.status_code
+                }) as span:
+                    span.end(success=response.status_code < 400)
+
                 # Log slow requests (>100ms) with warning
                 if elapsed > 100:
-                    logger.warning(f"SLOW REQUEST: {request.method} {request.path} - {elapsed:.2f}ms")
+                    logger.warning(f"SLOW REQUEST: {method} {path} - {elapsed:.2f}ms")
                 else:
-                    logger.info(f"{request.method} {request.path} - {elapsed:.2f}ms")
+                    logger.info(f"{method} {path} - {elapsed:.2f}ms")
+
+                # Add trace_id to response header
+                response.headers['X-Trace-ID'] = g.trace_id
+
+            # End tracing context
+            end_trace()
+
         return response
 
     # Register blueprints
@@ -118,6 +146,7 @@ def create_app() -> Flask:
     app.register_blueprint(favorite_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(playback_bp)
+    app.register_blueprint(performance_bp)
 
     # Register page routes
     register_page_routes(app)
@@ -210,8 +239,8 @@ def setup_file_logging():
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
 
-    # File handler - show DEBUG and above
-    file_handler = logging.FileHandler(log_file, encoding="utf-8", errors="replace")
+    # File handler - show DEBUG and above (Python 3.8 不支持 errors 参数)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
@@ -270,8 +299,9 @@ def main():
     app.config['DEV'] = args.dev
 
     # Start cache service in background
+    # Use quick_start in dev mode for faster startup (data loads in background)
     from src.services.anime_cache_service import start_cache_service
-    start_cache_service()
+    start_cache_service(quick_start=args.dev)
 
     try:
         app.run(

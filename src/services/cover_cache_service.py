@@ -118,12 +118,18 @@ class CoverCacheService:
             return False
 
     def clear_all(self) -> int:
-        """Clear all cached covers.
+        """Clear all cached covers and shrink the database.
 
         Returns:
             Number of entries deleted.
         """
-        return CoverCacheModel.clear_all()
+        count = CoverCacheModel.clear_all()
+        # Shrink database after clearing
+        try:
+            CoverCacheModel.vacuum()
+        except Exception as e:
+            logger.error(f"Error shrinking database: {e}")
+        return count
 
     def get_cache_count(self) -> int:
         """Get the number of cached covers.
