@@ -158,6 +158,22 @@ class TestPlatformDetector:
         assert PlatformDetector.match_asset("anime1-1.0.0-win64.exe", "windows", "x64") is True
         assert PlatformDetector.match_asset("anime1-1.0.0-linux.deb", "windows", "x64") is False
 
+    def test_match_asset_new_filename_format(self):
+        """Test matching Windows asset with new versioned filename format.
+
+        New format: anime1-windows-{version}.zip (portable)
+                   anime1-windows-{version}-setup.exe (installer)
+
+        Update checker should only match portable zip, not installer exe.
+        """
+        # Portable zip should match
+        assert PlatformDetector.match_asset("anime1-windows-1.0.0.zip", "windows", "x64") is True
+        assert PlatformDetector.match_asset("anime1-windows-0.2.0.zip", "windows", "x64") is True
+        assert PlatformDetector.match_asset("anime1-windows-1.0.0-rc.1.zip", "windows", "x64") is True
+        # Installer exe should NOT match (for update download)
+        assert PlatformDetector.match_asset("anime1-windows-1.0.0-setup.exe", "windows", "x64") is False
+        assert PlatformDetector.match_asset("anime1-windows-0.2.0-setup.exe", "windows", "x64") is False
+
     def test_match_asset_macos(self):
         """Test matching macOS asset."""
         # Asset name must contain platform keyword AND architecture keyword
