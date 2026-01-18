@@ -376,3 +376,136 @@ def open_logs_folder():
     except Exception as e:
         logger.error(f"Error opening logs folder: {e}")
         return error_response(str(e), 500)
+
+
+@settings_bp.route("/update/download", methods=["POST"])
+def download_update():
+    """Download the update installer.
+
+    Request body:
+        url: Download URL for the update installer
+
+    Returns:
+        Path to the downloaded file.
+    """
+    try:
+        import requests
+        import uuid
+        from src.utils.app_dir import get_download_dir
+
+        data = request.get_json()
+        url = data.get("url") if data else None
+
+        if not url:
+            return error_response("url is required", 400)
+
+        # Get download directory
+        download_dir = get_download_dir()
+
+        # Get filename from URL
+        filename = url.split("/")[-1].split("?")[0]
+        if not filename:
+            filename = f"anime1_update_{uuid.uuid4().hex[:8]}.pkg"
+
+        file_path = download_dir / filename
+
+        # Download the file
+        logger.info(f"Downloading update from {url} to {file_path}")
+
+        response = requests.get(url, stream=True, timeout=300)
+        response.raise_for_status()
+
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded_size = 0
+
+        with open(file_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded_size += len(chunk)
+
+        logger.info(f"Downloaded {downloaded_size} bytes to {file_path}")
+
+        return success_response(
+            message="下载完成",
+            data={
+                "file_path": str(file_path),
+                "file_size": downloaded_size,
+                "open_path": str(file_path)  # Path to open the file
+            }
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error downloading update: {e}")
+        return error_response(f"下载失败: {str(e)}", 500)
+    except Exception as e:
+        logger.error(f"Error downloading update: {e}")
+        return error_response(str(e), 500)
+
+
+@settings_bp.route("/open_path", methods=["POST"])
+def open_path():
+    """Open a file or path in the system file explorer/executor.
+
+    Request body:
+        path: Path to the file or directory to open
+
+    Returns:
+        Success message.
+    """
+    try:
+        data = request.get_json()
+        path_str = data.get("path") if data else None
+
+        if not path_str:
+            return error_response("path is required", 400)
+
+        path = Path(path_str)
+
+        if not path.exists():
+            return error_response(f"Path does not exist: {path_str}", 404)
+
+        path_str = str(path)
+
+        if platform.system() == "Windows":
+            # Use subprocess to avoid encoding issues
+            subprocess.run(
+                ["explorer.exe", "/select,", path_str],
+                check=True,
+                shell=True,
+                capture_output=True
+            )
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(
+                ["open", "-R", path_str],  # -R reveals in Finder
+                check=True,
+                capture_output=True
+            )
+            # Also try to open the file directly
+            subprocess.run(
+                ["open", path_str],
+                check=False,  # Don't fail if it's not directly openable
+                capture_output=True
+            )
+        else:  # Linux
+            subprocess.run(
+                ["xdg-open", path_str],
+                check=True,
+                capture_output=True
+            )
+
+        return success_response(message=f"已打开: {path_str}")
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Failed to open path via subprocess: {e}")
+        # Fallback to os.system
+        try:
+            if platform.system() == "Windows":
+                os.startfile(str(path))
+            else:
+                os.system(f'xdg-open "{path}"' if platform.system() != "Darwin" else f'open "{path}"')
+            return success_response(message=f"已打开: {path_str}")
+        except Exception as fallback_error:
+            logger.error(f"Fallback also failed: {fallback_error}")
+            return error_response(f"无法打开路径: {str(fallback_error)}", 500)
+    except Exception as e:
+        logger.error(f"Error opening path: {e}")
+        return error_response(str(e), 500)

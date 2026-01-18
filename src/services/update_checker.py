@@ -448,7 +448,7 @@ class UpdateChecker:
     
     def check_for_update(self) -> UpdateInfo:
         """Check for available updates.
-        
+
         Returns:
             UpdateInfo object with update status
         """
@@ -456,62 +456,76 @@ class UpdateChecker:
             # Fetch releases
             include_prerelease = self.channel == UpdateChannel.TEST
             releases = self._fetch_releases(include_prerelease=include_prerelease)
-            
+
             if not releases:
                 return UpdateInfo(
                     has_update=False,
                     current_version=self.current_version
                 )
-            
+
+            # Find the absolute latest version (for display purposes)
+            absolute_latest_release = None
+            absolute_latest_version = None
+
             # Find the latest version that's newer than current
-            latest_release = None
-            latest_version = None
-            
+            update_release = None
+            update_version = None
+
             for release in releases:
                 tag_name = release.get(API_FIELD_TAG_NAME, "")
                 # Remove 'v' prefix for comparison
                 version_str = tag_name.lstrip(VERSION_PREFIXES)
-                
+
+                # Track absolute latest for display
+                if absolute_latest_version is None or VersionComparator.compare_versions(version_str, absolute_latest_version) > 0:
+                    absolute_latest_version = version_str
+                    absolute_latest_release = release
+
                 # Skip if not newer than current
                 if VersionComparator.compare_versions(version_str, self.current_version) <= 0:
                     continue
-                
-                # Check if this is the latest we've seen
-                if latest_version is None or VersionComparator.compare_versions(version_str, latest_version) > 0:
-                    latest_version = version_str
-                    latest_release = release
-            
-            if latest_release is None:
+
+                # Check if this is the latest we've seen (that's newer than current)
+                if update_version is None or VersionComparator.compare_versions(version_str, update_version) > 0:
+                    update_version = version_str
+                    update_release = release
+
+            # Use absolute latest for display
+            latest_version_for_display = absolute_latest_release.get(API_FIELD_TAG_NAME, "") if absolute_latest_release else None
+
+            if update_release is None:
+                # No update available, but we know the latest version
                 return UpdateInfo(
                     has_update=False,
-                    current_version=self.current_version
+                    current_version=self.current_version,
+                    latest_version=latest_version_for_display
                 )
-            
+
             # Find matching asset
-            assets = latest_release.get(API_FIELD_ASSETS, [])
+            assets = update_release.get(API_FIELD_ASSETS, [])
             matching_asset = self._find_matching_asset(assets)
-            
+
             if not matching_asset:
                 return UpdateInfo(
                     has_update=True,
                     current_version=self.current_version,
-                    latest_version=latest_release.get(API_FIELD_TAG_NAME, ""),
-                    is_prerelease=latest_release.get(API_FIELD_PRERELEASE, False),
-                    release_notes=latest_release.get(API_FIELD_BODY, ""),
+                    latest_version=update_release.get(API_FIELD_TAG_NAME, ""),
+                    is_prerelease=update_release.get(API_FIELD_PRERELEASE, False),
+                    release_notes=update_release.get(API_FIELD_BODY, ""),
                 )
-            
+
             return UpdateInfo(
                 has_update=True,
                 current_version=self.current_version,
-                latest_version=latest_release.get(API_FIELD_TAG_NAME, ""),
-                is_prerelease=latest_release.get(API_FIELD_PRERELEASE, False),
-                release_notes=latest_release.get(API_FIELD_BODY, ""),
+                latest_version=update_release.get(API_FIELD_TAG_NAME, ""),
+                is_prerelease=update_release.get(API_FIELD_PRERELEASE, False),
+                release_notes=update_release.get(API_FIELD_BODY, ""),
                 download_url=matching_asset.get(API_FIELD_BROWSER_DOWNLOAD_URL),
                 asset_name=matching_asset.get(API_FIELD_NAME),
                 download_size=matching_asset.get(API_FIELD_SIZE),
-                published_at=latest_release.get(API_FIELD_PUBLISHED_AT),
+                published_at=update_release.get(API_FIELD_PUBLISHED_AT),
             )
-            
+
         except Exception as e:
             # Return error state
             return UpdateInfo(

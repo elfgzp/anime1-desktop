@@ -149,6 +149,16 @@ export const settingsAPI = {
   // 检查更新
   checkUpdate: () => api.get(API_ENDPOINTS.SETTINGS.CHECK_UPDATE),
 
+  // 下载更新
+  downloadUpdate: (url) => api.post(API_ENDPOINTS.SETTINGS.UPDATE_DOWNLOAD, {
+    url: url
+  }),
+
+  // 打开文件或路径
+  openPath: (path) => api.post(API_ENDPOINTS.SETTINGS.OPEN_PATH, {
+    path: path
+  }),
+
   // 打开日志文件夹
   openLogsFolder: () => api.post(API_ENDPOINTS.SETTINGS.LOGS_OPEN),
 

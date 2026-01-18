@@ -45,15 +45,43 @@ from .constants import (
 def get_version_file_path() -> Path:
     """Get the path to the version file.
 
-    For frozen executables, the version file is stored next to the executable.
+    For frozen executables, the version file is stored:
+    - On Windows/Linux: next to the executable OR in src/ subdirectory
+    - On macOS: in the Resources directory within the app bundle
+
     For development mode, it's stored in the project root.
 
     Returns:
         Path to the version file
     """
     if getattr(sys, 'frozen', False):
-        # Running as frozen executable - version file is next to the executable
-        return Path(sys.executable).parent / "version.txt"
+        exe_dir = Path(sys.executable).parent
+
+        # Check if running from macOS app bundle
+        if sys.platform == "darwin" and exe_dir.name == "MacOS":
+            # In macOS app bundle, resources are in ../Resources
+            resources_dir = exe_dir.parent.parent / "Resources"
+            # Check version.txt in Resources (PyInstaller standard)
+            version_path = resources_dir / "version.txt"
+            if version_path.exists():
+                return version_path
+            # Check in Resources/src/ (from --add-data src:src)
+            src_version = resources_dir / "src" / "version.txt"
+            if src_version.exists():
+                return src_version
+        else:
+            # Windows/Linux: check multiple locations
+            # 1. Directly next to executable (for some builds)
+            version_path = exe_dir / "version.txt"
+            if version_path.exists():
+                return version_path
+            # 2. In src/ subdirectory (from PyInstaller --add-data)
+            src_version = exe_dir / "src" / "version.txt"
+            if src_version.exists():
+                return src_version
+
+        # Fallback to executable directory
+        return exe_dir / "version.txt"
     else:
         # Running as normal Python script - version file in project root
         return Path(__file__).parent.parent.parent / "version.txt"
