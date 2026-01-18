@@ -49,15 +49,15 @@ echo "Build version: $VERSION"
 case "$PLATFORM" in
     "Windows"|"windows-latest"|"windows")
         echo "Building Windows (onedir)..."
-        $PYTHON_CMD build.py --clean
+        $PYTHON_CMD scripts/build.py --clean
         ;;
     "macOS"|"macos-latest"|"macos-12"|"macos")
         echo "Building macOS (onedir)..."
-        $PYTHON_CMD build.py --clean
+        $PYTHON_CMD scripts/build.py --clean
         ;;
     "Linux"|"ubuntu-latest"|"linux")
         echo "Building Linux (onefile)..."
-        $PYTHON_CMD build.py --clean --onefile
+        $PYTHON_CMD scripts/build.py --clean --onefile
         ;;
     *)
         echo "Unknown platform: $PLATFORM"
