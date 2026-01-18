@@ -794,7 +794,7 @@ def run_pyinstaller(args):
         "urllib3", "urllib3.util", "urllib3.connection",
         "beautifulsoup4", "soupsieve", "bs4", "bs4.builder",
         "pywebview", "pywebview.guarded_encodings", "pywebview.util", "pywebview.http",
-        "hanziconv", "threading", "socket", "webbrowser", "argparse", "json", "click",
+        "hanziconv", "m3u8", "threading", "socket", "webbrowser", "argparse", "json", "click",
     ]
     for imp in hidden_imports:
         cmd.extend(["--hidden-import", imp])
