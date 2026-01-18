@@ -6,11 +6,25 @@ import {
   RESPONSE_FIELDS,
   ERROR_MESSAGES
 } from '../constants/api'
+import { getCurrentTraceId } from './performance'
 
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000
 })
+
+// 请求拦截器 - 添加链路追踪 header
+api.interceptors.request.use(
+  (config) => {
+    // 尝试从 performance.js 获取当前 trace_id
+    const traceId = getCurrentTraceId()
+    if (traceId) {
+      config.headers['X-Trace-ID'] = traceId
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
 
 // 响应拦截器 - 统一错误处理
 api.interceptors.response.use(
@@ -136,7 +150,16 @@ export const settingsAPI = {
   checkUpdate: () => api.get(API_ENDPOINTS.SETTINGS.CHECK_UPDATE),
 
   // 打开日志文件夹
-  openLogsFolder: () => api.post(API_ENDPOINTS.SETTINGS.LOGS_OPEN)
+  openLogsFolder: () => api.post(API_ENDPOINTS.SETTINGS.LOGS_OPEN),
+
+  // 获取缓存信息
+  getCacheInfo: () => api.get(API_ENDPOINTS.SETTINGS.CACHE_INFO),
+
+  // 清理缓存
+  // cacheType: 'covers' (默认,仅清理封面缓存), 'favorites' (清理收藏), 'all' (清理所有)
+  clearCache: (cacheType = 'covers') => api.post(API_ENDPOINTS.SETTINGS.CACHE_CLEAR, {
+    type: cacheType
+  })
 }
 
 // 更新相关 API
@@ -174,6 +197,32 @@ export const playbackAPI = {
   // 批量获取集数进度
   batchProgress: (ids) => api.get(API_ENDPOINTS.PLAYBACK.BATCH, {
     params: { [REQUEST_PARAMS.IDS]: ids }
+  })
+}
+
+// 性能追踪相关 API (注意: API_BASE 已是 /api, 路径不需要再带 /api 前缀)
+export const performanceAPI = {
+  // 获取统计信息
+  getStats: (hours = 24) => api.get('/performance/stats', {
+    params: { hours }
+  }),
+
+  // 获取最近追踪列表
+  getRecentTraces: (params = {}) => api.get('/performance/recent', {
+    params: { limit: 20, ...params }
+  }),
+
+  // 获取链路详情
+  getTrace: (traceId) => api.get(`/performance/trace/${traceId}`),
+
+  // 清理性能数据（删除指定天数前的数据）
+  clearData: (days = 7) => api.post('/performance/clear', null, {
+    params: { days }
+  }),
+
+  // 清空所有性能数据
+  clearAllData: () => api.post('/performance/clear', null, {
+    params: { clear_all: true }
   })
 }
 

@@ -1,14 +1,34 @@
 <template>
   <div class="detail-container">
-    <el-button
-      :icon="ArrowLeft"
-      @click="$router.push(ROUTES.HOME)"
-      class="back-btn"
-    >
-      返回番剧列表
-    </el-button>
+    <!-- 面包屑导航 -->
+    <el-breadcrumb separator="/" class="breadcrumb-nav">
+      <el-breadcrumb-item>
+        <router-link to="/">番剧列表</router-link>
+      </el-breadcrumb-item>
+      <el-breadcrumb-item v-if="animeData?.anime?.title">
+        {{ animeData.anime.title }}
+      </el-breadcrumb-item>
+      <el-breadcrumb-item v-else-if="loadError">
+        加载失败
+      </el-breadcrumb-item>
+      <el-breadcrumb-item v-else-if="detailLoading">
+        <span class="loading-text">加载中...</span>
+      </el-breadcrumb-item>
+    </el-breadcrumb>
 
-    <!-- 页面主体结构 - 立即显示 -->
+    <!-- 返回按钮和面包屑放在同一行 -->
+    <div class="back-with-breadcrumb">
+      <el-button
+        :icon="ArrowLeft"
+        @click="goBack"
+        class="back-btn"
+        :disabled="loadError && !animeData?.anime"
+      >
+        返回
+      </el-button>
+    </div>
+
+    <!-- 页面主体结构 -->
     <div class="detail-content">
       <!-- 侧边栏 - 番剧信息 -->
       <el-aside class="episode-sidebar">
@@ -22,11 +42,18 @@
               fit="cover"
               :preview-src-list="[]"
             />
+            <div v-else-if="loadError" class="sidebar-cover-placeholder">
+              <el-icon :size="40"><Warning /></el-icon>
+            </div>
+            <div v-else-if="detailLoading" class="sidebar-cover-placeholder loading">
+              <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+            </div>
             <div v-else class="sidebar-cover-placeholder">
               <el-icon :size="40"><Picture /></el-icon>
             </div>
-            <!-- 收藏按钮 -->
+            <!-- 收藏按钮（加载完成且无错误时显示） -->
             <el-button
+              v-if="!detailLoading && !loadError && animeData?.anime"
               :icon="isFavorite ? StarFilled : Star"
               circle
               class="detail-favorite-btn"
@@ -36,99 +63,108 @@
             />
           </div>
 
-          <div class="sidebar-info" v-if="loadingTitle">
-            <div class="sidebar-loading">
-              <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+          <!-- 侧边栏信息区域 -->
+          <div class="sidebar-info">
+            <!-- 加载中状态 -->
+            <div v-if="detailLoading" class="sidebar-loading">
+              <el-icon class="is-loading" :size="20"><Loading /></el-icon>
               <span>加载中...</span>
             </div>
-          </div>
-          <div v-else class="sidebar-info">
-            <!-- 标题 -->
-            <div class="sidebar-title">
-              <span v-if="animeData?.anime?.title">{{ animeData.anime.title }}</span>
-              <span v-else class="text-placeholder">加载中...</span>
+            <!-- 错误状态 -->
+            <div v-else-if="loadError" class="sidebar-error">
+              <el-icon :size="24"><Warning /></el-icon>
+              <span>加载失败</span>
+              <el-button size="small" @click="retryLoad">重试</el-button>
             </div>
+            <!-- 正常内容 -->
+            <div v-else-if="animeData?.anime">
+              <!-- 标题 -->
+              <div class="sidebar-title">
+                {{ animeData.anime.title }}
+              </div>
 
-            <!-- 元信息 -->
-            <div class="sidebar-meta">
-              <div class="meta-item">
-                <span class="meta-label">年份</span>
-                <span class="meta-value">{{ animeData?.anime?.year || '-' }}</span>
+              <!-- 元信息 -->
+              <div class="sidebar-meta">
+                <div class="meta-item">
+                  <span class="meta-label">年份</span>
+                  <span class="meta-value">{{ animeData?.anime?.year || '-' }}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">季度</span>
+                  <span class="meta-value">{{ animeData?.anime?.season || '-' }}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">字幕</span>
+                  <span class="meta-value">{{ animeData?.anime?.subtitle_group || '-' }}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">更新</span>
+                  <span class="meta-value">
+                    {{ (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无更新' }}
+                  </span>
+                </div>
               </div>
-              <div class="meta-item">
-                <span class="meta-label">季度</span>
-                <span class="meta-value">{{ animeData?.anime?.season || '-' }}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">字幕</span>
-                <span class="meta-value">{{ animeData?.anime?.subtitle_group || '-' }}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">更新</span>
-                <span class="meta-value">
-                  {{ (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无更新' }}
-                </span>
-              </div>
-            </div>
 
-            <!-- Bangumi 番剧信息 -->
-            <div class="bangumi-info" v-if="bangumiInfo">
-              <!-- 评分和排名 -->
-              <div class="bangumi-rating" v-if="bangumiInfo.rating">
-                <span class="rating-value">{{ bangumiInfo.rating.toFixed(1) }}</span>
-                <span class="rating-label">分</span>
-                <span v-if="bangumiInfo.rank" class="rank-value">#{{ bangumiInfo.rank }}</span>
-              </div>
-              <!-- 日期和类型标签 -->
-              <div class="bangumi-tags" v-if="bangumiInfo.date || bangumiInfo.type">
-                <span v-if="bangumiInfo.date" class="meta-tag">{{ bangumiInfo.date }}</span>
-                <span v-if="bangumiInfo.type" class="meta-tag">{{ bangumiInfo.type }}</span>
-              </div>
-              <!-- 简介 -->
-              <div class="bangumi-summary" v-if="bangumiInfo.summary">
-                <div class="summary-header">简介</div>
-                <div class="summary-content" :class="{ expanded: summaryExpanded }">
-                  {{ summaryExpanded ? bangumiInfo.summary : truncateText(bangumiInfo.summary, 150) }}
+              <!-- Bangumi 番剧信息 -->
+              <div v-if="bangumiInfo" class="bangumi-info">
+                <!-- 评分和排名 -->
+                <div class="bangumi-rating" v-if="bangumiInfo.rating">
+                  <span class="rating-value">{{ bangumiInfo.rating.toFixed(1) }}</span>
+                  <span class="rating-label">分</span>
+                  <span v-if="bangumiInfo.rank" class="rank-value">#{{ bangumiInfo.rank }}</span>
                 </div>
-                <el-link v-if="bangumiInfo.summary.length > 150" @click="summaryExpanded = !summaryExpanded" class="more-link">
-                  {{ summaryExpanded ? '收起' : '展开' }}
-                </el-link>
-                <el-link :href="bangumiInfo.subject_url" target="_blank" class="more-link">
-                  在 Bangumi 查看
-                </el-link>
-              </div>
-              <!--  genres -->
-              <div class="bangumi-genres" v-if="bangumiInfo.genres?.length">
-                <div class="genres-label">类型</div>
-                <div class="genres-list">
-                  <span v-for="(genre, idx) in bangumiInfo.genres" :key="idx" class="genre-tag">
-                    {{ genre }}
-                  </span>
+                <!-- 日期和类型标签 -->
+                <div class="bangumi-tags" v-if="bangumiInfo.date || bangumiInfo.type">
+                  <span v-if="bangumiInfo.date" class="meta-tag">{{ bangumiInfo.date }}</span>
+                  <span v-if="bangumiInfo.type" class="meta-tag">{{ bangumiInfo.type }}</span>
+                </div>
+                <!-- 简介 -->
+                <div class="bangumi-summary" v-if="bangumiInfo.summary">
+                  <div class="summary-header">简介</div>
+                  <div class="summary-content" :class="{ expanded: summaryExpanded }">
+                    {{ summaryExpanded ? bangumiInfo.summary : truncateText(bangumiInfo.summary, 150) }}
+                  </div>
+                  <el-link v-if="bangumiInfo.summary.length > 150" @click="summaryExpanded = !summaryExpanded" class="more-link">
+                    {{ summaryExpanded ? '收起' : '展开' }}
+                  </el-link>
+                  <el-link :href="bangumiInfo.subject_url" target="_blank" class="more-link">
+                    在 Bangumi 查看
+                  </el-link>
+                </div>
+                <!--  genres -->
+                <div class="bangumi-genres" v-if="bangumiInfo.genres?.length">
+                  <div class="genres-label">类型</div>
+                  <div class="genres-list">
+                    <span v-for="(genre, idx) in bangumiInfo.genres" :key="idx" class="genre-tag">
+                      {{ genre }}
+                    </span>
+                  </div>
+                </div>
+                <!-- 制作人员 -->
+                <div class="bangumi-staff" v-if="bangumiInfo.staff?.length">
+                  <div class="staff-label">制作</div>
+                  <div class="staff-list">
+                    <span v-for="(item, idx) in bangumiInfo.staff.slice(0, 5)" :key="idx" class="staff-item">
+                      {{ item.role }}: {{ item.name }}
+                    </span>
+                  </div>
+                </div>
+                <!-- 声优 -->
+                <div class="bangumi-cast" v-if="bangumiInfo.cast?.length">
+                  <div class="cast-label">声优</div>
+                  <div class="cast-list">
+                    <span v-for="(item, idx) in bangumiInfo.cast.slice(0, 5)" :key="idx" class="cast-item">
+                      {{ item.name }}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <!-- 制作人员 -->
-              <div class="bangumi-staff" v-if="bangumiInfo.staff?.length">
-                <div class="staff-label">制作</div>
-                <div class="staff-list">
-                  <span v-for="(item, idx) in bangumiInfo.staff.slice(0, 5)" :key="idx" class="staff-item">
-                    {{ item.role }}: {{ item.name }}
-                  </span>
-                </div>
+
+              <!-- Bangumi 加载中（在内容区域显示加载状态） -->
+              <div v-if="!bangumiInfo && !loadError" class="bangumi-loading-inline">
+                <el-icon class="is-loading" :size="16"><Loading /></el-icon>
+                <span>正在加载 Bangumi 信息...</span>
               </div>
-              <!-- 声优 -->
-              <div class="bangumi-cast" v-if="bangumiInfo.cast?.length">
-                <div class="cast-label">声优</div>
-                <div class="cast-list">
-                  <span v-for="(item, idx) in bangumiInfo.cast.slice(0, 5)" :key="idx" class="cast-item">
-                    {{ item.name }}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <!-- Bangumi 加载中 -->
-            <div v-else-if="bangumiLoading" class="bangumi-loading">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              <span>加载 Bangumi 信息...</span>
             </div>
           </div>
         </div>
@@ -150,21 +186,26 @@
             </div>
           </template>
           <div class="video-container">
-            <!-- 加载中动画（不阻挡点击） -->
-            <div v-if="pwEpisodesLoading" class="video-loading-overlay">
-              <div class="video-loading-spinner">
+            <!-- 骨架屏：页面加载中 -->
+            <div v-if="detailLoading" class="video-skeleton">
+              <div class="skeleton-video-placeholder"></div>
+            </div>
+            <!-- 加载动画：前端获取剧集中 -->
+            <div v-else-if="pwEpisodesLoading" class="video-loading-overlay">
+              <div class="video-loading-content">
                 <el-icon class="is-loading" :size="40"><Loading /></el-icon>
-                <span>正在加载剧集...</span>
+                <span class="video-loading-text">正在加载剧集...</span>
               </div>
             </div>
-            <!-- Loading overlay -->
-            <div v-if="videoLoading" class="video-loading">
-              <el-icon class="is-loading" :size="50"><Loading /></el-icon>
-              <div class="loading-text">{{ loadingText }}</div>
-              <div class="loading-percent">{{ loadingPercent }}%</div>
+            <!-- 视频加载中 -->
+            <div v-else-if="videoLoading" class="video-loading">
+              <div class="video-loading-content">
+                <el-icon class="is-loading" :size="50"><Loading /></el-icon>
+                <span class="video-loading-text">{{ loadingText }}</span>
+              </div>
             </div>
-            <!-- Error overlay -->
-            <div v-if="videoError" class="video-error">
+            <!-- 播放器错误 -->
+            <div v-else-if="videoError" class="video-error">
               <div class="video-error-icon">&#9888;</div>
               <div class="video-error-title">{{ videoErrorTitle }}</div>
               <div class="video-error-message">{{ videoErrorMessage }}</div>
@@ -197,30 +238,24 @@
             </div>
             <!-- Video.js 播放器 -->
             <VideoPlayer
-              v-else-if="videoSrc && (animeData?.episodes?.length > 0 || pwEpisodes.length > 0)"
+              v-else-if="videoSrc"
               ref="videoPlayerRef"
               :src="videoSrc"
               :anime-id="animeId"
               :episode-index="currentEpisodeIndex"
               :poster="animeData?.anime?.cover_url"
+              :loading="videoLoading"
+              :restore-progress="currentProgress"
               @ready="onPlayerReady"
               @error="onPlayerError"
               @timeupdate="onTimeUpdate"
+              @play="onPlayerPlay"
+              @pause="onPlayerPause"
+              @restore="onRestorePlayback"
+              @restart="onRestartPlayback"
             />
-            <!-- 加载失败 -->
-            <div v-if="pwEpisodesLoadError && !pwEpisodes.length && !pwEpisodesLoading" class="video-placeholder">
-              <el-icon :size="60"><Warning /></el-icon>
-              <div>加载失败，请检查网络后重试</div>
-              <el-button type="primary" style="margin-top: 16px;" @click="retryLoadEpisodes">
-                重新加载
-              </el-button>
-            </div>
-            <!-- 视频还未上架（真正没有剧集） -->
-            <div v-else-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && pwEpisodesLoadComplete && !pwEpisodesLoading" class="video-placeholder">
-              <el-icon :size="60"><VideoCamera /></el-icon>
-              <div>视频还未上架，请等待更新</div>
-            </div>
-            <div v-else-if="!pwEpisodesLoading" class="video-placeholder">
+            <!-- 有剧集但没有视频源时显示占位 -->
+            <div v-else-if="!videoSrc && !detailLoading && !videoLoading && !videoError && hasAnyEpisodes" class="video-placeholder">
               <el-icon :size="60"><VideoPlay /></el-icon>
             </div>
           </div>
@@ -232,36 +267,49 @@
             <div class="section-title">
               <span>全部剧集</span>
               <span class="total-episodes">
-                {{ (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无剧集' }}
+                {{ detailLoading || pwEpisodesLoading ? '加载中...' : (animeData?.episodes?.length || pwEpisodes.length) > 0 ? `共 ${animeData?.episodes?.length || pwEpisodes.length} 话` : '暂无剧集' }}
               </span>
             </div>
           </template>
 
           <!-- 剧集列表 -->
           <div class="episode-grid">
-            <!-- 加载中动画（不阻挡点击） -->
-            <div v-if="pwEpisodesLoading" class="loading-episodes">
-              <div class="loading-spinner">
-                <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+            <!-- 骨架屏：主加载中 -->
+            <template v-if="detailLoading">
+              <div v-for="n in (animeData?.episodes?.length || pwEpisodes.length || 8)" :key="n" class="episode-skeleton-card"></div>
+            </template>
+            <!-- 加载动画：前端获取剧集中 -->
+            <template v-else-if="pwEpisodesLoading">
+              <div class="loading-episodes-inline">
+                <el-icon class="is-loading" :size="24"><Loading /></el-icon>
                 <span>正在加载剧集...</span>
               </div>
-            </div>
-            <div
-              v-for="(ep, idx) in (animeData?.episodes || pwEpisodes)"
-              :key="idx"
-              class="episode-card"
-              :class="{ active: currentEpisodeIndex === idx }"
-              :style="getEpisodeCardStyle(ep.id)"
-              @click="playEpisode(idx)"
-            >
-              <div class="episode-card-num">第{{ ep.episode }}集</div>
-              <div class="episode-card-date">{{ ep.date }}</div>
-            </div>
-            <el-empty
-              v-if="(animeData?.episodes?.length === 0 || !animeData?.episodes) && !pwEpisodes.length && !pwEpisodesLoading"
-              :description="UI_TEXT.NO_EPISODES"
-              :image-size="80"
-            />
+            </template>
+            <!-- 有剧集数据：显示列表 -->
+            <template v-else-if="(animeData?.episodes || pwEpisodes).length > 0">
+              <div
+                v-for="(ep, idx) in (animeData?.episodes || pwEpisodes)"
+                :key="idx"
+                class="episode-card"
+                :class="{
+                  active: currentEpisodeIndex === idx,
+                  'loading-progress': episodeProgressLoading
+                }"
+                :style="episodeProgressLoading ? {} : getEpisodeCardStyle(ep.id)"
+                @click="playEpisode(idx)"
+              >
+                <div class="episode-card-num">第{{ ep.episode }}集</div>
+                <div class="episode-card-date">{{ ep.date }}</div>
+              </div>
+            </template>
+            <!-- 加载完成：无剧集数据 -->
+            <!-- 注意：只有加载完成（detailLoading=false 且 pwEpisodesLoading=false）且确实没有数据时才显示 -->
+            <template v-else-if="!isEpisodesLoading">
+              <el-empty
+                :description="UI_TEXT.NO_EPISODES"
+                :image-size="80"
+              />
+            </template>
           </div>
         </el-card>
       </el-main>
@@ -273,38 +321,42 @@
         <el-button type="primary" @click="retryLoad">重新加载</el-button>
       </el-empty>
     </div>
+    <el-backtop :right="20" :bottom="20" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Star, StarFilled, VideoPlay, VideoCamera, Loading, Refresh, Link, Picture, Warning } from '@element-plus/icons-vue'
 import { animeAPI, favoriteAPI, playbackAPI } from '../utils/api'
 import { ROUTES, API_ENDPOINTS, REQUEST_PARAMS, RESPONSE_FIELDS, ERROR_MESSAGES, UI_TEXT } from '../constants/api'
 import DOMPurify from 'dompurify'
-import { ElMessage, ElNotification, ElMessageBox } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import { measure, measureApi, tracedMeasure, startTrace, endTrace } from '../utils/performance'
+import { onCacheCleared } from '../utils/cacheEventBus'
 
 const route = useRoute()
+const router = useRouter()
 const animeId = computed(() => route.params.id)
 
 // 加载状态
 const loadError = ref(false)
 const loadErrorMessage = ref('加载失败，请稍后重试')
+const detailLoading = ref(true)  // 详情页主加载状态（骨架屏）
 const animeData = ref(null)
-const loadingTitle = ref(true)  // 标题骨架屏状态
-const loadingEpisodes = ref(true)  // 剧集骨架屏状态
 const pwEpisodes = ref([])
 const pwEpisodesLoading = ref(false)
+const isPlaying = ref(false)  // 视频是否正在播放
 const pwEpisodesLoadComplete = ref(false)  // 标记首次加载是否完成
 const pwEpisodesLoadError = ref(false)     // 标记是否有加载错误
 const anime1PwUrl = ref('')  // anime1.pw 详情页 URL
+const initialVideoLoaded = ref(false)  // 标记首次视频加载是否开始
 const currentEpisodeIndex = ref(0)
 const videoSrc = ref('')
 const videoLoading = ref(false)
 const loadingText = ref('正在加载视频...')
-const loadingPercent = ref(0)
 const videoError = ref(false)
 const videoErrorTitle = ref('')
 const videoErrorMessage = ref('')
@@ -313,11 +365,75 @@ const isFavorite = ref(false)
 const favoriteLoading = ref(false)
 const videoPlayerRef = ref(null)
 const bangumiInfo = ref(null)
-const bangumiLoading = ref(true)
 const summaryExpanded = ref(false)  // 简介展开状态
 const episodeProgressMap = ref({})
+const episodeProgressLoading = ref(true)  // 播放进度加载中状态
 const saveTimer = ref(null)
 const lastSavedTime = ref(0)
+const adultContentSourceUrl = ref(null)  // 18x内容源站点URL（TLS错误时使用）
+
+// 调试：监听 detailLoading 变化
+watch(detailLoading, (newVal, oldVal) => {
+  console.log('[Detail] detailLoading 变化:', oldVal, '->', newVal, ', animeData:', animeData.value ? `已加载 (${animeData.value.episodes?.length || 0} 集)` : 'null')
+}, { immediate: true })
+
+// 调试：监听 pwEpisodesLoading 变化
+watch(pwEpisodesLoading, (newVal, oldVal) => {
+  console.log('[Detail] pwEpisodesLoading 变化:', oldVal, '->', newVal, ', pwEpisodes:', pwEpisodes.value.length, '集')
+}, { immediate: true })
+
+// 调试：监听 animeData 变化
+watch(() => animeData.value, (newVal) => {
+  console.log('[Detail] animeData 变化:', newVal ? `已加载 (${newVal.episodes?.length || 0} 集)` : 'null')
+}, { immediate: true })
+
+// 调试：监听 pwEpisodes 变化
+watch(pwEpisodes, (newVal) => {
+  console.log('[Detail] pwEpisodes 变化:', newVal.length, '集')
+}, { immediate: true })
+
+// 调试：监听 videoSrc 变化
+watch(videoSrc, (newVal, oldVal) => {
+  console.log('[Detail] videoSrc 变化:', oldVal ? '有值' : 'null', '->', newVal ? `有值 (len=${newVal.length})` : 'empty')
+  console.log('[Detail] 条件检查: videoLoading=', videoLoading.value, ', videoError=', videoError.value, ', !!videoSrc=', !!newVal)
+  console.log('[Detail] 预期渲染: VideoPlayer =', !videoLoading.value && !videoError.value && !!newVal)
+}, { immediate: true })
+
+// 计算是否没有任何剧集数据
+const hasAnyEpisodes = computed(() => {
+  const animeCount = animeData.value?.episodes?.length || 0
+  const pwCount = pwEpisodes.value.length
+  const total = animeCount || pwCount
+  console.log('[Detail] hasAnyEpisodes 计算:', { animeCount, pwCount, total, result: total > 0 })
+  return total > 0
+})
+
+// 调试：video-container 的渲染条件
+const videoContainerState = computed(() => {
+  return {
+    detailLoading: detailLoading.value,
+    pwEpisodesLoading: pwEpisodesLoading.value,
+    videoLoading: videoLoading.value,
+    videoError: videoError.value,
+    hasVideoSrc: !!videoSrc.value,
+    hasAnyEpisodes: hasAnyEpisodes.value,
+    渲染结果: detailLoading.value ? '骨架屏'
+      : pwEpisodesLoading.value ? '加载剧集中'
+      : videoLoading.value ? '视频加载中'
+      : videoError.value ? '播放器错误'
+      : videoSrc.value ? 'VideoPlayer'
+      : hasAnyEpisodes.value ? 'video-placeholder'
+      : '暂无剧集'
+  }
+})
+
+// 监听 video-container 状态变化
+watch(videoContainerState, (newState) => {
+  console.log('[Detail] video-container 渲染:', newState.渲染结果, newState)
+}, { immediate: true })
+
+// 计算是否正在加载剧集（用于模板条件判断）
+const isEpisodesLoading = computed(() => detailLoading.value || pwEpisodesLoading.value)
 
 // 播放进度保存间隔（毫秒）
 const SAVE_INTERVAL = 5000
@@ -338,6 +454,12 @@ const currentEpisode = computed(() => {
   const episodes = animeData.value?.episodes || pwEpisodes.value
   if (!episodes || episodes.length === 0) return null
   return episodes[currentEpisodeIndex.value]
+})
+
+// 当前剧集的播放进度
+const currentProgress = computed(() => {
+  if (!currentEpisode.value) return null
+  return getEpisodeProgress(currentEpisode.value.id)
 })
 
 // 获取单集播放进度
@@ -425,6 +547,9 @@ const formatTime = (seconds) => {
 const loadEpisodeProgress = async () => {
   if (!animeData.value || animeData.value.episodes.length === 0) return
 
+  episodeProgressLoading.value = true
+  console.log('[Detail] 开始加载播放进度')
+
   try {
     // 构建批量查询 ID
     const ids = animeData.value.episodes
@@ -447,6 +572,9 @@ const loadEpisodeProgress = async () => {
     }
   } catch (error) {
     console.error('[Detail] 加载播放进度失败:', error)
+  } finally {
+    episodeProgressLoading.value = false
+    console.log('[Detail] 播放进度加载完成')
   }
 }
 
@@ -475,50 +603,6 @@ const stopProgressSaving = () => {
   }
 }
 
-// 检查并询问是否恢复播放
-const checkAndRestorePlayback = async (episodeId, episodeIndex) => {
-  const progress = getEpisodeProgress(episodeId)
-  console.log('[Detail] checkAndRestorePlayback:', { episodeId, episodeIndex, progress })
-
-  // 先清除旧的 localStorage（避免 VideoPlayer 恢复旧进度）
-  const STORAGE_KEY = 'anime1_video_progress'
-  const storageKey = `${STORAGE_KEY}_${animeId.value}_${episodeIndex}`
-  localStorage.removeItem(storageKey)
-
-  if (progress && progress.position_seconds > 10) {
-    // 延迟一点时间等待播放器加载
-    setTimeout(async () => {
-      try {
-        await ElMessageBox.confirm(
-          `上次播放到 ${progress.position_formatted}，是否继续？`,
-          '继续观看',
-          {
-            confirmButtonText: '继续播放',
-            cancelButtonText: '重新开始',
-            type: 'info',
-            lockScroll: false
-          }
-        )
-        // 用户选择继续播放
-        if (videoPlayerRef.value && videoPlayerRef.value.setCurrentTime) {
-          videoPlayerRef.value.setCurrentTime(progress.position_seconds)
-          console.log('[Detail] 已跳转到进度:', progress.position_seconds)
-        }
-      } catch {
-        // 用户选择重新开始或取消 - 已经清除了 localStorage
-        console.log('[Detail] 用户选择重新开始')
-        // 清除前端状态
-        episodeProgressMap.value[episodeId] = null
-        // 清除 VideoPlayer 进度
-        if (videoPlayerRef.value && videoPlayerRef.value.setCurrentTime) {
-          videoPlayerRef.value.setCurrentTime(0)
-        }
-        console.log('[Detail] 已清除播放进度')
-      }
-    }, 1000)
-  }
-}
-
 // 净化番剧数据
 const sanitizeAnimeData = (data) => {
   if (!data || !data.anime) return data
@@ -542,48 +626,112 @@ const sanitizeAnimeData = (data) => {
 }
 
 const fetchData = async () => {
-  console.log('[Detail] fetchData 开始, animeId:', animeId.value)
+  // 开始链路追踪 - 用于前后端关联
+  startTrace('Detail_page')
+
+  const timer = tracedMeasure('Detail_fetchData')
   loadError.value = false
 
+  // 设置 pwEpisodesLoading=true，确保在 API 请求期间显示 loading 状态
+  pwEpisodesLoading.value = true
+  console.log('[Detail] fetchData 开始, detailLoading=', detailLoading.value, ', pwEpisodesLoading=true')
+
   try {
-    console.log('[Detail] 调用 API /anime/' + animeId.value + '/episodes')
+    // 1. 调用 API 获取剧集
+    const apiTimer = measureApi('getEpisodes')
     const response = await animeAPI.getEpisodes(animeId.value)
-    console.log('[Detail] API 响应成功, requires_frontend_fetch:', response.data.requires_frontend_fetch)
+    apiTimer.success(response)
+
+    console.log('[Detail] API 返回数据:', {
+      hasAnime: !!response.data.anime,
+      episodesCount: response.data.episodes?.length || 0,
+      requiresFrontendFetch: response.data.requires_frontend_fetch
+    })
+
+    // 2. 保存和净化数据
+    const sanitizeTimer = tracedMeasure('sanitizeAnimeData')
+    animeData.value = sanitizeAnimeData(response.data)
+    sanitizeTimer.end({ episodeCount: animeData.value.episodes?.length || 0 })
+
+    console.log('[Detail] 净化后 animeData:', {
+      animeEpisodesCount: animeData.value.episodes?.length || 0,
+      pwEpisodesCount: pwEpisodes.value.length
+    })
 
     // 检查是否需要通过前端获取 anime1.pw 页面
     if (response.data.requires_frontend_fetch) {
-      console.log('[Detail] anime1.pw 需要前端获取页面:', response.data.fetch_url)
-      // 保存基本信息
-      animeData.value = sanitizeAnimeData(response.data)
-      // 关闭标题骨架屏（基本信息已加载）
-      loadingTitle.value = false
+      console.log('[Detail] 需要前端获取 anime1.pw, 设置 pwEpisodesLoading=true')
       // 开始加载剧集（不阻塞页面）
       pwEpisodesLoading.value = true
-      fetchPwEpisodes().catch(err => {
-        console.error('[Detail] 获取 anime1.pw 剧集失败:', err)
+
+      // 并行加载：pwEpisodes 和 backgroundData
+      const [pwResult, bgResult] = await Promise.allSettled([
+        fetchPwEpisodes().catch(err => ({ error: err.message })),
+        loadBackgroundData().catch(err => ({ error: err.message }))
+      ])
+
+      if (pwResult.error) {
+        console.error('[Detail] 获取 anime1.pw 剧集失败:', pwResult.error)
+      }
+
+      // 注意：detailLoading 由 playEpisode 关闭（首次加载视频时）
+      console.log('[Detail] API数据已加载，等待播放第一集时关闭骨架屏')
+
+      timer.end({
+        animeId: animeId.value,
+        requiresFrontendFetch: true,
+        episodeCount: animeData.value.episodes?.length || 0,
+        hasPwError: !!pwResult.error,
+        hasBgError: !!bgResult.error
       })
-      // 并行加载非关键数据
-      loadBackgroundData()
+      endTrace()
       return
     }
 
-    console.log('[Detail] 设置 animeData, episodes 数量:', response.data.episodes?.length || 0)
-    // 净化数据防止 XSS
-    animeData.value = sanitizeAnimeData(response.data)
-    // 数据加载完成，关闭骨架屏
-    loadingTitle.value = false
-    loadingEpisodes.value = false
+    // 关闭剧集加载状态
+    console.log('[Detail] API 直接返回剧集数据, 设置 pwEpisodesLoading=false')
+    pwEpisodesLoading.value = false
 
-    // 并行加载非关键数据（不阻塞页面显示）
-    loadBackgroundData()
+    // 确保 Vue 完成响应式更新后再继续（避免模板渲染时 animeData 还没更新）
+    await nextTick()
 
-    // 自动播放第一集
-    if (animeData.value.episodes.length > 0) {
-      console.log('[Detail] 自动播放第 0 集')
+    // 3. 后台加载非关键数据（不阻塞页面）
+    loadBackgroundData().catch(err => {
+      console.error('[Detail] 后台数据加载失败:', err)
+    })
+
+    // 4. 自动播放第一集或关闭骨架屏
+    const animeEpisodesCount = animeData.value.episodes?.length || 0
+    const pwEpisodesCount = pwEpisodes.value.length
+    const totalEpisodes = animeEpisodesCount || pwEpisodesCount
+    console.log('[Detail] 检查剧集数据:', { animeEpisodesCount, pwEpisodesCount, totalEpisodes })
+
+    if (totalEpisodes > 0) {
+      console.log('[Detail] 有剧集数据，自动播放第一集')
+      const playTimer = tracedMeasure('playFirstEpisode')
       playEpisode(0)
+      playTimer.end({ episodeId: animeData.value.episodes?.[0]?.id })
+    } else {
+      // 没有剧集数据时，直接关闭骨架屏，显示空状态
+      console.log('[Detail] 没有剧集数据，直接关闭骨架屏')
+      detailLoading.value = false
+      initialVideoLoaded.value = true
     }
+
+    timer.end({
+      animeId: animeId.value,
+      episodeCount: animeData.value.episodes?.length || 0
+    })
+    endTrace()
   } catch (error) {
+    timer.end({ error: error.message })
     loadError.value = true
+    // 加载失败时关闭骨架屏，显示错误状态
+    detailLoading.value = false
+    initialVideoLoaded.value = true  // 标记已尝试加载，避免后续干扰
+    nextTick(() => {
+      console.log('[Detail] 加载失败，detailLoading=false')
+    })
     console.error('[Detail] 获取番剧详情失败:', error)
     console.error('[Detail] 错误详情:', error.response?.data || error.message)
     // 区分 404 和其他错误
@@ -592,39 +740,71 @@ const fetchData = async () => {
     } else {
       loadErrorMessage.value = '加载失败，请稍后重试'
     }
+    endTrace()
   }
 }
 
 // 后台并行加载非关键数据
 const loadBackgroundData = () => {
   // 并行加载收藏状态、播放进度、Bangumi 信息
-  Promise.all([
-    // 检查收藏状态
-    favoriteAPI.isFavorite(animeId.value).then(favResponse => {
-      isFavorite.value = favResponse.data[RESPONSE_FIELDS.SUCCESS] &&
-                         favResponse.data[RESPONSE_FIELDS.DATA]?.[RESPONSE_FIELDS.IS_FAVORITE]
-    }).catch(err => console.error('[Detail] 获取收藏状态失败:', err)),
+  return Promise.all([
+    // 1. 检查收藏状态
+    (async () => {
+      const timer = tracedMeasure('checkFavoriteStatus')
+      try {
+        const favResponse = await favoriteAPI.isFavorite(animeId.value)
+        isFavorite.value = favResponse.data[RESPONSE_FIELDS.SUCCESS] &&
+                           favResponse.data[RESPONSE_FIELDS.DATA]?.[RESPONSE_FIELDS.IS_FAVORITE]
+        timer.end({ isFavorite: isFavorite.value })
+      } catch (err) {
+        timer.end({ error: err.message })
+        console.error('[Detail] 获取收藏状态失败:', err)
+      }
+    })(),
 
-    // 加载播放进度（异步，不阻塞）
-    loadEpisodeProgress().catch(err => console.error('[Detail] 加载播放进度失败:', err)),
+    // 2. 加载播放进度（异步，不阻塞）
+    (async () => {
+      const timer = tracedMeasure('loadEpisodeProgress')
+      try {
+        await loadEpisodeProgress()
+        timer.end({})
+      } catch (err) {
+        timer.end({ error: err.message })
+        console.error('[Detail] 加载播放进度失败:', err)
+      }
+    })(),
 
-    // 加载 Bangumi 信息（异步，不阻塞）
-    fetchBangumiInfo().catch(err => console.error('[Detail] 获取 Bangumi 信息失败:', err))
+    // 3. 加载 Bangumi 信息（异步，不阻塞）
+    (async () => {
+      const timer = tracedMeasure('fetchBangumiInfo')
+      try {
+        await fetchBangumiInfo()
+        timer.end({})
+      } catch (err) {
+        timer.end({ error: err.message })
+        console.error('[Detail] 获取 Bangumi 信息失败:', err)
+      }
+    })()
   ])
 }
 
 // 重试加载
 const retryLoad = () => {
   // 重置加载状态
-  loadingTitle.value = true
-  loadingEpisodes.value = true
   loadError.value = false
+  detailLoading.value = true
+  initialVideoLoaded.value = false  // 重置首次加载标记
+  animeData.value = null
+  pwEpisodes.value = []
+  pwEpisodesLoading.value = false
+  console.log('[Detail] 重试加载')
   fetchData()
 }
 
 // 重试加载剧集
 const retryLoadEpisodes = () => {
   pwEpisodesLoadError.value = false
+  adultContentSourceUrl.value = null  // 重试时清除源站点链接
   pwEpisodesLoading.value = true
   fetchPwEpisodes().catch(err => {
     console.error('[Detail] 重试获取 anime1.pw 剧集失败:', err)
@@ -643,7 +823,7 @@ const fetchPwEpisodes = async () => {
   if (!anime1PwUrl.value) {
     console.log('[Detail] fetchPwEpisodes 跳过: 没有 anime1.pw URL')
     pwEpisodesLoading.value = false
-    return
+    return Promise.resolve()
   }
 
   try {
@@ -727,11 +907,13 @@ const fetchPwEpisodes = async () => {
     if (!htmlContent) {
       const isTLSDomain = anime1PwUrl.value.includes('anime1.pw')
       if (isTLSDomain) {
-        console.warn('[Detail] anime1.pw TLS 错误')
+        console.warn('[Detail] anime1.pw TLS 错误 - 可能需要跳转源站点')
         // 标记加载完成，但有错误
         pwEpisodesLoading.value = false
         pwEpisodesLoadComplete.value = true
         pwEpisodesLoadError.value = true
+        // 保存源站点URL用于跳转
+        adultContentSourceUrl.value = anime1PwUrl.value
         return
       }
       // 其他情况也标记加载完成
@@ -776,9 +958,17 @@ const fetchPwEpisodes = async () => {
   }
 }
 
+// 获取所有剧集
+const getAllEpisodes = () => {
+  return animeData.value?.episodes || pwEpisodes.value
+}
+
 const playEpisode = async (idx, retryCount = 0) => {
-  const episodes = animeData.value?.episodes || pwEpisodes.value
-  if (!episodes || idx < 0 || idx >= episodes.length) return
+  const episodes = getAllEpisodes()
+  if (!episodes || idx < 0 || idx >= episodes.length) {
+    console.log('[Detail] playEpisode 跳过: episodes=', !!episodes, ', idx=', idx, ', episodes.length=', episodes?.length)
+    return
+  }
 
   const MAX_RETRIES = 4
   const LOADING_MESSAGES = [
@@ -791,14 +981,36 @@ const playEpisode = async (idx, retryCount = 0) => {
   currentEpisodeIndex.value = idx
   const ep = episodes[idx]
 
+  console.log('[Detail] playEpisode 被调用:', {
+    idx,
+    episodeCount: episodes.length,
+    initialVideoLoaded: initialVideoLoaded.value,
+    detailLoading: detailLoading.value,
+    animeEpisodesCount: animeData.value?.episodes?.length || 0,
+    pwEpisodesCount: pwEpisodes.value.length
+  })
+
+  // 首次加载视频：关闭骨架屏
+  if (!initialVideoLoaded.value) {
+    initialVideoLoaded.value = true
+    detailLoading.value = false
+    console.log('[Detail] 首次加载视频，关闭骨架屏, 当前剧集数:', episodes.length)
+  }
+
   videoLoading.value = true
   loadingText.value = LOADING_MESSAGES[Math.min(retryCount, LOADING_MESSAGES.length - 1)]
-  loadingPercent.value = 0
   videoSrc.value = ''
   videoError.value = false
 
   // 停止之前的进度保存
   stopProgressSaving()
+
+  // 提前确保播放进度已加载（同步等待）
+  const progress = getEpisodeProgress(ep.id)
+  if (!progress) {
+    console.log('[Detail] 播放进度未加载，同步获取...')
+    await loadEpisodeProgress()
+  }
 
   try {
     // 获取视频 URL - 使用 fetch 直接请求代理端点（避免 /api 前缀问题）
@@ -832,7 +1044,7 @@ const playEpisode = async (idx, retryCount = 0) => {
         }, 3000 * (retryCount + 1))
         return
       }
-      showError('视频暂未上架', '视频正在上传中，请稍后再试')
+      showError('无法获取视频', '请稍后重试')
       return
     }
 
@@ -846,12 +1058,17 @@ const playEpisode = async (idx, retryCount = 0) => {
         }, 3000 * (retryCount + 1))
         return
       }
-      showError('视频暂未上架', '视频正在上传中，请稍后再试')
+      showError('无法获取视频', '请稍后重试')
       return
     }
 
     console.log('[Video] 获取视频成功，设置 videoSrc')
     loadingText.value = '加载视频...'
+
+    // 关键：设置 videoLoading=false，让 VideoPlayer 组件能够渲染
+    // 注意：VideoPlayer 内部的 loading 状态由组件自己管理
+    videoLoading.value = false
+    console.log('[Video] videoLoading=false, 准备渲染 VideoPlayer')
 
     // 处理视频 URL，使用代理避免 CORS
     let videoUrl = data[RESPONSE_FIELDS.URL]
@@ -860,17 +1077,17 @@ const playEpisode = async (idx, retryCount = 0) => {
       const cookiesParam = data[REQUEST_PARAMS.COOKIES]
         ? encodeURIComponent(JSON.stringify(data[REQUEST_PARAMS.COOKIES]))
         : ''
-      videoUrl = `${API_ENDPOINTS.PROXY.VIDEO_STREAM}?${REQUEST_PARAMS.URL}=${encodeURIComponent(data[RESPONSE_FIELDS.URL])}&${REQUEST_PARAMS.COOKIES}=${cookiesParam}`
+      // 对于 HLS playlist (m3u8)，使用 /proxy/hls 来正确重写相对路径
+      if (videoUrl.includes('.m3u8')) {
+        videoUrl = `${API_ENDPOINTS.PROXY.HLS}?${REQUEST_PARAMS.URL}=${encodeURIComponent(videoUrl)}&${REQUEST_PARAMS.COOKIES}=${cookiesParam}`
+      } else {
+        videoUrl = `${API_ENDPOINTS.PROXY.VIDEO_STREAM}?${REQUEST_PARAMS.URL}=${encodeURIComponent(videoUrl)}&${REQUEST_PARAMS.COOKIES}=${cookiesParam}`
+      }
     }
     console.log('[Video] 最终视频URL:', videoUrl)
 
     // 设置视频源，VideoPlayer 组件会自动处理播放
     videoSrc.value = videoUrl
-
-    // 播放开始后，检查是否需要恢复播放
-    setTimeout(() => {
-      checkAndRestorePlayback(ep.id, idx)
-    }, 1500)
   } catch (error) {
     console.log('[Video] 请求异常:', error.message)
     if (retryCount < MAX_RETRIES) {
@@ -887,12 +1104,41 @@ const playEpisode = async (idx, retryCount = 0) => {
 
 // 播放器就绪事件
 const onPlayerReady = () => {
-  console.log('[Detail] 播放器就绪')
+  console.log('[Detail] 播放器就绪, videoLoading=false')
   videoLoading.value = false
-  loadingPercent.value = 100
 
   // 开始保存播放进度
   startProgressSaving()
+}
+
+// 播放器播放事件
+const onPlayerPlay = () => {
+  isPlaying.value = true
+}
+
+// 播放器暂停事件
+const onPlayerPause = () => {
+  isPlaying.value = false
+}
+
+// 继续播放（气泡提示中选择继续）
+const onRestorePlayback = () => {
+  const ep = currentEpisode.value
+  const progress = currentProgress.value
+  if (ep && progress && videoPlayerRef.value) {
+    videoPlayerRef.value.setCurrentTime(progress.position_seconds)
+    console.log('[Detail] 气泡提示选择继续播放，跳转到:', progress.position_seconds)
+  }
+}
+
+// 重新开始（气泡提示中选择重新）
+const onRestartPlayback = () => {
+  const ep = currentEpisode.value
+  if (ep && videoPlayerRef.value) {
+    videoPlayerRef.value.setCurrentTime(0)
+    episodeProgressMap.value[ep.id] = null
+    console.log('[Detail] 气泡提示选择重新开始')
+  }
 }
 
 // 时间更新事件
@@ -923,6 +1169,12 @@ const openExternalLink = (url) => {
   }
 }
 
+// 返回上一页，保留搜索和分页状态
+const goBack = () => {
+  // 使用 router.back() 返回上一页，保留 URL 参数
+  router.back()
+}
+
 const toggleFavorite = async () => {
   favoriteLoading.value = true
   try {
@@ -942,14 +1194,12 @@ const toggleFavorite = async () => {
   }
 }
 
-// 获取 Bangumi 番剧信息
+// 获取 Bangumi 番剧信息（后台加载，不阻塞页面）
 const fetchBangumiInfo = async () => {
   if (!animeId.value) {
-    bangumiLoading.value = false
     return
   }
 
-  bangumiLoading.value = true
   try {
     const response = await animeAPI.getBangumiInfo(animeId.value)
     if (response.data && !response.data.error) {
@@ -957,12 +1207,31 @@ const fetchBangumiInfo = async () => {
     }
   } catch (error) {
     console.error('获取 Bangumi 信息失败:', error)
-  } finally {
-    bangumiLoading.value = false
   }
 }
 
 onMounted(() => {
+  console.log('[Detail] onMounted, 设置 detailLoading=true, pwEpisodesLoading=false')
+  // 设置主加载状态
+  detailLoading.value = true
+  // 确保 pwEpisodesLoading 也是 false（避免初始渲染时为 undefined）
+  pwEpisodesLoading.value = false
+
+  // 监听缓存清理事件，清理后刷新当前番剧数据
+  onCacheCleared(() => {
+    console.log('[Detail] 收到缓存清理事件，刷新番剧数据...')
+    // 清除封面缓存，重新获取
+    if (animeData.value?.anime) {
+      animeData.value.anime.cover_url = null
+      animeData.value.anime.year = null
+      animeData.value.anime.season = null
+      animeData.value.anime.subtitle_group = null
+    }
+    // 重新获取番剧数据
+    detailLoading.value = true
+    fetchData()
+  })
+
   // 获取番剧数据（主加载）
   fetchData()
 })
@@ -989,10 +1258,79 @@ onUnmounted(() => {
   /* 确保容器高度正确 */
   min-height: 100%;
   box-sizing: border-box;
+  position: relative;
+}
+
+/* 页面整体加载遮罩 - 半透明遮罩，底下的元素仍可见 */
+.page-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--el-overlay-color, rgba(255, 255, 255, 0.7));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  border-radius: 16px;
+}
+
+.page-loading-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 统一的主题色转圈圈动画 */
+.page-loading-overlay .is-loading,
+.sidebar-loading .is-loading,
+.bangumi-loading .is-loading,
+.video-loading .is-loading,
+.video-loading-overlay .is-loading,
+.loading-episodes .is-loading {
+  color: var(--el-color-primary);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.breadcrumb-nav {
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.breadcrumb-nav :deep(.el-breadcrumb__inner) {
+  color: var(--el-text-color-secondary);
+}
+
+.breadcrumb-nav :deep(.el-breadcrumb__inner a) {
+  color: var(--el-text-color-secondary);
+  transition: color 0.3s;
+}
+
+.breadcrumb-nav :deep(.el-breadcrumb__inner a:hover) {
+  color: var(--el-color-primary);
+}
+
+.breadcrumb-nav :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.back-with-breadcrumb {
+  margin-bottom: 20px;
 }
 
 .back-btn {
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 
 .detail-content {
@@ -1117,19 +1455,99 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(255, 107, 157, 0.5);
 }
 
+/* 侧边栏加载状态样式 */
 .sidebar-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  gap: 12px;
+  padding: 30px 15px;
+  gap: 10px;
   color: var(--el-text-color-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
-.sidebar-loading .is-loading {
-  color: var(--el-color-primary);
+.sidebar-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 15px;
+  gap: 10px;
+  color: var(--el-color-danger);
+}
+
+.sidebar-error .el-button {
+  margin-top: 8px;
+}
+
+.sidebar-cover-placeholder.loading {
+  background: linear-gradient(135deg, var(--el-fill-color-light) 0%, var(--el-fill-color) 100%);
+}
+
+.sidebar-cover-placeholder.loading .el-icon {
+  color: var(--el-text-color-secondary);
+}
+
+/* 骨架屏样式 */
+.sidebar-skeleton {
+  padding: 15px;
+}
+
+.sidebar-skeleton .skeleton-cover {
+  width: 100%;
+  aspect-ratio: 2/3;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  margin-bottom: 12px;
+}
+
+.sidebar-skeleton .skeleton-title {
+  height: 20px;
+  width: 80%;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+.sidebar-skeleton .skeleton-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-skeleton .skeleton-line {
+  height: 14px;
+  width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+.sidebar-skeleton .skeleton-line.short {
+  width: 60%;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.sidebar-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  min-height: 100px;
 }
 
 .sidebar-title {
@@ -1176,9 +1594,19 @@ onUnmounted(() => {
   margin-top: 5px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.bangumi-loading-inline {
+  padding: 12px 15px;
+  border-top: 1px solid var(--el-border-color);
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
   gap: 8px;
+  font-size: 0.8rem;
   color: var(--el-text-color-secondary);
-  font-size: 0.85rem;
 }
 
 .bangumi-rating {
@@ -1360,6 +1788,25 @@ onUnmounted(() => {
   aspect-ratio: 16/9;
   background: #000;
   border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 确保 VideoPlayer 填满容器 - 对所有子组件生效 */
+.video-container :deep(.video-player-wrapper) {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 确保 video-js 填满 VideoPlayer wrapper */
+.video-container :deep(.video-js) {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0;
+  left: 0;
 }
 
 .video-loading {
@@ -1369,12 +1816,23 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.video-loading-content {
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--el-text-color-secondary);
-  gap: 15px;
-  z-index: 30;
+  gap: 16px;
+  color: #fff;
+}
+
+.video-loading-text {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .video-loading-overlay {
@@ -1387,31 +1845,22 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 5;
-  pointer-events: none;
+  background: rgba(0, 0, 0, 0.3);
 }
 
-.video-loading-spinner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 20px 30px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 12px;
-  color: var(--el-text-color-primary);
-  font-size: 0.9rem;
+/* 视频骨架屏 */
+.video-skeleton {
+  width: 100%;
+  height: 100%;
 }
 
-.loading-text {
-  font-size: 0.9rem;
-}
-
-.loading-percent {
-  font-size: 28px;
-  font-weight: 700;
-  background: linear-gradient(90deg, #ff6b9d, #7c5cff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.skeleton-video-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
 }
 
 .video-player {
@@ -1430,12 +1879,103 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--el-text-color-secondary);
+  /* 透明背景 */
+  background-color: transparent;
   gap: 15px;
 }
 
-.video-placeholder.loading {
-  color: var(--el-text-color-primary);
+/* video-placeholder - 复刻 vjs-big-play-button 的完整样式，但用灰色区分 */
+.video-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  gap: 15px;
+}
+
+/* 复刻 vjs-big-play-button 的样式 - 用灰色区分 */
+.video-placeholder .el-icon {
+  width: 80px !important;
+  height: 80px !important;
+  /* placeholder 用灰色，与紫色的 vjs-big-play-button 区分 */
+  background-color: var(--el-fill-color, #f0f0f0) !important;
+  border: 3px solid var(--el-border-color, #dcdfe6) !important;
+  border-radius: 50%;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0 !important;
+  position: relative;
+}
+
+/* 用伪元素画播放三角形图标 - 灰色 */
+.video-placeholder .el-icon::before {
+  content: '';
+  display: block;
+  width: 0;
+  height: 0;
+  /* 播放三角形：向右的箭头 - 灰色 */
+  border-top: 14px solid transparent;
+  border-bottom: 14px solid transparent;
+  border-left: 24px solid var(--el-text-color-secondary, #909399);
+  /* 微调位置居中 */
+  margin-left: 4px;
+}
+
+.video-placeholder .el-icon svg {
+  display: none !important;
+}
+
+/* hover 效果 - 稍微变深 */
+.video-placeholder:hover .el-icon {
+  background-color: var(--el-fill-color-light, #e5e5ea) !important;
+  border-color: var(--el-border-color-hover, #c0c4cc) !important;
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+/* 暗色模式适配 - 使用深色灰色 */
+html.dark .video-placeholder .el-icon {
+  background-color: var(--el-fill-color-dark, #2c2c3e) !important;
+  border-color: var(--el-border-color-dark, #4a4a5e) !important;
+}
+
+/* 暗色模式三角形图标 - 浅灰色 */
+html.dark .video-placeholder .el-icon::before {
+  border-left-color: var(--el-text-color-secondary, #909399);
+}
+
+.adult-error-message {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.adult-error-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--el-color-warning);
+  margin-bottom: 6px;
+}
+
+.adult-error-desc {
+  font-size: 0.9rem;
+  color: var(--el-text-color-secondary);
+}
+
+.error-action-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.error-action-buttons .el-button {
+  min-width: 140px;
 }
 
 .video-error {
@@ -1513,6 +2053,21 @@ onUnmounted(() => {
   min-height: 60px;
 }
 
+/* 剧集骨架卡片 */
+.episode-skeleton-card {
+  aspect-ratio: 1.5;
+  border-radius: 10px;
+  /* 使用固定颜色，确保可见 */
+  background: linear-gradient(90deg, #e0e0e0 25%, #f5f5f5 50%, #e0e0e0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+/* 暗色模式 */
+html.dark .episode-skeleton-card {
+  background: linear-gradient(90deg, #3a3a4a 25%, #4a4a5a 50%, #3a3a4a 75%);
+}
+
 .episode-grid.loading {
   opacity: 0.7;
 }
@@ -1522,14 +2077,18 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 40px;
+  min-height: 100px;
 }
 
-.loading-spinner {
+/* 剧集列表加载中（带文字） */
+.loading-episodes-inline {
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   align-items: center;
   gap: 10px;
+  padding: 30px;
   color: var(--el-text-color-secondary);
   font-size: 0.9rem;
 }
@@ -1550,6 +2109,8 @@ onUnmounted(() => {
   border: 2px solid var(--el-border-color);
   transition: all 0.3s;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
   /* 进度条效果：左深右浅渐变，不影响文字 */
   background: linear-gradient(
     to right,
@@ -1557,6 +2118,38 @@ onUnmounted(() => {
     var(--el-fill-color-light) var(--progress-percent, 0%)
   );
   border-color: hsl(260, 50%, 80%);
+}
+
+/* 播放进度加载中状态 */
+.episode-card.loading-progress {
+  background: linear-gradient(
+    to right,
+    hsl(260, 60%, 80%) 0%,
+    var(--el-fill-color-light) 0%
+  );
+}
+
+/* 加载中动画效果 - 在卡片底部显示流动的进度条动画 */
+.episode-card.loading-progress::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent 0%, #7c5cff 30%, #7c5cff 70%, transparent 100%);
+  background-size: 200% 100%;
+  animation: progress-skeleton-loading 1.5s infinite ease-in-out;
+  border-radius: 0 0 8px 8px;
+}
+
+@keyframes progress-skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .episode-card:hover {
@@ -1669,48 +2262,18 @@ html.dark .episode-card-num {
   margin-bottom: 25px;
 }
 
-.skeleton-video-placeholder {
-  width: 100%;
-  aspect-ratio: 16/9;
-  border-radius: 8px;
-  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-loading 1.5s infinite;
-}
-
-.skeleton-episodes {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-}
-
-.skeleton-episode-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
-}
-
-.skeleton-episode-card {
-  aspect-ratio: 1.5;
-  border-radius: 10px;
-  background: linear-gradient(90deg, var(--el-skeleton-color) 25%, var(--el-skeleton-to-color) 50%, var(--el-skeleton-color) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-loading 1.5s infinite;
-}
-
-@keyframes skeleton-loading {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 .error-state {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 400px;
+}
+
+.detail-main {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
 }
 
 @media (max-width: 1000px) {
@@ -1727,6 +2290,114 @@ html.dark .episode-card-num {
   .episode-sidebar.collapsed {
     width: 0 !important;
     height: 0;
+  }
+
+  /* 小屏幕下限制封面大小，确保视频区域有足够空间 */
+  .sidebar-header {
+    max-height: none;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 15px;
+    padding: 15px;
+  }
+
+  .sidebar-cover-wrapper {
+    width: 80px;
+    flex-shrink: 0;
+    aspect-ratio: 2/3;
+  }
+
+  .sidebar-info {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+  }
+
+  /* Bangumi 信息区域限制高度，避免简介过长 */
+  .bangumi-info {
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .summary-content {
+    max-height: 40px;
+  }
+
+  .summary-content.expanded {
+    max-height: 100px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* 更小屏幕优化 - 视频优先 */
+  .detail-content {
+    padding: 10px;
+  }
+
+  .detail-main {
+    width: 100%;
+  }
+
+  /* 侧边栏更紧凑 */
+  .sidebar-header {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .sidebar-cover-wrapper {
+    width: 60px;
+  }
+
+  .sidebar-title {
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+  }
+
+  .sidebar-meta {
+    display: none;
+  }
+
+  .bangumi-info {
+    display: none;
+  }
+
+  /* 视频区域全宽 */
+  .video-section {
+    margin-bottom: 15px;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .video-container {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 0;
+  }
+
+  /* 剧集区域 */
+  .episodes-section {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .episode-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 8px;
+  }
+
+  .episode-card {
+    padding: 8px 4px;
+  }
+
+  .episode-card-num {
+    font-size: 0.8rem;
+  }
+
+  .episode-card-date {
+    font-size: 0.65rem;
   }
 }
 </style>

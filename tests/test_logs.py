@@ -7,9 +7,11 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 
+@pytest.mark.unit
 class TestLogFolderPath:
     """Test that log folder is in correct platform-specific location."""
 
+    @pytest.mark.skipif(platform.system() != 'Windows', reason="Windows-specific test")
     def test_get_app_data_dir_windows(self):
         """Test Windows app data directory."""
         with patch('platform.system', return_value='Windows'):
@@ -18,6 +20,7 @@ class TestLogFolderPath:
                 result = get_app_data_dir()
                 assert str(result) == "C:\\Users\\Test\\AppData\\Roaming\\Anime1"
 
+    @pytest.mark.skipif(platform.system() != 'Linux', reason="Linux-specific test")
     def test_get_app_data_dir_linux(self):
         """Test Linux app data directory."""
         with patch('platform.system', return_value='Linux'):
@@ -53,11 +56,13 @@ class TestLogFolderPath:
                 assert "Test message" in content
 
 
+@pytest.mark.unit
 class TestLogOpen:
     """Test opening log folder functionality."""
 
     def test_open_logs_folder_creates_directory(self):
         """Test that open logs folder creates directory if not exists."""
+        from flask import Flask
         from src.routes.settings import open_logs_folder
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -68,8 +73,11 @@ class TestLogOpen:
                     with patch('subprocess.run') as mock_run:
                         mock_run.return_value = MagicMock(returncode=0)
 
-                        # Call the function
-                        result = open_logs_folder()
+                        # Create Flask app context
+                        app = Flask(__name__)
+                        with app.app_context():
+                            # Call the function
+                            result = open_logs_folder()
 
                         # Verify directory was created
                         assert expected_log_dir.exists()
@@ -77,6 +85,7 @@ class TestLogOpen:
                         # Verify subprocess was called
                         mock_run.assert_called_once()
 
+    @pytest.mark.skipif(platform.system() != 'Windows', reason="Windows-specific test")
     def test_open_logs_folder_windows(self):
         """Test Windows log folder opening."""
         from src.routes.settings import open_logs_folder
@@ -95,8 +104,10 @@ class TestLogOpen:
                         call_args = mock_run.call_args
                         assert "explorer.exe" in call_args[0][0]
 
+    @pytest.mark.skipif(platform.system() != 'Darwin', reason="macOS-specific test")
     def test_open_logs_folder_macos(self):
         """Test macOS log folder opening."""
+        from flask import Flask
         from src.routes.settings import open_logs_folder
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -107,13 +118,17 @@ class TestLogOpen:
                     with patch('subprocess.run') as mock_run:
                         mock_run.return_value = MagicMock(returncode=0)
 
-                        result = open_logs_folder()
+                        # Create Flask app context
+                        app = Flask(__name__)
+                        with app.app_context():
+                            result = open_logs_folder()
 
                         # Verify 'open' command was called
                         call_args = mock_run.call_args
                         assert "open" in call_args[0][0]
 
 
+@pytest.mark.unit
 class TestLogFileReading:
     """Test reading log files."""
 
@@ -148,6 +163,7 @@ class TestLogFileReading:
             assert message == "src.test: Test message"
 
 
+@pytest.mark.unit
 class TestLogClear:
     """Test clearing log files."""
 

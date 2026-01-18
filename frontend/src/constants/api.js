@@ -34,7 +34,9 @@ export const API_ENDPOINTS = {
     THEME: '/settings/theme',
     ABOUT: '/settings/about',
     CHECK_UPDATE: '/settings/check_update',
-    LOGS_OPEN: '/settings/logs/open'
+    LOGS_OPEN: '/settings/logs/open',
+    CACHE_INFO: '/settings/cache',
+    CACHE_CLEAR: '/settings/cache/clear'
   },
   
   // 更新相关 API
@@ -50,7 +52,8 @@ export const API_ENDPOINTS = {
     VIDEO_STREAM: '/proxy/video-stream',
     VIDEO_URL: '/proxy/video-url',
     VIDEO: '/proxy/video',
-    PLAYER: '/proxy/player'
+    PLAYER: '/proxy/player',
+    HLS: '/proxy/hls'
   },
 
   // 播放历史相关 API

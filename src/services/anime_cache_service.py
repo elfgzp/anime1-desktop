@@ -73,7 +73,10 @@ def get_anime_map_cache() -> Dict[str, Anime]:
     global _anime_map_cache
     with _cache_lock:
         if not _anime_map_cache:
-            _load_anime_list_sync()
+            # Trace: Cache miss - loading fresh data
+            from src.utils.trace import TraceSpan
+            with TraceSpan("anime_cache_miss", "cache_miss"):
+                _load_anime_list_sync()
         return _anime_map_cache.copy()
 
 
@@ -93,8 +96,36 @@ def _fetch_fresh_data() -> Tuple[List[Anime], str]:
     return anime_list, version
 
 
+def _load_anime_list():
+    """Load anime list without details (non-blocking).
+
+    This loads only the anime list metadata, details are fetched lazily on demand.
+    Used for quick start mode.
+    """
+    global _anime_list_cache, _anime_map_cache, _last_refresh_time, _last_data_version
+
+    try:
+        logger.info("[Cache] Loading anime list (quick mode)...")
+
+        anime_list, version = _fetch_fresh_data()
+
+        _anime_list_cache = anime_list
+        _anime_map_cache = {a.id: a for a in anime_list}
+        _last_refresh_time = datetime.now()
+        _last_data_version = version
+
+        # Log first few anime IDs
+        sample_ids = [a.id for a in anime_list[:5]]
+        logger.info(f"[Cache] List load complete: {len(anime_list)} anime entries (sample: {sample_ids}...)")
+        logger.info("[Cache] Details will be loaded lazily on demand")
+
+    except Exception as e:
+        logger.error(f"[Cache] Failed to load anime list: {e}")
+        raise
+
+
 def _load_anime_list_sync():
-    """Load anime list synchronously (blocking).
+    """Load anime list synchronously (blocking) with all details.
 
     This is called on first access if cache is empty.
     """
@@ -382,10 +413,12 @@ def _background_refresh_loop():
     logger.info("[Cache] Background refresh thread stopped")
 
 
-def start_cache_service():
+def start_cache_service(quick_start=False):
     """Start the background cache service.
 
-    Call this during application startup.
+    Args:
+        quick_start: If True, skip initial synchronous data loading for faster startup.
+                     Data will be loaded lazily in the background. Recommended for dev mode.
     """
     global _refresh_thread
 
@@ -396,9 +429,15 @@ def start_cache_service():
     logger.info("=" * 50)
     logger.info("[Cache] Starting cache service...")
     logger.info(f"[Cache] Config: workers={CONCURRENT_WORKERS}, interval={CACHE_REFRESH_INTERVAL}s")
+    if quick_start:
+        logger.info("[Cache] Quick start mode: data will be loaded in background")
 
-    # Load anime list immediately (blocking but ensures data exists)
-    _load_anime_list_sync()
+    if quick_start:
+        # Quick start: only load anime list (without details), start background threads
+        _load_anime_list()
+    else:
+        # Full start: load anime list and all details (blocking but ensures data exists)
+        _load_anime_list_sync()
 
     # Start background threads
     _stop_event.clear()

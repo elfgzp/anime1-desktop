@@ -95,30 +95,102 @@ def kill_residual_processes():
 
     killed_any = False
 
-    # 通过 ps -ef 查找残留的 Python 进程 (src.app 或 src.desktop)
+    # 查找模式：项目相关的进程
+    patterns = ['src.app', 'src.desktop', 'Anime1', 'vite', 'node_modules/.bin/vite']
+
+    # 通过 ps aux 查找残留进程
     try:
         result = subprocess.run(
-            ["ps", "-ef"],
+            ["ps", "aux"],
             capture_output=True,
             text=True
         )
         if result.returncode == 0:
             for line in result.stdout.split('\n'):
-                # 查找包含 src.app 或 src.desktop 的进程
-                if ('src.app' in line or 'src.desktop' in line) and 'grep' not in line:
-                    try:
-                        # 提取 PID (第二个字段)
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            pid = int(parts[1])
-                            # 跳过当前进程
-                            if pid == os.getpid():
-                                continue
+                # 跳过标题行和当前进程
+                if not line or line.startswith('USER') or 'grep' in line:
+                    continue
+
+                # 检查是否匹配任何模式
+                matched = False
+                for pattern in patterns:
+                    if pattern in line:
+                        matched = True
+                        break
+
+                if not matched:
+                    continue
+
+                try:
+                    # 提取 PID (第二个字段)
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        pid = int(parts[1])
+                        # 跳过当前进程
+                        if pid == os.getpid():
+                            continue
+                        # 跳过父进程
+                        if pid == os.getppid():
+                            continue
+
+                        # 先尝试 SIGTERM
+                        try:
                             os.kill(pid, signal.SIGTERM)
-                            print(f"  已停止残留的 Python 进程 (PID: {pid})")
+                            print(f"  已发送终止信号 (PID: {pid})")
                             killed_any = True
-                    except (ValueError, ProcessLookupError, IndexError):
-                        pass
+                        except ProcessLookupError:
+                            pass  # 进程已不存在
+                        except PermissionError:
+                            print(f"  ⚠️  无权限终止进程 (PID: {pid})")
+                except (ValueError, IndexError):
+                    pass
+    except FileNotFoundError:
+        pass
+
+    # 等待进程响应 SIGTERM
+    if killed_any:
+        print("  等待进程终止...")
+        time.sleep(1)
+
+    # 再次检查并强制终止残留进程
+    try:
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if not line or line.startswith('USER') or 'grep' in line:
+                    continue
+
+                matched = False
+                for pattern in patterns:
+                    if pattern in line:
+                        matched = True
+                        break
+
+                if not matched:
+                    continue
+
+                try:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        pid = int(parts[1])
+                        if pid == os.getpid() or pid == os.getppid():
+                            continue
+
+                        # 强制 SIGKILL
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                            print(f"  已强制终止残留进程 (PID: {pid})")
+                            killed_any = True
+                        except ProcessLookupError:
+                            pass
+                        except PermissionError:
+                            print(f"  ⚠️  无法强制终止进程 (PID: {pid})")
+                except (ValueError, IndexError):
+                    pass
     except FileNotFoundError:
         pass
 
@@ -133,13 +205,25 @@ def kill_residual_processes():
 
 
 def is_port_available(port):
-    """检查端口是否可用"""
+    """检查端口是否可用（空闲）"""
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
             s.bind(("", port))
             return True
         except OSError:
+            return False
+
+
+def is_port_in_use(port):
+    """检查端口是否已被服务占用"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        try:
+            s.connect(("127.0.0.1", port))
+            return True
+        except (ConnectionRefusedError, OSError):
             return False
 
 
@@ -320,6 +404,7 @@ def start_webview(url, width=1200, height=800, debug=False):
     """启动 webview 窗口"""
     import webview
     import time
+    import urllib.request
 
     # macOS 启动时设置
     setup_macos()
@@ -328,31 +413,47 @@ def start_webview(url, width=1200, height=800, debug=False):
     url_with_ts = f"{url}?_v={int(time.time())}"
 
     print(f"🪟 正在启动 webview 窗口...")
+
+    # 验证 URL 可访问
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                print(f"   ✅ 后端服务已就绪: {url}")
+            else:
+                print(f"   ⚠️  后端服务返回状态码: {resp.status}")
+    except Exception as e:
+        print(f"   ⚠️  后端服务可能未就绪: {e}")
+
     if debug:
         print("   💡 提示: 右键点击页面选择 'Inspect' 打开开发者工具")
 
-    window_title = "Anime1"
-    window = webview.create_window(
-        title=window_title,
-        url=url_with_ts,
-        width=width,
-        height=height,
-        resizable=True,
-        background_color="#FFFFFF",
-        confirm_close=False
-    )
+    try:
+        window_title = "Anime1"
+        window = webview.create_window(
+            title=window_title,
+            url=url_with_ts,
+            width=width,
+            height=height,
+            resizable=True,
+            background_color="#FFFFFF",
+            confirm_close=False
+        )
 
-    # 禁用关闭确认对话框的本地化设置
-    localization = {
-        'global.quitConfirmation': '',
-    }
+        # 禁用关闭确认对话框的本地化设置
+        localization = {
+            'global.quitConfirmation': '',
+        }
 
-    # macOS 上创建菜单
-    app_menu = [create_menus()] if sys.platform == 'darwin' else None
+        # macOS 上创建菜单
+        app_menu = [create_menus()] if sys.platform == 'darwin' else None
 
-    webview.start(func=None, debug=debug, menu=app_menu, localization=localization)
-
-    # 注意：macOS 上请使用快捷键 Option+Cmd+I 打开开发者工具
+        print("   🚀 调用 webview.start()...")
+        webview.start(func=None, debug=debug, menu=app_menu, localization=localization)
+        print("   👋 webview 已关闭")
+    except Exception as e:
+        print(f"   ❌ webview 启动失败: {e}")
+        raise
 
 
 def print_output(process, prefix):
@@ -473,7 +574,7 @@ def main():
     processes = []
 
     try:
-        # 启动 Flask
+        # 先启动 Flask（必须先启动，确保端口不冲突）
         flask_result = start_flask(args.flask_port)
         if flask_result is None:
             print("❌ Flask 启动失败")
@@ -481,10 +582,16 @@ def main():
         flask_process, flask_port = flask_result
         processes.append(("Flask", flask_process))
 
-        # 等待 Flask 完全启动
-        time.sleep(3)
+        # 等待 Flask 就绪后再启动 Vite
+        print("⏳ 等待 Flask 就绪...")
+        for i in range(30):  # 最多等待 3 秒
+            time.sleep(0.1)
+            if is_port_in_use(flask_port):
+                break
+        else:
+            print("⚠️  Flask 启动超时，继续等待...")
 
-        # 启动 Vite，传入 Flask 端口
+        # 启动 Vite
         vite_result = start_vite(args.vite_port, flask_port)
         if vite_result is None:
             print("❌ Vite 启动失败")
@@ -492,8 +599,24 @@ def main():
         vite_process, vite_port = vite_result
         processes.append(("Vite", vite_process))
 
-        # 等待 Vite 启动
-        time.sleep(2)
+        # 等待 Vite 完全就绪
+        print("⏳ 等待 Vite 就绪...")
+        vite_ready = False
+        import urllib.request
+        for i in range(30):  # 最多等待 3 秒
+            time.sleep(0.1)
+            if is_port_in_use(vite_port):
+                try:
+                    req = urllib.request.Request(f"http://localhost:{vite_port}", method="HEAD")
+                    with urllib.request.urlopen(req, timeout=1) as resp:
+                        if resp.status == 200:
+                            vite_ready = True
+                            break
+                except Exception:
+                    pass
+
+        if not vite_ready:
+            print("⚠️  Vite 尚未就绪，继续等待...")
 
         print("\n✅ 开发环境已启动！")
         print(f"   前端: http://localhost:{vite_port}")
@@ -523,11 +646,18 @@ def main():
 
         # 根据参数决定打开方式
         vite_url = f"http://localhost:{vite_port}"
+        print(f"[DEBUG] vite_url = {vite_url}")
         print(f"[DEBUG] args.browser = {args.browser}")
+        print(f"[DEBUG] args.debug_webview = {args.debug_webview}")
+
         if args.browser:
+            print("[DEBUG] 调用 open_browser()...")
             open_browser(vite_url)
+            print("[DEBUG] open_browser() 返回")
         else:
+            print("[DEBUG] 调用 start_webview()...")
             start_webview(vite_url, args.width, args.height, args.debug_webview)
+            print("[DEBUG] start_webview() 返回")
 
         # 停止日志监控
         stop_event.set()

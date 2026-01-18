@@ -147,6 +147,14 @@ VIDEO_API_PARAM_S: Final[str] = "s"
 VIDEO_API_PARAM_D: Final[str] = "d"
 
 # ============================================================================
+# HLS Codec Constants
+# ============================================================================
+
+# Default codec string for HLS variant streams (H.264 video + AAC audio)
+# Required by video.js when the master playlist doesn't specify CODECS attribute
+HLS_DEFAULT_CODECS: Final[str] = "avc1.42E01E,mp4a.40.2"
+
+# ============================================================================
 # Content Type Constants
 # ============================================================================
 

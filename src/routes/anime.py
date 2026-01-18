@@ -27,6 +27,7 @@ from src.services.anime_cache_service import (
     refresh_cache_now,
     force_refresh_cache,
 )
+from src.utils.trace import TraceSpan, get_trace_id, is_tracing_enabled
 from src import __version__
 
 logger = logging.getLogger(__name__)
@@ -154,56 +155,73 @@ def get_anime_episodes(anime_id: str):
         })
 
     try:
-        # Fetch the detail page (with SSL handling for problematic domains)
-        html = parser.client.get(anime.detail_url)
+        # Trace: Fetch the detail page (with SSL handling for problematic domains)
+        with TraceSpan("fetch_episode_page", "external_http", {
+            "anime_id": anime_id,
+            "url": anime.detail_url[:100]
+        }) as span:
+            html = parser.client.get(anime.detail_url)
+
     except Exception as e:
         logger.error(f"Failed to fetch episode page for {anime_id}: {e}")
         return error_response(f"无法获取番剧页面: {str(e)}", 500)
 
-    # Get total pages for pagination
-    total_pages = parser.get_total_episode_pages(html)
+    # Trace: Get total pages for pagination
+    with TraceSpan("parse_total_pages", "parsing", {
+        "anime_id": anime_id
+    }):
+        total_pages = parser.get_total_episode_pages(html)
 
     # Limit pages to prevent too many requests
     max_pages = 5
     if total_pages > max_pages:
         total_pages = max_pages
 
-    # Get all episodes from all pages
-    all_episodes = []
-    seen_ids = set()
-    for page in range(1, total_pages + 1):
-        if page == 1:
-            page_html = html
-        else:
-            # Construct paginated URL for category pages
-            if "/category/" in anime.detail_url:
-                parts = anime.detail_url.split("/category/")
-                page_url = parts[0] + "/category/" + parts[1] + "/page/" + str(page)
-            elif "?cat=" in anime.detail_url:
-                page_url = anime.detail_url + "&page=" + str(page)
+    # Trace: Get all episodes from all pages
+    with TraceSpan("extract_all_episodes", "parsing", {
+        "anime_id": anime_id,
+        "total_pages": total_pages
+    }):
+        # Get all episodes from all pages
+        all_episodes = []
+        seen_ids = set()
+        for page in range(1, total_pages + 1):
+            if page == 1:
+                page_html = html
             else:
-                page_url = anime.detail_url + "?page=" + str(page)
-            try:
-                page_html = parser.client.get(page_url)
-            except Exception as e:
-                logger.warning(f"Failed to fetch episode page {page} for {anime_id}: {e}")
-                break
+                # Construct paginated URL for category pages
+                if "/category/" in anime.detail_url:
+                    parts = anime.detail_url.split("/category/")
+                    page_url = parts[0] + "/category/" + parts[1] + "/page/" + str(page)
+                elif "?cat=" in anime.detail_url:
+                    page_url = anime.detail_url + "&page=" + str(page)
+                else:
+                    page_url = anime.detail_url + "?page=" + str(page)
+                try:
+                    page_html = parser.client.get(page_url)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch episode page {page} for {anime_id}: {e}")
+                    break
 
-        episodes = parser._extract_episodes(page_html)
-        # Deduplicate episodes
-        for ep in episodes:
-            if ep["id"] not in seen_ids:
-                seen_ids.add(ep["id"])
-                all_episodes.append(ep)
+            episodes = parser._extract_episodes(page_html)
+            # Deduplicate episodes
+            for ep in episodes:
+                if ep["id"] not in seen_ids:
+                    seen_ids.add(ep["id"])
+                    all_episodes.append(ep)
 
-    # Sort by episode number (descending - newest first)
-    try:
-        all_episodes.sort(key=lambda x: float(x["episode"]), reverse=True)
-    except (ValueError, KeyError):
-        pass
+        # Sort by episode number (descending - newest first)
+        try:
+            all_episodes.sort(key=lambda x: float(x["episode"]), reverse=True)
+        except (ValueError, KeyError):
+            pass
 
-    # Find cover using unified Bangumi info function
-    finder.get_bangumi_info(anime, update_anime=True)
+    # Trace: Get Bangumi info (external API call)
+    with TraceSpan("get_bangumi_info", "external_api", {
+        "anime_id": anime_id,
+        "title": anime.title[:50]
+    }) as span:
+        finder.get_bangumi_info(anime, update_anime=True)
 
     return jsonify({
         "anime": anime.to_dict(),
@@ -222,29 +240,44 @@ def get_bangumi_info(anime_id: str):
     Returns:
         JSON with Bangumi info (cover_url, rating, rank, type, date, summary, genres, staff).
     """
-    # Get anime data
-    anime_map = get_anime_map()
-    anime = anime_map.get(anime_id)
+    # Trace: Cache lookup
+    with TraceSpan("get_bangumi_cache_lookup", "cache_lookup", {
+        "anime_id": anime_id
+    }):
+        # Get anime data
+        anime_map = get_anime_map()
+        anime = anime_map.get(anime_id)
 
-    if anime is None:
-        return error_response(ERROR_ANIME_NOT_FOUND, 404)
+        if anime is None:
+            return error_response(ERROR_ANIME_NOT_FOUND, 404)
 
-    # Get cache service
-    from src.services.cover_cache_service import get_cover_cache_service
-    cache_service = get_cover_cache_service()
+        # Get cache service
+        from src.services.cover_cache_service import get_cover_cache_service
+        cache_service = get_cover_cache_service()
 
-    # Check cache first
-    cached_info = cache_service.get_bangumi_info(anime_id)
-    if cached_info:
-        # Remove internal cached_at field if present
-        cached_info.pop("_cached_at", None)
-        # Trigger background update for fresh data
-        _trigger_background_bangumi_update(anime_id, anime, cache_service)
-        return jsonify(cached_info)
+        # Check cache first
+        cached_info = cache_service.get_bangumi_info(anime_id)
+        if cached_info:
+            # Remove internal cached_at field if present
+            cached_info.pop("_cached_at", None)
+            # Trigger background update for fresh data
+            _trigger_background_bangumi_update(anime_id, anime, cache_service)
 
-    # Not cached, fetch synchronously to return complete info
-    _, finder = get_services()
-    bangumi_info = finder.get_bangumi_info(anime)
+            # Trace: Cache hit
+            with TraceSpan("get_bangumi_cache_hit", "cache_hit", {
+                "anime_id": anime_id,
+                "title": anime.title[:50]
+            }):
+                return jsonify(cached_info)
+
+    # Trace: External API call to Bangumi
+    with TraceSpan("get_bangumi_external_api", "external_api", {
+        "anime_id": anime_id,
+        "title": anime.title[:50]
+    }) as span:
+        # Not cached, fetch synchronously to return complete info
+        _, finder = get_services()
+        bangumi_info = finder.get_bangumi_info(anime)
 
     if bangumi_info:
         # Cache the result for future requests
@@ -714,38 +747,44 @@ def register_page_routes(app):
         if "anime1.me" not in target_url:
             return error_response(ERROR_INVALID_DOMAIN, 403)
 
-        try:
-            from bs4 import BeautifulSoup
+        # Trace: Fetch anime1.me page
+        with TraceSpan("fetch_anime1_page", "external_http", {
+            "url": target_url[:100]
+        }):
+            try:
+                from bs4 import BeautifulSoup
 
-            headers = {
-                "User-Agent": VALUE_USER_AGENT_DEFAULT,
-            }
-            response = requests.get(target_url, headers=headers, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # Look for iframes
-            iframes = soup.find_all("iframe")
-
-            if iframes:
-                iframe_src = iframes[0].get("src", "")
-                return {
-                    "iframe_url": iframe_src,
-                    "player_page": target_url,
+                headers = {
+                    "User-Agent": VALUE_USER_AGENT_DEFAULT,
                 }
+                response = requests.get(target_url, headers=headers, timeout=10)
+                response.raise_for_status()
 
-            # Alternative: look for video embedding scripts
-            scripts = soup.find_all("script")
-            for script in scripts:
-                src = script.get("src", "")
-                if "player" in src.lower() or "video" in src.lower():
-                    return {
-                        "script_url": src,
-                        "player_page": target_url,
-                    }
+                soup = BeautifulSoup(response.text, "html.parser")
 
-            return error_response("No player found", 404)
+                # Trace: Parse player from HTML
+                with TraceSpan("parse_player_html", "parsing"):
+                    # Look for iframes
+                    iframes = soup.find_all("iframe")
 
-        except requests.RequestException as e:
-            return error_response(str(e), 500)
+                    if iframes:
+                        iframe_src = iframes[0].get("src", "")
+                        return {
+                            "iframe_url": iframe_src,
+                            "player_page": target_url,
+                        }
+
+                    # Alternative: look for video embedding scripts
+                    scripts = soup.find_all("script")
+                    for script in scripts:
+                        src = script.get("src", "")
+                        if "player" in src.lower() or "video" in src.lower():
+                            return {
+                                "script_url": src,
+                                "player_page": target_url,
+                            }
+
+                return error_response("No player found", 404)
+
+            except requests.RequestException as e:
+                return error_response(str(e), 500)

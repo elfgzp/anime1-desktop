@@ -36,6 +36,7 @@ def anime():
     )
 
 
+@pytest.mark.integration
 class TestDatabase:
     """Test database connection and models."""
 
@@ -77,6 +78,7 @@ class TestDatabase:
         assert CoverCache.get_count() == 0
 
 
+@pytest.mark.integration
 class TestFavoriteService:
     """Test FavoriteService operations."""
 
@@ -126,6 +128,7 @@ class TestFavoriteService:
         fav_service.remove_favorite("test_anime_002")
 
 
+@pytest.mark.integration
 class TestCoverCacheService:
     """Test CoverCacheService operations."""
 
@@ -179,6 +182,7 @@ class TestCoverCacheService:
         service.clear_all()
 
 
+@pytest.mark.integration
 class TestSettingsService:
     """Test SettingsService operations."""
 

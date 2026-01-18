@@ -59,7 +59,29 @@ def fetch_page_with_curl(url: str, timeout: int = 30) -> str:
     Raises:
         requests.RequestException: If the request fails.
     """
-    # Try multiple curl approaches
+    # 自动追踪 curl 请求
+    from .trace import TraceSpan, is_tracing_enabled
+
+    if is_tracing_enabled():
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        trace_name = f"curl:{parsed.netloc}{parsed.path}"
+        span = TraceSpan(trace_name, 'external_api', {'url': url, 'method': 'CURL'})
+    else:
+        span = None
+
+    try:
+        result = _curl_impl(url, timeout)
+        if span:
+            span.end(success=True)
+        return result
+    except Exception as e:
+        if span:
+            span.end(success=False, error=str(e))
+        raise
+
+
+def _curl_impl(url: str, timeout: int = 30) -> str:
     curl_commands = [
         # Approach 1: Standard curl with modern TLS
         [
@@ -131,6 +153,37 @@ def fetch_page(
     Raises:
         requests.RequestException: If the request fails.
     """
+    # 自动追踪所有 HTTP 请求
+    from .trace import TraceSpan, is_tracing_enabled
+
+    if is_tracing_enabled():
+        # 从 URL 提取域名作为追踪名称
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        trace_name = f"http_get:{parsed.netloc}{parsed.path}"
+        span = TraceSpan(trace_name, 'external_api', {'url': url, 'method': 'GET'})
+    else:
+        span = None
+
+    try:
+        result = _fetch_page_impl(url, session, delay, timeout, ignore_ssl)
+        if span:
+            span.end(success=True)
+        return result
+    except Exception as e:
+        if span:
+            span.end(success=False, error=str(e))
+        raise
+
+
+def _fetch_page_impl(
+    url: str,
+    session: Optional[requests.Session] = None,
+    delay: float = 0.0,
+    timeout: int = DEFAULT_TIMEOUT,
+    ignore_ssl: bool = False,
+) -> str:
+    """Internal implementation of fetch_page."""
     if delay > 0:
         time.sleep(delay)
 

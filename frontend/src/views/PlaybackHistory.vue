@@ -60,6 +60,7 @@
 
     <!-- 空状态 -->
     <el-empty v-else description="暂无观看历史" />
+    <el-backtop :right="20" :bottom="20" />
   </div>
 </template>
 

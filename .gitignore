@@ -88,3 +88,6 @@ vite.config.js.timestamp-*
 *.sln
 *.sw?
 nul
+
+# Serena
+.serena/

@@ -268,13 +268,17 @@ class Anime1Parser:
         episodes = []
         soup = BeautifulSoup(html, "html.parser")
 
+        # First, try to extract episodes from standard category listing format
         # Pattern: <h2 class="entry-title"><a href="https://anime1.me/27788">Princession Orchestra [37]</a></h2>
-        # with <time class="entry-date published updated" datetime="2026-01-16T03:50:05+08:00">2026-01-16</time>
         title_links = soup.select('h2.entry-title a[href*="/"]')
 
         for link in title_links:
             href = link.get("href", "")
             title_text = link.get_text(strip=True)
+
+            # Skip if this is just a category link
+            if '/?cat=' in href or '/category/' in href:
+                continue
 
             # Extract episode ID from URL like https://anime1.me/27788
             match = re.search(r'/(\d+)$', href)
@@ -283,12 +287,14 @@ class Anime1Parser:
             episode_id = match.group(1)
 
             # Extract episode number from title like "Princession Orchestra [37]"
+            # Only accept numeric format [N], skip special formats like [劇場版], [SP], [OVA]
+            # The actual episode number (e parameter) will be fetched from the episode page
             ep_match = re.search(r'\[(\d+(?:\.\d+)?)\]', title_text)
             if not ep_match:
                 continue
             episode_num = ep_match.group(1)
 
-            # Get clean title (remove episode number)
+            # Get clean title (remove episode number if present)
             title = re.sub(r'\s*\[\d+(?:\.\d+)?\]\s*$', '', title_text).strip()
 
             # Find the date in the same article
@@ -310,7 +316,99 @@ class Anime1Parser:
                 "date": date
             })
 
+        # If no episodes found from listing, check if this is a single episode page
+        # (like movie pages or standalone episodes)
+        if not episodes:
+            single_episode = self._extract_single_episode(soup)
+            if single_episode:
+                episodes.append(single_episode)
+
         return episodes
+
+    def _extract_single_episode(self, soup: BeautifulSoup) -> Optional[dict]:
+        """Extract episode info from a single episode/movie page.
+
+        This handles pages that have a video player directly embedded,
+        like https://anime1.me/27546 (劇場版『鏈鋸人 蕾潔篇』).
+
+        Args:
+            soup: BeautifulSoup object of the page.
+
+        Returns:
+            Episode dictionary or None if not a single episode page.
+        """
+        # Check if this is a single post page (has article with post class)
+        article = soup.find('article')
+        if not article:
+            return None
+
+        article_classes = article.get('class', [])
+        if not any('post' in cls for cls in article_classes):
+            return None
+
+        # Try to get episode info from video tag
+        video = soup.find('video')
+        if not video:
+            return None
+
+        # Extract video data attributes
+        api_req = video.get('data-apireq', '')
+        vid = video.get('data-vid', '')
+        video_id = vid or (re.search(r'"v":"([^"]+)"', api_req).group(1) if api_req else '')
+
+        # Extract episode number from category ID in api_req or page
+        episode_num = "1"  # Default for single episode
+        cat_match = re.search(r'"c":"?(\d+)"?', api_req)
+        if cat_match:
+            category_id = cat_match.group(1)
+            # For single episodes, the episode number might be in the API request
+            ep_match = re.search(r'"e":"?(\d+)"?', api_req)
+            if ep_match:
+                episode_num = ep_match.group(1)
+
+        # Extract title from entry-title
+        title_elem = soup.find('h2', class_='entry-title')
+        if title_elem:
+            title_text = title_elem.get_text(strip=True)
+            # Remove episode number from title if present (only numeric format)
+            title = re.sub(r'\s*\[\d+(?:\.\d+)?\]\s*$', '', title_text).strip()
+        else:
+            title = soup.title.string if soup.title else "Unknown"
+
+        # Extract date
+        time_elem = soup.select_one('time.entry-date')
+        date = time_elem.get_text(strip=True) if time_elem else ""
+
+        # Extract episode ID from article class (e.g., "post-27546")
+        episode_id = ""
+        for cls in article_classes:
+            match = re.match(r'post-(\d+)', cls)
+            if match:
+                episode_id = match.group(1)
+                break
+
+        # If no episode ID from class, try to get from canonical
+        if not episode_id:
+            canonical = soup.find('link', rel='canonical')
+            if canonical:
+                url = canonical.get('href', '')
+                match = re.search(r'/(\d+)$', url)
+                if match:
+                    episode_id = match.group(1)
+
+        # Construct URL from episode ID
+        url = f"{self._base_url}/{episode_id}" if episode_id else ""
+
+        if not episode_id:
+            return None
+
+        return {
+            "id": episode_id,
+            "title": title,
+            "episode": episode_num,
+            "url": url,
+            "date": date
+        }
 
     def get_total_episode_pages(self, html: str) -> int:
         """Get total number of episode pages.

@@ -30,17 +30,18 @@
         :body-style="{ padding: '0' }"
       >
         <router-link :to="ROUTES.ANIME_DETAIL(anime.id)" class="card-link">
-          <div class="card-cover" :class="{ 'cover-loading': !anime.cover_url && !anime._coverFailed && loading }">
-            <el-image
+          <div class="card-cover" :class="{ 'cover-loading': coverLoadingMap[anime.id] }">
+            <!-- 封面图片 -->
+            <img
               v-if="anime.cover_url"
               :src="anime.cover_url"
               :alt="anime.title"
-              fit="cover"
-              loading="lazy"
-              :preview-src-list="[]"
-              :hide-on-click="true"
-              @error="handleImageError(anime)"
+              class="cover-image"
+              @load="handleImageLoad(anime.id)"
+              @error="handleImageError(anime.id)"
             />
+            <!-- 封面加载中骨架屏 -->
+            <div v-else-if="coverLoadingMap[anime.id]" class="cover-skeleton"></div>
             <div v-else-if="isAdult(anime)" class="adult-mark">🔞</div>
             <div v-else-if="anime._coverFailed" class="no-cover">📺</div>
             <div v-else class="cover-placeholder">
@@ -82,17 +83,21 @@
       @current-change="handlePageChange"
       class="pagination"
     />
+    <el-backtop :right="20" :bottom="20" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, markRaw } from 'vue'
+import { ref, onMounted, onUnmounted, computed, markRaw, nextTick } from 'vue'
+import { useRouter, useRoute, onBeforeRouteLeave as originalOnBeforeRouteLeave } from 'vue-router'
 import { Search, Star, StarFilled, Picture } from '@element-plus/icons-vue'
 import { animeAPI, favoriteAPI } from '../utils/api'
 import { ROUTES, ADULT_CONTENT, ERROR_MESSAGES, UI_TEXT } from '../constants/api'
 import { RESPONSE_FIELDS } from '../constants/api'
 import DOMPurify from 'dompurify'
 import { ElMessage } from 'element-plus'
+import { measure, measureApi } from '../utils/performance'
+import { onCacheCleared } from '../utils/cacheEventBus'
 
 const loading = ref(false)
 const animeList = ref([])
@@ -101,6 +106,13 @@ const totalPages = ref(1)
 const searchKeyword = ref('')
 const isSearching = ref(false)
 const isFavoriteMap = ref({})
+const coverLoadingMap = ref({})  // 跟踪封面加载状态
+
+// 保存/恢复分页位置
+const SCROLL_POSITION_KEY = 'anime_home_scroll_position'
+const router = useRouter()
+const route = useRoute()
+const animeGridRef = ref(null)
 
 // 安全转义文本 - 防止 XSS
 const escapeText = (text) => {
@@ -124,13 +136,17 @@ const isAdult = (anime) => {
 
 const fetchAnimeList = async (page = 1) => {
   loading.value = true
+  const timer = measure('Home_fetchAnimeList')
+
   try {
     let response
+    const apiTimer = measureApi('getAnimeList')
     if (isSearching.value && searchKeyword.value) {
       response = await animeAPI.search(searchKeyword.value, page)
     } else {
       response = await animeAPI.getList(page)
     }
+    apiTimer.success(response)
 
     const data = response.data
     const rawList = data.anime_list || []
@@ -145,9 +161,16 @@ const fetchAnimeList = async (page = 1) => {
       detail_url: escapeText(anime.detail_url)
     }))
 
+    // 初始化封面加载状态
+    animeList.value.forEach(anime => {
+      if (!anime.cover_url && !anime._coverFailed) {
+        coverLoadingMap.value[anime.id] = true
+      }
+    })
+
     currentPage.value = data.current_page || page
     totalPages.value = data.total_pages || 1
-    
+
     // 异步获取封面和详情（先显示列表，后台加载数据）
     if (animeList.value.length > 0) {
       const normalAnime = animeList.value.filter(anime => !isAdult(anime))
@@ -157,22 +180,35 @@ const fetchAnimeList = async (page = 1) => {
         animeAPI.getCover(anime.id).then(response => {
           if (response.data && response.data.length > 0) {
             const cover = response.data[0]
-            if (cover.cover_url) anime.cover_url = cover.cover_url
-            anime.year = cover.year || anime.year
-            anime.season = cover.season || anime.season
-            anime.subtitle_group = cover.subtitle_group || anime.subtitle_group
+            // 使用 nextTick 确保骨架屏有足够时间显示
+            nextTick(() => {
+              anime.cover_url = cover.cover_url
+              anime.year = cover.year || anime.year
+              anime.season = cover.season || anime.season
+              anime.subtitle_group = cover.subtitle_group || anime.subtitle_group
+              // 图片加载完成后由 @load 事件清除 loading 状态
+            })
           }
-        }).catch(() => {}) // 静默处理
+        }).catch(() => {
+          // 加载失败，清除 loading 状态并显示占位符
+          nextTick(() => {
+            coverLoadingMap.value[anime.id] = false
+            anime._coverFailed = true
+          })
+        })
       })
     }
     // 不等待封面，直接返回列表
 
     // 批量检查收藏状态（这个可以等待）
     await checkFavoritesStatus()
-    } catch (error) {
-      console.error('获取番剧列表失败:', error)
-      ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
-    } finally {
+
+    timer.end({ page, count: animeList.value.length })
+  } catch (error) {
+    timer.end({ error: error.message })
+    console.error('获取番剧列表失败:', error)
+    ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
+  } finally {
     loading.value = false
   }
 }
@@ -229,6 +265,8 @@ const handleSearch = () => {
   }
   isSearching.value = true
   currentPage.value = 1
+  // 更新 URL
+  router.replace({ query: { ...route.query, q: keyword, page: 1 } })
   fetchAnimeList(1)
 }
 
@@ -236,19 +274,108 @@ const handleClearSearch = () => {
   searchKeyword.value = ''
   isSearching.value = false
   currentPage.value = 1
+  // 清除 URL 中的搜索参数
+  const query = { ...route.query }
+  delete query.q
+  delete query.page
+  router.replace({ query })
   fetchAnimeList(1)
 }
 
 const handlePageChange = (page) => {
+  // 更新 URL query 参数
+  router.replace({ query: { ...route.query, page } })
   fetchAnimeList(page)
 }
 
-const handleImageError = (anime) => {
-  anime._coverFailed = true
+const handleImageError = (animeId) => {
+  coverLoadingMap.value[animeId] = false
+  // 找到对应的 anime 并设置 _coverFailed
+  const anime = animeList.value.find(a => a.id === animeId)
+  if (anime) anime._coverFailed = true
 }
 
-onMounted(() => {
-  fetchAnimeList(1)
+const handleImageLoad = (animeId) => {
+  coverLoadingMap.value[animeId] = false
+}
+
+// 保存滚动位置（不保存搜索和分页，这些从 URL 读取）
+const saveScrollPosition = () => {
+  const position = {
+    scrollY: window.scrollY
+  }
+  sessionStorage.setItem(SCROLL_POSITION_KEY, JSON.stringify(position))
+}
+
+// 恢复滚动位置（搜索和分页从 URL 读取）
+const restoreScrollPosition = () => {
+  const saved = sessionStorage.getItem(SCROLL_POSITION_KEY)
+  if (saved) {
+    try {
+      const position = JSON.parse(saved)
+      return position
+    } catch (e) {
+      console.error('恢复滚动位置失败:', e)
+    }
+  }
+  return null
+}
+
+// 路由守卫：离开前保存位置
+originalOnBeforeRouteLeave((to, from, next) => {
+  saveScrollPosition()
+  next()
+})
+
+onMounted(async () => {
+  // 监听缓存清理事件，清理后重新加载封面数据
+  const cleanupCacheListener = onCacheCleared(() => {
+    console.log('[Home] 收到缓存清理事件，刷新封面数据...')
+    // 重新获取所有番剧的封面数据
+    animeList.value.forEach(anime => {
+      anime.cover_url = null
+      anime.year = null
+      anime.season = null
+      anime.subtitle_group = null
+    })
+    // 后台重新加载封面
+    fetchAnimeList(currentPage.value)
+  })
+
+  // 从 URL query 读取状态（搜索和分页都从 URL 读取）
+  const urlPage = parseInt(route.query.page, 10)
+  const urlKeyword = route.query.q || ''
+
+  const pageFromUrl = (urlPage && !isNaN(urlPage) && urlPage > 0) ? urlPage : 1
+
+  // 恢复滚动位置（用于从其他页面返回时）
+  const savedPosition = restoreScrollPosition()
+
+  // URL 有搜索词就设置搜索状态
+  if (urlKeyword) {
+    searchKeyword.value = urlKeyword
+    isSearching.value = true
+  } else {
+    searchKeyword.value = ''
+    isSearching.value = false
+  }
+
+  // 分页从 URL 读取
+  currentPage.value = pageFromUrl
+
+  // 搜索模式下页码从1开始
+  if (isSearching.value) {
+    currentPage.value = 1
+    fetchAnimeList(1)
+  } else {
+    fetchAnimeList(pageFromUrl)
+  }
+
+  // 数据加载完成后恢复滚动位置
+  await nextTick()
+  if (savedPosition?.scrollY > 0) {
+    window.scrollTo({ top: savedPosition.scrollY, behavior: 'instant' })
+  }
 })
 </script>
 
@@ -316,6 +443,16 @@ onMounted(() => {
   transition: transform 0.3s;
 }
 
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.anime-card:hover .cover-image {
+  transform: scale(1.05);
+}
+
 .anime-card:hover .card-cover :deep(.el-image) {
   transform: scale(1.05);
 }
@@ -343,6 +480,18 @@ onMounted(() => {
 }
 
 .cover-loading {
+  background: linear-gradient(90deg,
+    var(--el-fill-color-light) 25%,
+    var(--el-fill-color) 50%,
+    var(--el-fill-color-light) 75%
+  );
+  background-size: 200% 100%;
+  animation: cover-loading 1.5s infinite;
+}
+
+.cover-skeleton {
+  width: 100%;
+  height: 100%;
   background: linear-gradient(90deg,
     var(--el-fill-color-light) 25%,
     var(--el-fill-color) 50%,
