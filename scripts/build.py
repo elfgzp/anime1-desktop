@@ -59,11 +59,12 @@ def extract_version() -> str:
     """Extract version from git tag or commit id.
 
     Priority:
-    1. If on a release tag (not on a dev commit), use the tag version (e.g., "0.2.0")
-    2. Otherwise, use base_version-dev-{commit_id} format (e.g., "0.2.0-dev-abc123")
+    1. If on a release tag, (e.g., use the tag version "0.2.0")
+    2. Otherwise, use base_version-{commit_id} format (e.g., "0.2.0-abc123")
 
     This ensures dev versions are correctly compared against release versions:
-    - v0.2.0-dev-abc123 < v0.2.0 < v0.2.1-dev-xyz456
+    - v0.1.0 < v0.1.0-xyz456 < v0.2.0 < v0.2.0-abc123
+    - Local dev versions are detected as having available updates
     """
     root = get_project_root()
 
@@ -103,7 +104,7 @@ def extract_version() -> str:
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         pass
 
-    # If not on a release tag, use base_version-dev-{commit_id}
+    # If not on a release tag, use base_version-{commit_id}
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -115,7 +116,7 @@ def extract_version() -> str:
         )
         if result.returncode == 0 and result.stdout.strip():
             commit_id = result.stdout.strip()
-            version = f"{base_version}-dev-{commit_id}"
+            version = f"{base_version}-{commit_id}"
             print(f"[BUILD] Using dev version: {version}")
             return version
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):

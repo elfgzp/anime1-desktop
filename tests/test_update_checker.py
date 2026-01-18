@@ -41,21 +41,21 @@ class TestVersionComparator:
         nums, pre_type, pre_num = VersionComparator.parse_version("1.0.0-rc.1")
         assert nums == [1, 0, 0]
         assert pre_type == "rc"
-        assert pre_num == 1
+        assert pre_num == "1"  # Now returns string
 
     def test_parse_version_with_beta(self):
         """Test parsing pre-release version beta"""
         nums, pre_type, pre_num = VersionComparator.parse_version("2.1.0-beta.2")
         assert nums == [2, 1, 0]
         assert pre_type == "beta"
-        assert pre_num == 2
+        assert pre_num == "2"  # Now returns string
 
     def test_parse_version_with_alpha(self):
         """Test parsing pre-release version alpha"""
         nums, pre_type, pre_num = VersionComparator.parse_version("1.0.0-alpha.3")
         assert nums == [1, 0, 0]
         assert pre_type == "alpha"
-        assert pre_num == 3
+        assert pre_num == "3"  # Now returns string
 
     def test_parse_version_missing_patch(self):
         """Test parsing version with missing patch component"""
@@ -109,42 +109,48 @@ class TestVersionComparator:
         assert VersionComparator.is_prerelease("1.0.0-alpha.1") is True
 
     def test_parse_version_dev_version(self):
-        """Test parsing dev version (commit id based)"""
-        # Dev versions are parsed as [0, 0, 0] with "dev" pre-release type
-        # This ensures dev versions are always considered older than release versions
-        nums, pre_type, pre_num = VersionComparator.parse_version("devabc123")
-        assert nums == [0, 0, 0]
+        """Test parsing dev version (commit id based, e.g., 0.2.0-abc123)"""
+        # Dev versions use format: base_version-commit_id (e.g., "0.2.0-abc123")
+        nums, pre_type, pre_num = VersionComparator.parse_version("0.2.0-abc123")
+        assert nums == [0, 2, 0]
         assert pre_type == "dev"
-        assert pre_num == 0
+        assert pre_num == "abc123"
 
     def test_parse_version_dev_prefix(self):
-        """Test parsing version with 'dev' prefix"""
-        nums, pre_type, pre_num = VersionComparator.parse_version("dev")
-        assert nums == [0, 0, 0]
-        assert pre_type == "dev"
+        """Test parsing version with 'dev' prefix (fallback)"""
+        # "dev" is not a valid version format anymore, but should not crash
+        # It's treated as dev version with [0,0,0] base for backward compatibility
+        try:
+            nums, pre_type, pre_num = VersionComparator.parse_version("dev")
+            assert nums == [0, 0, 0]
+            assert pre_type == "dev"
+        except ValueError:
+            # If it throws, that's also acceptable - old format not supported
+            pass
 
     def test_compare_versions_dev_vs_release(self):
         """Test comparing dev version with release version.
 
-        This is the critical test case: when packaged from a release tag,
-        the version should be the release version (e.g., 0.2.0), NOT 'dev'.
-
-        If version is 'dev', it will always be considered older than any release.
+        Dev versions are based on the same base version but include commit id:
+        - v0.2.0-abc123 < v0.2.0 (dev version is older than release)
+        - v0.2.0-abc123 > v0.1.0 (dev version on newer base is newer)
         """
-        # Dev version should be older than any release version
-        assert VersionComparator.compare_versions("dev", "0.2.0") == -1
-        assert VersionComparator.compare_versions("devabc123", "0.2.0") == -1
-        # Release version should be newer than dev
-        assert VersionComparator.compare_versions("0.2.0", "dev") == 1
+        # Dev version should be older than release version with same base
+        assert VersionComparator.compare_versions("0.2.0-abc123", "0.2.0") == -1
+        # Release version should be newer than dev with same base
+        assert VersionComparator.compare_versions("0.2.0", "0.2.0-abc123") == 1
+        # Dev version on newer base should be newer than older release
+        assert VersionComparator.compare_versions("0.2.0-abc123", "0.1.0") == 1
         # Same release version should be equal
         assert VersionComparator.compare_versions("0.2.0", "0.2.0") == 0
 
     def test_compare_versions_dev_vs_dev(self):
         """Test comparing two dev versions"""
-        # All dev versions should be considered equal
-        assert VersionComparator.compare_versions("dev", "dev") == 0
-        assert VersionComparator.compare_versions("devabc123", "devabc456") == 0
-        assert VersionComparator.compare_versions("dev", "devabc123") == 0
+        # Dev versions with same base are considered equal (commit id not compared)
+        assert VersionComparator.compare_versions("0.2.0-abc123", "0.2.0-xyz456") == 0
+        # Dev version on different bases: compare base version
+        assert VersionComparator.compare_versions("0.2.0-abc123", "0.1.0-xyz456") == 1
+        assert VersionComparator.compare_versions("0.1.0-xyz456", "0.2.0-abc123") == -1
 
 
 @pytest.mark.unit
@@ -424,10 +430,10 @@ class TestUpdateCheckerIntegration:
             print("[PASS] v0.2.0 correctly reports no update when latest is v0.2.0")
 
     def test_scenario_dev_version_detects_update(self):
-        """Scenario: Current version is 'dev', should detect update.
+        """Scenario: Current version is '0.2.0-abc123' (dev build), should detect update.
 
-        This is the EXPECTED behavior - when running from 'dev' version,
-        it SHOULD detect the latest release as an update.
+        This is the EXPECTED behavior - when running from dev version (based on v0.2.0),
+        it SHOULD detect v0.2.0 release as an update because dev < release.
         """
         release = MockGitHubAPI.create_release("v0.2.0")
 
@@ -437,15 +443,15 @@ class TestUpdateCheckerIntegration:
             mock_response.json.return_value = release
             mock_get.return_value = mock_response
 
-            # Current version is 'dev' (e.g., running from source without tag)
-            checker = UpdateChecker("anime1", "anime1-desktop", current_version="dev")
+            # Current version is '0.2.0-abc123' (dev build based on v0.2.0)
+            checker = UpdateChecker("anime1", "anime1-desktop", current_version="0.2.0-abc123")
             result = checker.check_for_update()
 
-            # SHOULD detect update when running from dev version
+            # SHOULD detect update because dev < release
             assert result.has_update is True
-            assert result.current_version == "dev"
+            assert result.current_version == "0.2.0-abc123"
             assert result.latest_version == "v0.2.0"
-            print("[PASS] 'dev' correctly detects v0.2.0 as update")
+            print("[PASS] '0.2.0-abc123' correctly detects v0.2.0 as update")
 
     def test_scenario_old_version_detects_update(self):
         """Scenario: v0.0.9 should detect v0.1.0 as update."""

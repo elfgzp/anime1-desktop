@@ -102,13 +102,13 @@ class VersionComparator:
     Version format support:
     - Release: "1.0.0", "0.2.0"
     - Pre-release: "1.0.0-rc.1", "1.0.0-beta.2", "1.0.0-alpha.3"
-    - Dev version: "1.0.0-dev-abc123" (development build based on 1.0.0)
+    - Dev version: "1.0.0-abc123" (development build based on 1.0.0)
 
     Comparison order (oldest to newest):
-    - 1.0.0-dev-abc123 (dev version on 1.0.0)
+    - 1.0.0-abc123 (dev version on 1.0.0)
     - 1.0.0 (release)
-    - 1.0.0-rc.1 (pre-release on next version)
-    - 1.0.1-dev-xyz456 (dev version on 1.0.1)
+    - 1.0.0-rc.1 (pre-release)
+    - 1.0.1-xyz456 (dev version on 1.0.1)
     - 1.0.1 (release)
     """
 
@@ -120,7 +120,7 @@ class VersionComparator:
         """Parse version string into components.
 
         Args:
-            version_str: Version string like "1.0.0", "1.0.0-rc.1", or "1.0.0-dev-abc123"
+            version_str: Version string like "1.0.0", "1.0.0-rc.1", or "1.0.0-abc123"
 
         Returns:
             Tuple of (version_numbers, pre_release_type, pre_release_extra)
@@ -131,7 +131,7 @@ class VersionComparator:
             Example:
             - ("1.0.0") -> ([1, 0, 0], None, None)
             - ("1.0.0-rc.1") -> ([1, 0, 0], "rc", "1")
-            - ("1.0.0-dev-abc123") -> ([1, 0, 0], "dev", "abc123")
+            - ("1.0.0-abc123") -> ([1, 0, 0], "dev", "abc123")
         """
         import re
 
@@ -154,10 +154,13 @@ class VersionComparator:
         pre_release_extra = None
 
         if pre_release:
-            # Check for dev version: "dev-abc123"
-            if pre_release.lower().startswith(VERSION_DEV_PREFIX + VERSION_SEPARATOR):
+            # Check for dev version: commit id format (e.g., "abc123", "xyz456")
+            # Dev versions are identified by having a commit id after the base version
+            # Format: "x.x.x-abc123" where abc123 is a git short commit id (4-40 alphanumeric chars)
+            # Git short commit ids are typically 7 chars but can be 4-40
+            if re.match(r'^[0-9a-z]{4,40}$', pre_release, re.IGNORECASE):
                 pre_release_type = PRE_RELEASE_DEV
-                pre_release_extra = pre_release[len(PRE_RELEASE_DEV) + 1:]  # After "dev-"
+                pre_release_extra = pre_release
             else:
                 # Match patterns like "rc.1", "beta.2", "alpha.3"
                 match = re.match(PRE_RELEASE_PATTERN, pre_release.lower())
@@ -173,9 +176,14 @@ class VersionComparator:
 
         Version comparison rules:
         1. Compare base version numbers first (major.minor.patch)
-        2. If base versions are equal:
-           - Stable release > Dev version > Pre-release (rc/beta/alpha)
-           - Pre-release order: alpha < beta < rc
+        2. If base versions are equal and both are dev versions:
+           - Treat dev version as OLDER than stable release (for update check)
+        3. If base versions are different:
+           - v0.2.0-dev > v0.1.0 (dev version on newer base)
+
+        This ensures:
+        - v0.1.0 < v0.1.0-dev-xyz456 < v0.2.0 < v0.2.0-dev-abc123
+        - Local dev versions are correctly detected as having available updates
 
         Args:
             version1: First version string
@@ -189,25 +197,36 @@ class VersionComparator:
         v1_nums, v1_pre, v1_extra = VersionComparator.parse_version(version1)
         v2_nums, v2_pre, v2_extra = VersionComparator.parse_version(version2)
 
-        # Compare base version numbers
+        # Compare base version numbers first
         for i in range(VERSION_COMPONENT_COUNT):
             if v1_nums[i] < v2_nums[i]:
                 return -1
             elif v1_nums[i] > v2_nums[i]:
                 return 1
 
-        # Base versions are equal, compare pre-release types
-        # Order: dev < alpha < beta < rc < None (stable)
+        # Base versions are equal
+        # Special case: if both have same base and both are dev versions
+        # Treat dev version as older than stable release (for update checking)
+        if v1_pre == PRE_RELEASE_DEV and v2_pre != PRE_RELEASE_DEV:
+            if v2_pre is None:
+                # v1 is dev, v2 is stable: dev < stable
+                return -1
+            # v1 is dev, v2 is pre-release (rc/beta/alpha): dev < pre-release
+            return -1
+        elif v1_pre != PRE_RELEASE_DEV and v2_pre == PRE_RELEASE_DEV:
+            # v1 is stable/pre-release, v2 is dev: stable > dev
+            return 1
+
+        # Normal pre-release comparison
         pre_release_order = {
-            PRE_RELEASE_DEV: 0,
-            PRE_RELEASE_ALPHA: 1,
-            PRE_RELEASE_BETA: 2,
-            PRE_RELEASE_RC: 3,
-            None: 4,  # Stable release is highest
+            PRE_RELEASE_ALPHA: 0,
+            PRE_RELEASE_BETA: 1,
+            PRE_RELEASE_RC: 2,
+            None: 3,  # Stable release is highest
         }
 
-        v1_order = pre_release_order.get(v1_pre, 5)  # 5 = unknown, treated as lowest
-        v2_order = pre_release_order.get(v2_pre, 5)
+        v1_order = pre_release_order.get(v1_pre, -1)
+        v2_order = pre_release_order.get(v2_pre, -1)
 
         if v1_order < v2_order:
             return -1
@@ -226,7 +245,7 @@ class VersionComparator:
             except (ValueError, TypeError):
                 pass
 
-        # For dev versions, we don't compare commit ids (they're all considered equal)
+        # Dev versions with same base are equal
         return 0
 
     @staticmethod
