@@ -43,7 +43,7 @@ dist/
 release/
 
 # Version file (auto-generated during build)
-src/_version.txt
+src/version.txt
 
 # Test environments
 .test-venv/
