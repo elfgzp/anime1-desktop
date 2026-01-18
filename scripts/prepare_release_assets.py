@@ -20,9 +20,12 @@ def main():
         print(f"Error: artifacts directory not found: {artifacts_dir}")
         sys.exit(1)
     
-    # 查找所有构建产物（Windows: zip, macOS: dmg, Linux: tar.gz）
+    # 查找所有构建产物
+    # Windows: zip (便携版) + exe (安装包)
+    # macOS: dmg
+    # Linux: tar.gz
     files_found = []
-    for pattern in ["*.zip", "*.dmg", "*.tar.gz"]:
+    for pattern in ["*.zip", "*.dmg", "*.tar.gz", "*.exe"]:
         for file in artifacts_dir.rglob(pattern):
             if file.is_file():
                 dest = output_dir / file.name

@@ -52,3 +52,35 @@ def ensure_app_data_dir() -> Path:
     app_dir = get_app_data_dir()
     app_dir.mkdir(parents=True, exist_ok=True)
     return app_dir
+
+
+def get_download_dir() -> Path:
+    """Get download directory for different platforms.
+
+    Returns:
+        Path to download directory:
+        - Windows: %USERPROFILE%/Downloads
+        - macOS: ~/Downloads
+        - Linux: ~/Downloads or XDG download dir
+    """
+    if sys.platform == PLATFORM_WIN32:
+        # Windows
+        downloads = os.getenv('USERPROFILE') or Path.home()
+        return Path(downloads) / 'Downloads'
+    elif sys.platform == PLATFORM_DARWIN:
+        # macOS
+        return Path.home() / 'Downloads'
+    else:
+        # Linux
+        xdg_download = os.getenv('XDG_DOWNLOAD_DIR')
+        if xdg_download:
+            return Path(xdg_download)
+        else:
+            return Path.home() / 'Downloads'
+
+
+def ensure_download_dir() -> Path:
+    """Ensure download directory exists and return it."""
+    download_dir = get_download_dir()
+    download_dir.mkdir(parents=True, exist_ok=True)
+    return download_dir

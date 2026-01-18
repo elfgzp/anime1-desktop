@@ -34,6 +34,8 @@ export const API_ENDPOINTS = {
     THEME: '/settings/theme',
     ABOUT: '/settings/about',
     CHECK_UPDATE: '/settings/check_update',
+    UPDATE_DOWNLOAD: '/settings/update/download',
+    OPEN_PATH: '/settings/open_path',
     LOGS_OPEN: '/settings/logs/open',
     CACHE_INFO: '/settings/cache',
     CACHE_CLEAR: '/settings/cache/clear'

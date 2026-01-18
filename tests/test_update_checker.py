@@ -108,6 +108,44 @@ class TestVersionComparator:
         assert VersionComparator.is_prerelease("1.0.0-beta.2") is True
         assert VersionComparator.is_prerelease("1.0.0-alpha.1") is True
 
+    def test_parse_version_dev_version(self):
+        """Test parsing dev version (commit id based)"""
+        # Dev versions are parsed as [0, 0, 0] with "dev" pre-release type
+        # This ensures dev versions are always considered older than release versions
+        nums, pre_type, pre_num = VersionComparator.parse_version("devabc123")
+        assert nums == [0, 0, 0]
+        assert pre_type == "dev"
+        assert pre_num == 0
+
+    def test_parse_version_dev_prefix(self):
+        """Test parsing version with 'dev' prefix"""
+        nums, pre_type, pre_num = VersionComparator.parse_version("dev")
+        assert nums == [0, 0, 0]
+        assert pre_type == "dev"
+
+    def test_compare_versions_dev_vs_release(self):
+        """Test comparing dev version with release version.
+
+        This is the critical test case: when packaged from a release tag,
+        the version should be the release version (e.g., 0.2.0), NOT 'dev'.
+
+        If version is 'dev', it will always be considered older than any release.
+        """
+        # Dev version should be older than any release version
+        assert VersionComparator.compare_versions("dev", "0.2.0") == -1
+        assert VersionComparator.compare_versions("devabc123", "0.2.0") == -1
+        # Release version should be newer than dev
+        assert VersionComparator.compare_versions("0.2.0", "dev") == 1
+        # Same release version should be equal
+        assert VersionComparator.compare_versions("0.2.0", "0.2.0") == 0
+
+    def test_compare_versions_dev_vs_dev(self):
+        """Test comparing two dev versions"""
+        # All dev versions should be considered equal
+        assert VersionComparator.compare_versions("dev", "dev") == 0
+        assert VersionComparator.compare_versions("devabc123", "devabc456") == 0
+        assert VersionComparator.compare_versions("dev", "devabc123") == 0
+
 
 @pytest.mark.unit
 class TestPlatformDetector:
@@ -182,7 +220,8 @@ class TestUpdateChecker:
 
             assert result.has_update is False
             assert result.current_version == "0.1.0"
-            assert result.latest_version is None
+            # latest_version should be set even when no update is needed
+            assert result.latest_version == "v0.1.0"
 
     def test_check_update_has_update_old_version(self):
         """Test that update is reported when current version is older."""
@@ -343,6 +382,54 @@ class TestUpdateChecker:
 @pytest.mark.unit
 class TestUpdateCheckerIntegration:
     """Integration tests for update checking with simulated scenarios."""
+
+    def test_scenario_same_release_version_no_update(self):
+        """Scenario: Current version is the release version, should NOT detect update.
+
+        This is the critical test case for the bug where packaging from v0.2.0 tag
+        incorrectly reports 'dev' as current version and detects v0.2.0 as update.
+        """
+        release = MockGitHubAPI.create_release("v0.2.0")
+
+        with patch('src.services.update_checker.requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = release
+            mock_get.return_value = mock_response
+
+            # Current version is the release version (what it SHOULD be)
+            checker = UpdateChecker("anime1", "anime1-desktop", current_version="0.2.0")
+            result = checker.check_for_update()
+
+            # Should NOT detect update when versions match
+            assert result.has_update is False
+            assert result.current_version == "0.2.0"
+            assert result.latest_version == "v0.2.0"
+            print("[PASS] v0.2.0 correctly reports no update when latest is v0.2.0")
+
+    def test_scenario_dev_version_detects_update(self):
+        """Scenario: Current version is 'dev', should detect update.
+
+        This is the EXPECTED behavior - when running from 'dev' version,
+        it SHOULD detect the latest release as an update.
+        """
+        release = MockGitHubAPI.create_release("v0.2.0")
+
+        with patch('src.services.update_checker.requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = release
+            mock_get.return_value = mock_response
+
+            # Current version is 'dev' (e.g., running from source without tag)
+            checker = UpdateChecker("anime1", "anime1-desktop", current_version="dev")
+            result = checker.check_for_update()
+
+            # SHOULD detect update when running from dev version
+            assert result.has_update is True
+            assert result.current_version == "dev"
+            assert result.latest_version == "v0.2.0"
+            print("[PASS] 'dev' correctly detects v0.2.0 as update")
 
     def test_scenario_old_version_detects_update(self):
         """Scenario: v0.0.9 should detect v0.1.0 as update."""

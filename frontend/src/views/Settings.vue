@@ -30,7 +30,8 @@
       </template>
       <div class="settings-item">
         <div class="settings-label">
-          <span>检查更新</span>
+          <span>当前版本</span>
+          <div class="settings-desc">{{ currentVersion }}</div>
         </div>
         <div class="settings-control">
           <el-button
@@ -41,6 +42,28 @@
             {{ checkingUpdate ? '检查中...' : '检查更新' }}
           </el-button>
         </div>
+      </div>
+      <!-- 发现新版本时显示下载按钮 -->
+      <div class="settings-item" v-if="updateInfo.download_url">
+        <div class="settings-label">
+          <span>发现新版本</span>
+          <div class="settings-desc">{{ updateInfo.latest_version }}</div>
+        </div>
+        <div class="settings-control">
+          <el-button
+            type="success"
+            :loading="downloadingUpdate"
+            @click="handleDownloadUpdate"
+          >
+            {{ downloadingUpdate ? '下载中...' : '下载新版本' }}
+          </el-button>
+        </div>
+      </div>
+      <div class="settings-item" v-if="updateInfo.download_url">
+        <div class="settings-label">
+          <span>发布说明</span>
+        </div>
+        <div class="release-notes" v-html="formatReleaseNotes(updateInfo.release_notes)"></div>
       </div>
     </el-card>
 
@@ -137,12 +160,25 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const themeStore = useThemeStore()
 const theme = ref(THEME.SYSTEM)
 const checkingUpdate = ref(false)
+const downloadingUpdate = ref(false)
 const aboutInfo = ref(null)
 const openingLogs = ref(false)
 const cacheInfo = ref({})
 const clearingCache = ref(false)
 const clearingAllCache = ref(false)
 const THEME_STORAGE_KEY = 'anime1_theme'
+
+// 当前版本和更新信息
+const currentVersion = ref('')
+const updateInfo = ref({
+  has_update: false,
+  latest_version: '',
+  download_url: '',
+  asset_name: '',
+  download_size: '',
+  release_notes: '',
+  is_prerelease: false
+})
 
 // 从 localStorage 读取主题设置（同步，立即显示）
 const loadThemeFromStorage = () => {
@@ -167,11 +203,32 @@ const handleCheckUpdate = async () => {
   checkingUpdate.value = true
   try {
     const response = await settingsAPI.checkUpdate()
-    if (response.data[RESPONSE_FIELDS.HAS_UPDATE]) {
+    const data = response.data
+    if (data[RESPONSE_FIELDS.HAS_UPDATE]) {
+      // 保存更新信息，显示下载按钮
+      updateInfo.value = {
+        has_update: true,
+        latest_version: data.latest_version || '',
+        download_url: data.download_url || '',
+        asset_name: data.asset_name || '',
+        download_size: data.download_size || '',
+        release_notes: data.release_notes || '',
+        is_prerelease: data.is_prerelease || false
+      }
       ElMessage.success(
-        `${SUCCESS_UPDATE_FOUND}: ${response.data[RESPONSE_FIELDS.LATEST_VERSION]}\n当前版本: ${response.data[RESPONSE_FIELDS.CURRENT_VERSION]}`
+        `${SUCCESS_UPDATE_FOUND}: ${data.latest_version}\n当前版本: ${data.current_version}`
       )
     } else {
+      // 没有更新，隐藏下载按钮
+      updateInfo.value = {
+        has_update: false,
+        latest_version: '',
+        download_url: '',
+        asset_name: '',
+        download_size: '',
+        release_notes: '',
+        is_prerelease: false
+      }
       ElMessage.info(SUCCESS_LATEST_VERSION)
     }
   } catch (error) {
@@ -180,6 +237,63 @@ const handleCheckUpdate = async () => {
   } finally {
     checkingUpdate.value = false
   }
+}
+
+// 下载更新
+const handleDownloadUpdate = async () => {
+  if (!updateInfo.value.download_url) {
+    ElMessage.warning('没有可用的下载链接')
+    return
+  }
+
+  downloadingUpdate.value = true
+  try {
+    // 通知后端开始下载（后端会下载文件并返回路径）
+    const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url)
+    if (response.data.success) {
+      const filePath = response.data.file_path
+      // 提示用户打开下载的安装程序
+      const confirmed = await ElMessageBox.confirm(
+        `更新已下载到: ${filePath}\n\n是否打开安装程序？`,
+        '下载完成',
+        {
+          confirmButtonText: '打开',
+          cancelButtonText: '关闭',
+          type: 'success'
+        }
+      ).then(() => true).catch(() => false)
+
+      if (confirmed && response.data.open_path) {
+        // 通知后端打开文件
+        await settingsAPI.openPath(response.data.open_path)
+      }
+    } else {
+      ElMessage.error('下载失败: ' + (response.data.error || '未知错误'))
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('下载更新失败:', error)
+      // 如果后端下载失败，直接在浏览器中打开下载链接
+      ElMessage.warning('自动下载失败，将打开浏览器下载...')
+      window.open(updateInfo.value.download_url, '_blank')
+    }
+  } finally {
+    downloadingUpdate.value = false
+  }
+}
+
+// 格式化发布说明（将 markdown 转换为简单的 HTML）
+const formatReleaseNotes = (notes) => {
+  if (!notes) return ''
+  // 简单的 markdown 转换
+  return notes
+    .replace(/^### (.*$)/gm, '<h4>$1</h4>')
+    .replace(/^## (.*$)/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^- (.*$)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    .replace(/\n\n/g, '<br><br>')
 }
 
 const loadTheme = async () => {
@@ -375,5 +489,41 @@ onMounted(() => {
 
 :deep(.el-card__body) {
   background-color: var(--el-bg-color);
+}
+
+.release-notes {
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  background-color: var(--el-bg-color-page);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+  margin-top: 10px;
+}
+
+.release-notes h3,
+.release-notes h4 {
+  margin: 10px 0 5px;
+  color: var(--el-text-color-primary);
+}
+
+.release-notes ul {
+  padding-left: 20px;
+  margin: 5px 0;
+}
+
+.release-notes li {
+  margin: 3px 0;
+}
+
+.release-notes strong {
+  color: var(--el-text-color-primary);
+}
+
+.release-notes em {
+  color: var(--el-text-color-secondary);
 }
 </style>
