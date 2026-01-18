@@ -28,7 +28,7 @@ BUILD_DIR := $(PROJECT_ROOT)build
 UV_RUN := uv run
 UV_PIP := uv pip
 
-.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth test-local-build test-local-build-full test-install test-coverage lint lint-fix format
+.PHONY: help install dev run build build-win build-linux build-macos build-macos-arm build-onefile dmg install-dmg clean clean-all test deps verify-deps test-workflow test-gh-auth test-local-build test-local-build-full test-install test-coverage lint lint-fix format docker-build docker-run docker-stop docker-push docker-clean
 
 help:
 	@echo "Anime1 Desktop - Makefile Commands"
@@ -78,6 +78,14 @@ help:
 	@echo "  make verify-scripts - Verify all workflow scripts"
 	@echo "  make test-local-build - Test build scripts locally (dry-run)"
 	@echo "  make test-local-build-full - Test build scripts with actual build"
+	@echo ""
+	@echo "Docker (NAS 部署):"
+	@echo "  make docker-build  - 构建 Docker 镜像"
+	@echo "  make docker-run    - 启动 Docker 容器"
+	@echo "  make docker-stop   - 停止 Docker 容器"
+	@echo "  make docker-logs   - 查看容器日志"
+	@echo "  make docker-push   - 推送镜像到 registry"
+	@echo "  make docker-clean  - 清理 Docker 资源"
 
 # Dependencies
 deps:
@@ -310,3 +318,53 @@ test-local-build-platform:
 		exit 1; \
 	fi
 	@bash $(PROJECT_ROOT)scripts/test-local-build.sh dry-run $(PLATFORM)
+
+# ============================================================
+# Docker 相关命令 (用于 NAS 部署)
+# ============================================================
+
+# Docker 配置
+DOCKER_IMAGE := anime1-desktop
+DOCKER_TAG := latest
+DOCKER_REGISTRY ?= ghcr.io
+DOCKER_REPO ?= $(DOCKER_REGISTRY)/$(shell git config --get remote.origin.url 2>/dev/null | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | tr '[:upper:]' '[:lower:]')
+
+docker-build:
+	@echo "构建 Docker 镜像..."
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	@echo "Docker 镜像构建完成: $(DOCKER_IMAGE):$(DOCKER_TAG)"
+
+docker-build-multi:
+	@echo "构建多架构 Docker 镜像 (amd64 + arm64)..."
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		--push .
+
+docker-run:
+	@echo "启动 Docker 容器..."
+	docker-compose up -d
+	@echo "容器已启动，访问 http://localhost:5172"
+
+docker-stop:
+	@echo "停止 Docker 容器..."
+	docker-compose down
+
+docker-logs:
+	@echo "查看 Docker 日志..."
+	docker-compose logs -f
+
+docker-push:
+	@echo "推送 Docker 镜像到 registry..."
+	@if [ -z "$(DOCKER_REPO)" ]; then \
+		echo "错误: 无法获取 Docker 仓库地址"; \
+		exit 1; \
+	fi
+	docker tag $(DOCKER_IMAGE):$(DOCKER_TAG) $(DOCKER_REPO):$(DOCKER_TAG)
+	docker push $(DOCKER_REPO):$(DOCKER_TAG)
+	@echo "镜像已推送: $(DOCKER_REPO):$(DOCKER_TAG)"
+
+docker-clean:
+	@echo "清理 Docker 资源..."
+	docker-compose down -v --rmi local 2>/dev/null || true
+	docker rmi $(DOCKER_IMAGE):$(DOCKER_TAG) 2>/dev/null || true
+	@echo "Docker 资源已清理"

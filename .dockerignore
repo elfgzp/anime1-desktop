@@ -1,0 +1,56 @@
+# Docker 忽略文件
+.git
+.github
+.vscode
+.claude
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.coverage
+coverage.xml
+htmlcov/
+
+# 构建产物
+build/
+dist/
+release/
+*.spec
+*.egg-info/
+
+# 日志文件
+*.log
+logs/
+
+# macOS 相关
+.DS_Store
+*.dmg
+
+# Windows 相关
+*.exe
+*.msi
+
+# 开发文件
+*.md
+!docs/DOCKER.md
+screenshots/
+skills/
+tests/
+hooks/
+homebrew/
+homebrew-tap/
+
+# 临时文件
+nul
+UTPUTLOG
+*.ico
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Node modules (will be built in Docker)
+frontend/node_modules/

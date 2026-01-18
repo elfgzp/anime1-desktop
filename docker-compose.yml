@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  anime1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anime1-desktop:latest
+    container_name: anime1
+    restart: unless-stopped
+    ports:
+      - "5172:5172"
+    volumes:
+      # 数据持久化 - 存储数据库和缓存
+      - anime1_data:/app/data
+      # 可选：自定义静态资源缓存
+      # - ./cache:/app/static/vendor
+    environment:
+      - TZ=Asia/Shanghai
+      - ANIME1_HOST=0.0.0.0
+      - ANIME1_PORT=5172
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5172/api/anime?page=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # 资源限制（可选，适合 NAS 环境）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+volumes:
+  anime1_data:
+    driver: local
