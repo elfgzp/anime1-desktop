@@ -278,8 +278,59 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--dev", action="store_true", help="Development mode (use Vite dev server)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open browser")
+    parser.add_argument("--check-update", action="store_true", help="Check for updates and exit")
+    parser.add_argument("--channel", default="stable", choices=["stable", "test"],
+                        help="Update channel for --check-update (default: stable)")
 
     args = parser.parse_args()
+
+    # Handle --check-update mode (run update check and exit without starting app)
+    if args.check_update:
+        import sys as _sys
+        from src.services.update_checker import UpdateChecker, UpdateChannel
+        from src.config import GITHUB_REPO_OWNER, GITHUB_REPO_NAME
+        from src import __version__
+
+        print(f"[CHECK-UPDATE] Mode: checking for updates...")
+        print(f"[CHECK-UPDATE] Current version: {__version__}")
+
+        # Determine channel from args
+        channel = UpdateChannel.TEST if args.channel == "test" else UpdateChannel.STABLE
+
+        print(f"[CHECK-UPDATE] Channel: {channel.value}")
+
+        # Create checker and check for updates
+        checker = UpdateChecker(
+            repo_owner=GITHUB_REPO_OWNER,
+            repo_name=GITHUB_REPO_NAME,
+            current_version=__version__,
+            channel=channel
+        )
+
+        print(f"[CHECK-UPDATE] Checker initialized with version: {checker.current_version}")
+
+        try:
+            update_info = checker.check_for_update()
+            print(f"\n{'='*50}")
+            print(f"Update Check Result:")
+            print(f"  Current Version: {update_info.current_version}")
+            print(f"  Has Update: {update_info.has_update}")
+            if update_info.has_update:
+                print(f"  Latest Version: {update_info.latest_version}")
+                print(f"  Is Prerelease: {update_info.is_prerelease}")
+                if update_info.download_url:
+                    print(f"  Download URL: {update_info.download_url}")
+                    print(f"  Asset: {update_info.asset_name}")
+            else:
+                print(f"  Latest Version: {update_info.latest_version or 'unknown'}")
+            print(f"{'='*50}\n")
+        except Exception as e:
+            print(f"[CHECK-UPDATE] Error: {e}")
+            _sys.exit(1)
+
+        # Exit without starting the app
+        print("[CHECK-UPDATE] Exiting after update check.")
+        _sys.exit(0)
 
     port = args.port
     if port == DEFAULT_PORT and not is_port_available(port):
