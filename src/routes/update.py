@@ -47,15 +47,15 @@ def check_update():
         logger.debug(f"  current_version: {update_info.current_version}")
         logger.debug(f"  latest_version: {update_info.latest_version}")
 
-        # Convert to dict for JSON response
+        # Convert to dict for JSON response - always include latest_version
         result = {
             "has_update": update_info.has_update,
             "current_version": update_info.current_version,
+            "latest_version": update_info.latest_version,
         }
 
         if update_info.has_update:
             result.update({
-                "latest_version": update_info.latest_version,
                 "is_prerelease": update_info.is_prerelease,
                 "release_notes": update_info.release_notes,
                 "download_url": update_info.download_url,
@@ -65,14 +65,32 @@ def check_update():
             })
 
         logger.debug(f"[UPDATE-API] Returning: has_update={result['has_update']}, current={result['current_version']}, latest={result.get('latest_version')}")
-        return jsonify(result)
+        response = jsonify(result)
+        # Prevent caching for update check responses
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
 
     except Exception as e:
         logger.error(f"Error checking for updates: {e}", exc_info=True)
-        return jsonify({
+        # Try to get current_version if checker was created
+        current_version = None
+        try:
+            current_version = checker.current_version
+        except (NameError, AttributeError):
+            pass
+        error_response = jsonify({
             "error": str(e),
-            "has_update": False
+            "has_update": False,
+            "current_version": current_version,
+            "latest_version": None,
         }), 500
+        # Also prevent caching for error responses
+        error_response[0].headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        error_response[0].headers['Pragma'] = 'no-cache'
+        error_response[0].headers['Expires'] = '0'
+        return error_response
 
 
 @update_bp.route("/info")
@@ -83,10 +101,15 @@ def update_info():
         JSON with current version and channel info
     """
     from src import __version__
-    
-    return jsonify({
+
+    response = jsonify({
         "current_version": __version__,
         "channel": UPDATE_CHANNEL,
         "repo_owner": GITHUB_REPO_OWNER,
         "repo_name": GITHUB_REPO_NAME,
     })
+    # Prevent caching for version info
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response

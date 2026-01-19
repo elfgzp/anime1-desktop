@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git stash pop:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(python:*)"
     ]
   }
 }

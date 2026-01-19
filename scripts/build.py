@@ -3,21 +3,25 @@
 Build script for Anime1 desktop application.
 
 Usage:
-    python build.py                    # Build for current platform
+    python build.py                    # Build for current platform (onefile)
     python build.py --clean            # Clean dist folder first
-    python build.py --onefile          # Create single executable (larger file)
     python build.py --debug            # Build with debug mode
     python build.py --remote           # Build CLI version (browser-based)
-    python build.py --installer        # Create installer/package after build
     python build.py --all              # Build all platforms (CI/CD only)
     python build.py --version v0.1.0   # Specify version for testing updates
 
 Examples:
+    # Build for current platform (onefile mode - default)
+    python build.py
+
     # Build with specific version to test update detection
     python build.py --version v0.1.0
 
     # Build with dev version (includes commit hash)
     python build.py --version 0.2.0-abc123
+
+    # Clean and build
+    python build.py --clean
 
 Requirements:
     pip install pyinstaller pywebview

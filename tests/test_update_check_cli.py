@@ -9,6 +9,7 @@ Usage:
     python tests/test_update_check_cli.py --version 0.1.0 --channel test
 """
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -17,75 +18,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import at module level (avoid imports inside functions)
-from src.services.update_checker import UpdateChecker, UpdateChannel, UpdateInfo
+# Import at module level (avoid imports inside functions for PyInstaller compatibility)
+from src.cli.update_check import check_update, print_update_result
 from src.config import GITHUB_REPO_OWNER, GITHUB_REPO_NAME
 from src import __version__ as app_version
-
-
-def print_update_result(update_info: UpdateInfo, current_version: str):
-    """Print update check result in a formatted way."""
-    print("\n" + "=" * 60)
-    print("Update Check Result")
-    print("=" * 60)
-    print(f"  Current Version: {update_info.current_version}")
-    print(f"  Has Update:      {update_info.has_update}")
-    print(f"  Latest Version:  {update_info.latest_version or 'unknown'}")
-    print(f"  Is Prerelease:   {update_info.is_prerelease}")
-
-    if update_info.has_update:
-        print(f"\n  [UPDATE AVAILABLE] v{update_info.latest_version}")
-        if update_info.download_url:
-            print(f"  Download URL:    {update_info.download_url}")
-        if update_info.asset_name:
-            print(f"  Asset:           {update_info.asset_name}")
-        if update_info.download_size:
-            print(f"  Size:            {update_info.download_size:,} bytes")
-        if update_info.release_notes:
-            print(f"\n  Release Notes:")
-            # Indent and wrap release notes
-            for line in update_info.release_notes.split('\n')[:10]:
-                print(f"    {line}")
-            if len(update_info.release_notes.split('\n')) > 10:
-                print("    ...")
-    else:
-        if update_info.latest_version:
-            print(f"\n  [UP TO DATE] Already at latest version v{update_info.latest_version}")
-        else:
-            print(f"\n  [UNKNOWN] Could not determine latest version")
-
-    print("=" * 60 + "\n")
-
-
-def check_update(
-    current_version: str,
-    channel: str = "stable",
-    repo_owner: str = GITHUB_REPO_OWNER,
-    repo_name: str = GITHUB_REPO_NAME,
-) -> UpdateInfo:
-    """Check for updates with given parameters.
-
-    Args:
-        current_version: Current version to compare against
-        channel: Update channel (stable or test)
-        repo_owner: GitHub repository owner
-        repo_name: GitHub repository name
-
-    Returns:
-        UpdateInfo with update check results
-    """
-    # Map channel string to enum
-    update_channel = UpdateChannel.TEST if channel == "test" else UpdateChannel.STABLE
-
-    # Create checker and check for updates
-    checker = UpdateChecker(
-        repo_owner=repo_owner,
-        repo_name=repo_name,
-        current_version=current_version,
-        channel=update_channel
-    )
-
-    return checker.check_for_update()
 
 
 def main():
@@ -185,7 +121,6 @@ Examples:
         )
 
         if args.json:
-            import json
             result = {
                 "current_version": update_info.current_version,
                 "latest_version": update_info.latest_version,
