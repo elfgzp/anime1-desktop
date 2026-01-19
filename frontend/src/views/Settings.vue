@@ -44,22 +44,30 @@
         </div>
       </div>
       <!-- 发现新版本时显示下载按钮 -->
-      <div class="settings-item" v-if="updateInfo.download_url">
+      <div class="settings-item" v-if="updateInfo.has_update">
         <div class="settings-label">
           <span>发现新版本</span>
-          <div class="settings-desc">{{ updateInfo.latest_version }}</div>
+          <div class="settings-desc">{{ updateInfo.latest_version || '未知版本' }}</div>
         </div>
         <div class="settings-control">
           <el-button
+            v-if="updateInfo.download_url"
             type="success"
             :loading="downloadingUpdate"
             @click="handleDownloadUpdate"
           >
             {{ downloadingUpdate ? '下载中...' : '下载新版本' }}
           </el-button>
+          <el-button
+            v-else
+            type="info"
+            @click="handleOpenDownloadPage"
+          >
+            手动下载
+          </el-button>
         </div>
       </div>
-      <div class="settings-item" v-if="updateInfo.download_url">
+      <div class="settings-item" v-if="updateInfo.has_update && updateInfo.release_notes">
         <div class="settings-label">
           <span>发布说明</span>
         </div>
@@ -201,9 +209,12 @@ const handleThemeChange = async (value) => {
 
 const handleCheckUpdate = async () => {
   checkingUpdate.value = true
+  console.log('[UPDATE-FRONTEND] Starting update check...')
   try {
+    console.log('[UPDATE-FRONTEND] Calling settingsAPI.checkUpdate()')
     const response = await settingsAPI.checkUpdate()
     const data = response.data
+    console.log('[UPDATE-FRONTEND] Update check response:', data)
     if (data[RESPONSE_FIELDS.HAS_UPDATE]) {
       // 保存更新信息，显示下载按钮
       updateInfo.value = {
@@ -215,6 +226,7 @@ const handleCheckUpdate = async () => {
         release_notes: data.release_notes || '',
         is_prerelease: data.is_prerelease || false
       }
+      console.log('[UPDATE-FRONTEND] Update available:', data.latest_version, 'current:', data.current_version)
       ElMessage.success(
         `${SUCCESS_UPDATE_FOUND}: ${data.latest_version}\n当前版本: ${data.current_version}`
       )
@@ -229,10 +241,11 @@ const handleCheckUpdate = async () => {
         release_notes: '',
         is_prerelease: false
       }
+      console.log('[UPDATE-FRONTEND] No update available. current:', data.current_version, 'latest:', data.latest_version)
       ElMessage.info(SUCCESS_LATEST_VERSION)
     }
   } catch (error) {
-    console.error('检查更新失败:', error)
+    console.error('[UPDATE-FRONTEND] 检查更新失败:', error)
     ElMessage.error(ERROR_MESSAGES.CHECK_UPDATE_FAILED || '检查更新失败')
   } finally {
     checkingUpdate.value = false
@@ -298,6 +311,15 @@ const handleDownloadUpdate = async () => {
   } finally {
     downloadingUpdate.value = false
   }
+}
+
+// 手动打开下载页面（当没有匹配的下载链接时）
+const handleOpenDownloadPage = () => {
+  const repoOwner = aboutInfo.value?.repository?.split('/').slice(-2, -1)[0] || 'gzp'
+  const repoName = aboutInfo.value?.repository?.split('/').pop() || 'anime1-desktop'
+  const version = updateInfo.value.latest_version || 'latest'
+  // 打开 GitHub Releases 页面
+  window.open(`https://github.com/${repoOwner}/${repoName}/releases/tag/v${version}`, '_blank')
 }
 
 // 格式化发布说明（将 markdown 转换为简单的 HTML）

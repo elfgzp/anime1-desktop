@@ -108,8 +108,9 @@ const isSearching = ref(false)
 const isFavoriteMap = ref({})
 const coverLoadingMap = ref({})  // 跟踪封面加载状态
 
-// 保存/恢复分页位置
+// 保存/恢复分页位置和搜索状态
 const SCROLL_POSITION_KEY = 'anime_home_scroll_position'
+const SEARCH_STATE_KEY = 'anime_home_search_state'
 const router = useRouter()
 const route = useRoute()
 const animeGridRef = ref(null)
@@ -299,12 +300,40 @@ const handleImageLoad = (animeId) => {
   coverLoadingMap.value[animeId] = false
 }
 
-// 保存滚动位置（不保存搜索和分页，这些从 URL 读取）
+// 保存滚动位置和搜索状态
 const saveScrollPosition = () => {
   const position = {
     scrollY: window.scrollY
   }
   sessionStorage.setItem(SCROLL_POSITION_KEY, JSON.stringify(position))
+}
+
+// 保存搜索状态到 sessionStorage
+const saveSearchState = () => {
+  const state = {
+    searchKeyword: searchKeyword.value,
+    isSearching: isSearching.value,
+    currentPage: currentPage.value
+  }
+  sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(state))
+}
+
+// 从 sessionStorage 恢复搜索状态
+const restoreSearchState = () => {
+  const saved = sessionStorage.getItem(SEARCH_STATE_KEY)
+  if (saved) {
+    try {
+      const state = JSON.parse(saved)
+      return {
+        searchKeyword: state.searchKeyword || '',
+        isSearching: state.isSearching || false,
+        currentPage: state.currentPage || 1
+      }
+    } catch (e) {
+      console.error('恢复搜索状态失败:', e)
+    }
+  }
+  return null
 }
 
 // 恢复滚动位置（搜索和分页从 URL 读取）
@@ -321,9 +350,10 @@ const restoreScrollPosition = () => {
   return null
 }
 
-// 路由守卫：离开前保存位置
+// 路由守卫：离开前保存位置和搜索状态
 originalOnBeforeRouteLeave((to, from, next) => {
   saveScrollPosition()
+  saveSearchState()
   next()
 })
 
@@ -343,32 +373,36 @@ onMounted(async () => {
   })
 
   // 从 URL query 读取状态（搜索和分页都从 URL 读取）
-  const urlPage = parseInt(route.query.page, 10)
   const urlKeyword = route.query.q || ''
-
-  const pageFromUrl = (urlPage && !isNaN(urlPage) && urlPage > 0) ? urlPage : 1
 
   // 恢复滚动位置（用于从其他页面返回时）
   const savedPosition = restoreScrollPosition()
 
-  // URL 有搜索词就设置搜索状态
+  // URL 有搜索词就设置搜索状态，否则从 sessionStorage 恢复
   if (urlKeyword) {
     searchKeyword.value = urlKeyword
     isSearching.value = true
+    // 保存搜索状态到 sessionStorage
+    saveSearchState()
   } else {
-    searchKeyword.value = ''
-    isSearching.value = false
+    // 尝试从 sessionStorage 恢复搜索状态
+    const savedState = restoreSearchState()
+    if (savedState && savedState.isSearching) {
+      searchKeyword.value = savedState.searchKeyword
+      isSearching.value = true
+      currentPage.value = savedState.currentPage
+    } else {
+      searchKeyword.value = ''
+      isSearching.value = false
+      currentPage.value = 1
+    }
   }
-
-  // 分页从 URL 读取
-  currentPage.value = pageFromUrl
 
   // 搜索模式下页码从1开始
   if (isSearching.value) {
-    currentPage.value = 1
     fetchAnimeList(1)
   } else {
-    fetchAnimeList(pageFromUrl)
+    fetchAnimeList(currentPage.value)
   }
 
   // 数据加载完成后恢复滚动位置

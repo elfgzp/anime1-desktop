@@ -3,6 +3,12 @@ import logging
 import os
 import platform
 import subprocess
+import uuid
+import zipfile
+import shutil
+import sys
+import tempfile
+import requests
 from pathlib import Path
 from flask import Blueprint, request
 
@@ -18,7 +24,7 @@ from src.constants.api import (
     THEME_LIGHT,
     THEME_SYSTEM
 )
-from src.utils.app_dir import get_app_data_dir
+from src.utils.app_dir import get_app_data_dir, get_download_dir, get_install_dir
 
 logger = logging.getLogger(__name__)
 
@@ -390,17 +396,6 @@ def download_update():
         Path to the downloaded file or install result.
     """
     try:
-        import requests
-        import uuid
-        import zipfile
-        import shutil
-        import subprocess
-        import sys
-        import tempfile
-        from pathlib import Path
-
-        from src.utils.app_dir import get_download_dir, get_install_dir
-
         data = request.get_json() or {}
         url = data.get("url")
         auto_install = data.get("auto_install", False)
@@ -412,6 +407,9 @@ def download_update():
         filename = url.split("/")[-1].split("?")[0]
         if not filename:
             filename = f"anime1_update_{uuid.uuid4().hex[:8]}.zip"
+
+        # Check if it's a DMG file (macOS disk image)
+        is_dmg = filename.lower().endswith('.dmg')
 
         # Get download directory
         download_dir = get_download_dir()
@@ -479,52 +477,198 @@ del "%~f0"
                         "updater_path": str(updater_batch)
                     }
                 )
-            else:
-                # Non-Windows: Direct update and restart
-                # Create backup of current installation
-                backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                logger.info(f"Creating backup at {backup_dir}")
-                try:
-                    shutil.copytree(install_dir, backup_dir)
-                    backup_created = True
-                except Exception as e:
-                    logger.warning(f"Could not create backup: {e}")
-                    backup_created = False
+            elif sys.platform == 'darwin':
+                # macOS: Use the updater script for DMG files
+                if is_dmg:
+                    # macOS DMG auto-install using the updater script
+                    logger.info(f"Preparing macOS DMG auto-install for {file_path}")
 
-                # Extract new version
-                try:
-                    with zipfile.ZipFile(file_path, 'r') as zf:
-                        zf.extractall(install_dir)
-                    logger.info(f"Extracted update to {install_dir}")
-                except Exception as e:
-                    logger.error(f"Failed to extract update: {e}")
-                    # Restore from backup if extraction failed
-                    if backup_created and backup_dir.exists():
-                        logger.info("Restoring from backup...")
-                        shutil.rmtree(install_dir)
-                        shutil.copytree(backup_dir, install_dir)
-                        shutil.rmtree(backup_dir)
-                    return error_response(f"安装失败: {str(e)}", 500)
+                    # Get the path to the current app
+                    app_path = Path(sys.executable).resolve()
 
-                # Clean up backup if extraction succeeded
-                if backup_created and backup_dir.exists():
-                    shutil.rmtree(backup_dir)
+                    # For PyInstaller apps, the executable is inside the .app bundle
+                    if app_path.name == 'Anime1':
+                        app_bundle = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
+                    else:
+                        # Try to find the app bundle
+                        app_bundle = Path('/Applications/Anime1.app')
+                        if not app_bundle.exists():
+                            app_bundle = Path.home() / 'Applications/Anime1.app'
+                        if not app_bundle.exists():
+                            # Fallback: return manual install
+                            logger.warning("Could not find app bundle, falling back to manual install")
+                            return success_response(
+                                message="下载完成，请手动打开并安装 DMG 文件",
+                                data={
+                                    "file_path": str(file_path),
+                                    "file_size": downloaded_size,
+                                    "open_path": str(file_path),
+                                    "manual_install": True,
+                                    "asset_type": "dmg"
+                                }
+                            )
 
-                # Clean up downloaded file
-                file_path.unlink()
+                    # Create the updater script path
+                    root = get_project_root()
+                    updater_script = root / "src" / "scripts" / "macos_updater.py"
 
-                # Restart the application
-                exe_path = Path(sys.executable)
-                logger.info(f"Restarting application: {exe_path}")
-                subprocess.Popen([str(exe_path)], cwd=str(install_dir))
+                    # Create a temp directory for the updater
+                    temp_dir = Path(tempfile.mkdtemp(prefix='anime1_update_'))
+                    updater_script_copy = temp_dir / 'macos_updater.py'
 
-                return success_response(
-                    message="更新完成，正在重启...",
-                    data={
-                        "success": True,
-                        "restarting": True
-                    }
-                )
+                    # Copy the updater script to temp location
+                    shutil.copy2(updater_script, updater_script_copy)
+
+                    # Get the real app path
+                    real_app_path = app_bundle.resolve()
+
+                    logger.info(f"App bundle: {real_app_path}")
+                    logger.info(f"Updater script: {updater_script_copy}")
+
+                    # Create a shell script that runs the updater and then the new app
+                    shell_script = temp_dir / 'run_updater.sh'
+                    shell_content = f'''#!/bin/bash
+cd "{temp_dir}"
+"{sys.executable}" "{updater_script_copy}" --dmg "{file_path}" --app "{real_app_path}" --no-cleanup
+RESULT=$?
+exit $RESULT
+'''
+                    shell_script.write_text(shell_content, encoding='utf-8')
+                    os.chmod(shell_script, 0o755)
+
+                    logger.info(f"Created shell updater script at {shell_script}")
+
+                    # Launch the updater detached and exit
+                    subprocess.Popen(
+                        ['bash', str(shell_script)],
+                        detached=True,
+                        cwd=str(temp_dir)
+                    )
+
+                    logger.info("Launched macOS updater, exiting app...")
+
+                    # Exit the application so the updater can replace files
+                    return success_response(
+                        message="正在安装更新...",
+                        data={
+                            "success": True,
+                            "restarting": True,
+                            "updater_type": "macos_dmg",
+                            "cleanup_delay": 5
+                        }
+                    )
+                else:
+                    # macOS ZIP or other archives
+                    # Check if it's a ZIP file that can be extracted
+                    is_zip = filename.lower().endswith('.zip')
+
+                    if is_zip:
+                        # macOS portable ZIP - can be extracted directly like Linux
+                        logger.info(f"Preparing macOS ZIP auto-install for {file_path}")
+
+                        # Get app path for macOS
+                        app_path = Path(sys.executable).resolve()
+                        if app_path.name == 'Anime1':
+                            install_dir = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
+                        else:
+                            install_dir = Path('/Applications/Anime1.app')
+
+                        # Backup existing app
+                        backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                        logger.info(f"Creating backup at {backup_dir}")
+                        backup_created = False
+                        if install_dir.exists():
+                            try:
+                                shutil.copytree(install_dir, backup_dir)
+                                backup_created = True
+                            except Exception as e:
+                                logger.warning(f"Could not create backup: {e}")
+
+                        # Extract new version
+                        try:
+                            with zipfile.ZipFile(file_path, 'r') as zf:
+                                zf.extractall(install_dir.parent)
+                            logger.info(f"Extracted update to {install_dir}")
+                        except Exception as e:
+                            logger.error(f"Failed to extract update: {e}")
+                            if backup_created and backup_dir.exists():
+                                logger.info("Restoring from backup...")
+                                if install_dir.exists():
+                                    shutil.rmtree(install_dir)
+                                shutil.copytree(backup_dir, install_dir)
+                                shutil.rmtree(backup_dir)
+                            return error_response(f"安装失败: {str(e)}", 500)
+
+                        if backup_created and backup_dir.exists():
+                            shutil.rmtree(backup_dir)
+
+                        file_path.unlink()
+
+                        # Launch the new app
+                        exe_path = install_dir / "Contents" / "MacOS" / "Anime1"
+                        logger.info(f"Restarting application: {exe_path}")
+
+                        # Create a shell script to restart after exit
+                        temp_dir = Path(tempfile.mkdtemp(prefix='anime1_restart_'))
+                        restart_script = temp_dir / 'restart.sh'
+                        restart_content = f'''#!/bin/bash
+sleep 2
+"{exe_path}" &
+'''
+                        restart_script.write_text(restart_content, encoding='utf-8')
+                        os.chmod(restart_script, 0o755)
+                        subprocess.Popen(['bash', str(restart_script)], detached=True)
+
+                        return success_response(
+                            message="更新完成，正在重启...",
+                            data={
+                                "success": True,
+                                "restarting": True,
+                                "updater_type": "macos_zip"
+                            }
+                        )
+                    else:
+                        # Linux or other non-Windows, non-macOS platforms
+                        # Same as before for tar.gz etc.
+                        backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                        logger.info(f"Creating backup at {backup_dir}")
+                        try:
+                            shutil.copytree(install_dir, backup_dir)
+                            backup_created = True
+                        except Exception as e:
+                            logger.warning(f"Could not create backup: {e}")
+                            backup_created = False
+
+                        # Extract new version
+                        try:
+                            with zipfile.ZipFile(file_path, 'r') as zf:
+                                zf.extractall(install_dir)
+                            logger.info(f"Extracted update to {install_dir}")
+                        except Exception as e:
+                            logger.error(f"Failed to extract update: {e}")
+                            if backup_created and backup_dir.exists():
+                                logger.info("Restoring from backup...")
+                                shutil.rmtree(install_dir)
+                                shutil.copytree(backup_dir, install_dir)
+                                shutil.rmtree(backup_dir)
+                            return error_response(f"安装失败: {str(e)}", 500)
+
+                        if backup_created and backup_dir.exists():
+                            shutil.rmtree(backup_dir)
+
+                        file_path.unlink()
+
+                        exe_path = Path(sys.executable)
+                        logger.info(f"Restarting application: {exe_path}")
+                        subprocess.Popen([str(exe_path)], cwd=str(install_dir))
+
+                        return success_response(
+                            message="更新完成，正在重启...",
+                            data={
+                                "success": True,
+                                "restarting": True
+                            }
+                        )
         else:
             # Manual mode: just download and let user handle it
             return success_response(
@@ -557,10 +701,6 @@ def run_updater():
         Success message (app will exit after this).
     """
     try:
-        import os
-        import subprocess
-        import sys
-
         data = request.get_json() or {}
         updater_path = data.get("updater_path")
 

@@ -227,6 +227,13 @@ jobs:
           path: release/
           retention-days: 7
 
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-portable
+          path: release/anime1-macos-*.zip
+          retention-days: 7
+
   build-macos-x64:
     name: Build on macOS-x64
     runs-on: macos-15-intel
@@ -292,6 +299,13 @@ jobs:
         with:
           name: macos-x64-build
           path: release/
+          retention-days: 7
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-portable
+          path: release/anime1-macos-*.zip
           retention-days: 7
 
   release:
