@@ -56,23 +56,52 @@ def get_version_file_path() -> Path:
     """
     import logging
     logger = logging.getLogger(__name__)
+    logger.debug(f"[VERSION] get_version_file_path() called, frozen={getattr(sys, 'frozen', False)}")
+    logger.debug(f"[VERSION] sys.executable: {sys.executable}")
+    logger.debug(f"[VERSION] sys.platform: {sys.platform}")
 
     if getattr(sys, 'frozen', False):
         # Running as frozen executable
         exe_dir = Path(sys.executable).parent
+        logger.debug(f"[VERSION] exe_dir: {exe_dir}")
+        logger.debug(f"[VERSION] sys._MEIPASS exists: {hasattr(sys, '_MEIPASS')}")
 
         # Check if running from macOS app bundle (onedir mode)
         if sys.platform == "darwin" and exe_dir.name == "MacOS":
             resources_dir = exe_dir.parent.parent / "Resources"
+            logger.debug(f"[VERSION] macOS Resources dir: {resources_dir}")
+            logger.debug(f"[VERSION] Resources exists: {resources_dir.exists()}")
+
+            # List all files in Resources for debugging
+            if resources_dir.exists():
+                for item in resources_dir.rglob('*'):
+                    logger.debug(f"[VERSION] Resources item: {item}")
+
             version_path = resources_dir / "version.txt"
+            logger.debug(f"[VERSION] Checking: {version_path}")
             if version_path.exists():
                 logger.debug(f"[VERSION] Found version.txt in Resources: {version_path}")
                 return version_path
             # Also check in Resources/src/ (from --add-data src:src)
             src_version = resources_dir / "src" / "version.txt"
+            logger.debug(f"[VERSION] Checking: {src_version}")
             if src_version.exists():
                 logger.debug(f"[VERSION] Found version.txt in Resources/src: {src_version}")
                 return src_version
+
+            # Also check if data files are in a different location (e.g., Contents/Resources)
+            # Sometimes PyInstaller bundles files to Contents/Resources/
+            contents_resources = exe_dir.parent / "Resources"
+            if contents_resources.exists() and contents_resources != resources_dir:
+                logger.debug(f"[VERSION] Checking alternate Resources: {contents_resources}")
+                version_path = contents_resources / "version.txt"
+                if version_path.exists():
+                    logger.debug(f"[VERSION] Found version.txt in alternate Resources: {version_path}")
+                    return version_path
+                src_version = contents_resources / "src" / "version.txt"
+                if src_version.exists():
+                    logger.debug(f"[VERSION] Found version.txt in alternate Resources/src: {src_version}")
+                    return src_version
 
         # Check if running in onefile mode (files extracted to _MEIPASS)
         if hasattr(sys, '_MEIPASS'):
@@ -82,27 +111,38 @@ def get_version_file_path() -> Path:
             # In onefile mode, data files are extracted to _MEIPASS
             # The src directory should be at _MEIPASS/src/
             src_in_meipass = meipass / "src" / "version.txt"
+            logger.debug(f"[VERSION] Checking: {src_in_meipass}")
             if src_in_meipass.exists():
                 logger.debug(f"[VERSION] Found version.txt in _MEIPASS/src: {src_in_meipass}")
                 return src_in_meipass
 
             # Also check at root of _MEIPASS
             version_in_meipass = meipass / "version.txt"
+            logger.debug(f"[VERSION] Checking: {version_in_meipass}")
             if version_in_meipass.exists():
                 logger.debug(f"[VERSION] Found version.txt in _MEIPASS: {version_in_meipass}")
                 return version_in_meipass
 
         # Onedir mode (Windows/Linux or non-bundle macOS): check next to executable
         version_path = exe_dir / "version.txt"
+        logger.debug(f"[VERSION] Checking (onedir): {version_path}")
         if version_path.exists():
             logger.debug(f"[VERSION] Found version.txt next to executable: {version_path}")
             return version_path
 
         # Also check in src/ subdirectory (from PyInstaller --add-data)
         src_version = exe_dir / "src" / "version.txt"
+        logger.debug(f"[VERSION] Checking (src subdir): {src_version}")
         if src_version.exists():
             logger.debug(f"[VERSION] Found version.txt in src/ subdirectory: {src_version}")
             return src_version
+
+        # Also check parent directory (in case exe is in a subdirectory)
+        parent_version = exe_dir.parent / "version.txt"
+        logger.debug(f"[VERSION] Checking (parent): {parent_version}")
+        if parent_version.exists():
+            logger.debug(f"[VERSION] Found version.txt in parent: {parent_version}")
+            return parent_version
 
         # Fallback to executable directory
         logger.debug(f"[VERSION] Version file not found, using fallback: {exe_dir / 'version.txt'}")
@@ -185,7 +225,9 @@ def get_version() -> str:
     """
     import logging
     logger = logging.getLogger(__name__)
-    logger.debug(f"[VERSION] get_version() called, frozen={getattr(sys, 'frozen', False)}")
+    logger.debug(f"[VERSION] get_version() called")
+    logger.debug(f"[VERSION] frozen={getattr(sys, 'frozen', False)}")
+    logger.debug(f"[VERSION] sys.executable={sys.executable}")
 
     # Check version file first (for frozen executables)
     version_file = get_version_file_path()
@@ -197,6 +239,7 @@ def get_version() -> str:
             version = version_file.read_text(encoding='utf-8').strip()
             logger.debug(f"[VERSION] Read from file: '{version}'")
             if version:
+                logger.info(f"[VERSION] Using version from file: {version}")
                 return version
         except Exception as e:
             logger.debug(f"[VERSION] Failed to read version file: {e}")
@@ -205,11 +248,13 @@ def get_version() -> str:
     env_version = os.environ.get(ENV_VERSION)
     logger.debug(f"[VERSION] Environment variable: {env_version}")
     if env_version:
+        logger.info(f"[VERSION] Using version from env: {env_version}")
         return env_version
 
     # Try git
     git_version = get_git_version()
     logger.debug(f"[VERSION] Git version: {git_version}")
+    logger.info(f"[VERSION] Using version from git: {git_version}")
     return git_version
 
 

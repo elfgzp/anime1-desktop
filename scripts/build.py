@@ -926,9 +926,20 @@ def run_pyinstaller(args):
     # Update distInfo.plist for macOS bundle
     update_dist_info_plist(version)
 
-    # Create version file
+    # Create version file (for fallback)
     version_file = root / "src" / "version.txt"
     version_file.write_text(version, encoding='utf-8')
+
+    # Create _version.py with embedded version (like Go's -X flag)
+    # This file will be bundled into the binary, making version immutable
+    version_py_content = f'''"""Auto-generated version file - DO NOT EDIT
+This file is generated at build time and bundled into the executable.
+"""
+__version__ = "{version}"
+'''
+    version_py_file = root / "src" / "_version.py"
+    version_py_file.write_text(version_py_content, encoding='utf-8')
+    print(f"[BUILD] Created _version.py with version: {version}")
 
     # Generate icons before build
     if sys.platform == "darwin":

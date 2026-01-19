@@ -31,6 +31,8 @@ from src.constants.app import (
     ARG_HEIGHT,
     ARG_DEBUG,
     ARG_REMOTE,
+    ARG_CHECK_UPDATE,
+    ARG_CHANNEL,
 )
 
 
@@ -737,8 +739,78 @@ def main():
     parser.add_argument(ARG_FLASk_ONLY, action="store_true", help="Run Flask server only (internal use)")
     parser.add_argument(ARG_SUBPROCESS, action="store_true", help="Running as subprocess (internal use)")
     parser.add_argument(ARG_PORT, type=int, default=DEFAULT_PORT, help="Port for Flask server")
+    parser.add_argument(ARG_CHECK_UPDATE, action="store_true", help="Check for updates and exit")
+    parser.add_argument(ARG_CHANNEL, default="stable", choices=["stable", "test"],
+                        help="Update channel for --check-update (default: stable)")
 
     args = parser.parse_args()
+
+    # Log version information for debugging
+    logger.info(f"[VERSION] App version: {__version__}")
+    logger.info(f"[VERSION] Frozen: {IS_FROZEN}")
+    logger.info(f"[VERSION] Executable: {sys.executable}")
+    logger.info(f"[VERSION] sys.argv: {sys.argv}")
+
+    # Handle --check-update mode
+    if args.check_update:
+        from src.services.update_checker import UpdateChecker, UpdateChannel
+        from src.config import GITHUB_REPO_OWNER, GITHUB_REPO_NAME
+
+        logger.info(f"[CHECK-UPDATE] Mode: checking for updates...")
+        logger.info(f"[CHECK-UPDATE] Current version: {__version__}")
+
+        # Determine channel from args
+        channel = UpdateChannel.TEST if args.channel == "test" else UpdateChannel.STABLE
+
+        logger.info(f"[CHECK-UPDATE] Channel: {channel.value}")
+
+        # Create checker and check for updates
+        checker = UpdateChecker(
+            repo_owner=GITHUB_REPO_OWNER,
+            repo_name=GITHUB_REPO_NAME,
+            current_version=__version__,
+            channel=channel
+        )
+
+        logger.info(f"[CHECK-UPDATE] Checker initialized with version: {checker.current_version}")
+
+        try:
+            update_info = checker.check_for_update()
+            logger.info("=" * 50)
+            logger.info("Update Check Result:")
+            logger.info(f"  Current Version: {update_info.current_version}")
+            logger.info(f"  Has Update: {update_info.has_update}")
+            if update_info.has_update:
+                logger.info(f"  Latest Version: {update_info.latest_version}")
+                logger.info(f"  Is Prerelease: {update_info.is_prerelease}")
+                if update_info.download_url:
+                    logger.info(f"  Download URL: {update_info.download_url}")
+                    logger.info(f"  Asset: {update_info.asset_name}")
+            else:
+                logger.info(f"  Latest Version: {update_info.latest_version or 'unknown'}")
+            logger.info("=" * 50)
+
+            # Also print to console for visibility
+            print(f"\n{'='*50}")
+            print(f"Update Check Result:")
+            print(f"  Current Version: {update_info.current_version}")
+            print(f"  Has Update: {update_info.has_update}")
+            if update_info.has_update:
+                print(f"  Latest Version: {update_info.latest_version}")
+            else:
+                print(f"  Latest Version: {update_info.latest_version or 'unknown'}")
+            print(f"{'='*50}\n")
+
+        except Exception as e:
+            logger.error(f"[CHECK-UPDATE] Error: {e}")
+            print(f"[CHECK-UPDATE] Error: {e}")
+            import sys
+            sys.exit(1)
+
+        # Exit without starting the app
+        logger.info("[CHECK-UPDATE] Exiting after update check.")
+        print("[CHECK-UPDATE] Exiting after update check.")
+        sys.exit(0)
 
     # Flask-only mode (used by subprocess)
     if args.flask_only:
