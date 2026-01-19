@@ -41,6 +41,12 @@ from io import BytesIO
 from pathlib import Path
 
 
+# ============ Constants ============
+
+# Resource file paths (relative to project root)
+DISTINFO_PLIST_TEMPLATE = "scripts/resources/distInfo.plist.template"
+
+
 def get_project_root() -> Path:
     """Get project root directory (works from any location)."""
     # Start from current file's directory
@@ -109,6 +115,26 @@ def parse_version_string(version_str: str) -> tuple:
     return version, False
 
 
+def create_dist_info_plist_template():
+    """Create a template distInfo.plist file if it doesn't exist.
+
+    Uses the template from scripts/resources/distInfo.plist.template
+    """
+    root = get_project_root()
+    plist_path = root / "distInfo.plist"
+
+    if plist_path.exists():
+        return
+
+    # Copy from bundled template
+    template_path = root / DISTINFO_PLIST_TEMPLATE
+    if template_path.exists():
+        shutil.copy(template_path, plist_path)
+        print(f"[BUILD] Created distInfo.plist from template")
+    else:
+        raise FileNotFoundError(f"distInfo.plist template not found: {template_path}")
+
+
 def update_dist_info_plist(version: str):
     """Update the distInfo.plist with the correct version number.
 
@@ -118,9 +144,9 @@ def update_dist_info_plist(version: str):
     root = get_project_root()
     plist_path = root / "distInfo.plist"
 
+    # Create template if doesn't exist
     if not plist_path.exists():
-        print(f"[WARN] distInfo.plist not found: {plist_path}")
-        return
+        create_dist_info_plist_template()
 
     try:
         with open(plist_path, 'r', encoding='utf-8') as f:
