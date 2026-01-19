@@ -80,7 +80,18 @@ from .constants import (
 
 # GitHub token for authenticated requests (higher rate limit)
 # Set via environment variable GITHUB_TOKEN
+# Read at import time for backward compatibility
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+
+def _get_github_token() -> str:
+    """Get GitHub token from environment dynamically.
+
+    This ensures we always get the latest token value, even if the
+    environment variable was set after the module was imported.
+    Falls back to the imported value if environment is not available.
+    """
+    return os.environ.get("GITHUB_TOKEN", GITHUB_TOKEN)
 
 
 class UpdateChannel(Enum):
@@ -458,7 +469,7 @@ class UpdateChecker:
             logger.debug(f"[UPDATE] _fetch_releases called:")
             logger.debug(f"  include_prerelease: {include_prerelease}")
             logger.debug(f"  channel: {self.channel}")
-            logger.debug(f"  GITHUB_TOKEN set: {bool(GITHUB_TOKEN)}")
+            logger.debug(f"  GITHUB_TOKEN set: {bool(_get_github_token())}")
 
             # Build headers - add authentication if token is available
             headers = {
@@ -468,8 +479,9 @@ class UpdateChecker:
 
             # Add authentication header if token is available
             # Authenticated requests get higher rate limit (5000 vs 60 requests/hour)
-            if GITHUB_TOKEN:
-                headers["Authorization"] = f"token {GITHUB_TOKEN}"
+            token = _get_github_token()
+            if token:
+                headers["Authorization"] = f"token {token}"
 
             # Rate limit: 60 requests/hour for unauthenticated requests
             #           5000 requests/hour for authenticated requests
