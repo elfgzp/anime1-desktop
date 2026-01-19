@@ -92,19 +92,17 @@ class TestPeeweeMigrationHelper:
         # Should not raise and should complete quickly
         helper.apply_migrations()
 
-    @pytest.mark.skip(reason="Migration 1 is a no-op, migration 3 requires tables. This test requires full app setup.")
-    def test_apply_migrations_runs_pending_migrations(self, temp_db):
-        """Test that apply_migrations runs pending migrations."""
+    def test_migration_1_is_noop(self, temp_db):
+        """Test that migration 1 is a no-op that succeeds."""
         helper = PeeweeMigrationHelper(temp_db)
         helper._ensure_migrations_table()
 
-        # Don't mark any migrations as applied
-        helper.apply_migrations()
+        # Run just migration 1
+        result = helper._try_standard_migration(1)
 
-        # Verify all migrations up to SCHEMA_VERSION are applied
-        versions = helper._get_applied_versions()
-        for v in range(1, SCHEMA_VERSION + 1):
-            assert v in versions, f"Migration {v} should be applied"
+        # Migration 1 is a no-op, should succeed
+        assert result is True
+        assert 1 in helper._get_applied_versions()
 
     @pytest.mark.skip(reason="Migration 2 add_column requires table created via Peewee model, not raw SQL")
     def test_add_column_migration_succeeds_when_column_missing(self, temp_db):

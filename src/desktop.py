@@ -6,12 +6,343 @@ import threading
 import webview
 import logging
 import time
+import fcntl
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
+from src.constants.app import (
+    APP_NAME,
+    PLATFORM_DARWIN,
+    PLATFORM_WIN32,
+    IS_FROZEN,
+    DIR_LIBRARY,
+    DIR_APPLICATION_SUPPORT,
+    ENV_APPDATA,
+    LOCK_FILE_NAME,
+    LOCK_UPDATE_INTERVAL,
+    LOCK_TIMEOUT_SECONDS,
+    LOCK_MESSAGE_RUNNING,
+    LOCK_MESSAGE_BODY,
+    ARG_FLASk_ONLY,
+    ARG_SUBPROCESS,
+    ARG_PORT,
+    ARG_WIDTH,
+    ARG_HEIGHT,
+    ARG_DEBUG,
+    ARG_REMOTE,
+)
+
+
+def get_data_dir() -> Path:
+    """Get the data directory for lock file and logs."""
+    if sys.platform == PLATFORM_DARWIN:
+        # macOS: always use ~/Library/Application Support/Anime1
+        data_dir = Path.home() / DIR_LIBRARY / DIR_APPLICATION_SUPPORT / APP_NAME
+    elif IS_FROZEN:
+        # Windows frozen: use APPDATA
+        appdata_dir = os.environ.get(ENV_APPDATA)
+        if appdata_dir:
+            data_dir = Path(appdata_dir) / APP_NAME
+        else:
+            data_dir = Path(sys.executable).parent
+    else:
+        # Development mode: use project root
+        data_dir = Path(__file__).parent.parent
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def get_lock_file_path() -> Path:
+    """Get the path to the instance lock file."""
+    return get_data_dir() / LOCK_FILE_NAME
+
+
+def _get_lock_data() -> dict:
+    """Read lock file data. Returns dict with 'pid', 'timestamp', 'exe' or empty dict if invalid."""
+    try:
+        lock_path = get_lock_file_path()
+        if not lock_path.exists():
+            return {}
+
+        with open(lock_path, 'r') as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+
+            parts = content.split('\n')
+            # New format: pid\ntimestamp\nexe_path
+            if len(parts) >= 3:
+                try:
+                    return {
+                        'pid': int(parts[0]),
+                        'timestamp': float(parts[1]),
+                        'exe': parts[2] if len(parts) > 2 else ''
+                    }
+                except (ValueError, TypeError):
+                    pass
+            # Legacy format: pid\ntimestamp (backward compatibility)
+            elif len(parts) >= 2:
+                try:
+                    return {
+                        'pid': int(parts[0]),
+                        'timestamp': float(parts[1]),
+                        'exe': ''
+                    }
+                except (ValueError, TypeError):
+                    pass
+    except Exception:
+        pass
+    return {}
+
+
+def _write_lock_data(pid: int, timestamp: float):
+    """Write lock file with PID, timestamp, and executable path."""
+    lock_path = get_lock_file_path()
+    exe_path = sys.executable if IS_FROZEN else os.path.abspath(__file__)
+    with open(lock_path, 'w') as f:
+        f.write(f"{pid}\n{timestamp}\n{exe_path}")
+
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with given PID is running."""
+    try:
+        if sys.platform == PLATFORM_WIN32:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            os.kill(pid, 0)
+            return True
+    except (ProcessLookupError, OSError, PermissionError):
+        return False
+
+
+class InstanceLock:
+    """Single instance lock using file locking with timestamp-based timeout."""
+
+    def __init__(self):
+        self.lock_file = None
+        self.lock_fd = None
+        self._acquired = False
+        self._update_thread = None
+        self._stop_update = threading.Event()
+
+    def _cleanup_stale_lock(self):
+        """Remove stale lock file if the process is no longer running or lock has expired."""
+        try:
+            lock_path = get_lock_file_path()
+            if not lock_path.exists():
+                logger.debug(f"[PID:{os.getpid()}] _cleanup_stale_lock: No lock file exists")
+                return
+
+            # Read raw lock file content for debugging
+            with open(lock_path, 'r') as f:
+                raw_content = f.read().strip()
+            logger.debug(f"[PID:{os.getpid()}] _cleanup_stale_lock: Lock file content: {repr(raw_content)}")
+
+            data = _get_lock_data()
+            if not data:
+                # Invalid format, remove it
+                logger.info(f"[PID:{os.getpid()}] _cleanup_stale_lock: Invalid format, removing: {raw_content}")
+                lock_path.unlink(missing_ok=True)
+                return
+
+            pid = data.get('pid', 0)
+            timestamp = data.get('timestamp', 0)
+            exe = data.get('exe', '')
+            current_time = time.time()
+            age_seconds = current_time - timestamp
+            logger.debug(f"[PID:{os.getpid()}] _cleanup_stale_lock: Checking PID={pid}, exe={exe}, age={age_seconds:.1f}s, timeout={LOCK_TIMEOUT_SECONDS}s")
+
+            # Check if lock has expired
+            if age_seconds > LOCK_TIMEOUT_SECONDS:
+                logger.info(f"[PID:{os.getpid()}] _cleanup_stale_lock: EXPIRED (age={age_seconds:.1f}s > {LOCK_TIMEOUT_SECONDS}s), removing stale lock (was PID={pid})")
+                lock_path.unlink(missing_ok=True)
+                return
+
+            # Check if process is still running
+            process_running = _is_process_running(pid)
+            logger.debug(f"[PID:{os.getpid()}] _cleanup_stale_lock: Process {pid} running = {process_running}")
+            if not process_running:
+                logger.info(f"[PID:{os.getpid()}] _cleanup_stale_lock: Process {pid} not running, removing stale lock")
+                lock_path.unlink(missing_ok=True)
+                return
+
+            logger.debug(f"[PID:{os.getpid()}] _cleanup_stale_lock: Active lock detected (PID={pid}, exe={exe})")
+
+        except Exception as e:
+            logger.warning(f"[PID:{os.getpid()}] _cleanup_stale_lock: Error: {e}")
+            pass
+
+    def _update_lock_timestamp(self):
+        """Periodically update the lock timestamp to prevent timeout."""
+        while not self._stop_update.wait(LOCK_UPDATE_INTERVAL):
+            try:
+                if self._acquired and self.lock_fd:
+                    current_time = time.time()
+                    self.lock_fd.seek(0)
+                    self.lock_fd.truncate()
+                    # Write PID, timestamp, and exe path
+                    exe_path = sys.executable if IS_FROZEN else os.path.abspath(__file__)
+                    self.lock_fd.write(f"{os.getpid()}\n{current_time}\n{exe_path}")
+                    self.lock_fd.flush()
+                    logger.debug(f"[PID:{os.getpid()}] Lock timestamp updated")
+            except Exception:
+                break
+
+    def acquire(self) -> bool:
+        """Try to acquire the instance lock. Returns True if acquired, False if another instance is running."""
+        current_pid = os.getpid()
+        try:
+            # First, clean up any stale lock
+            logger.debug(f"[PID:{current_pid}] Cleaning up stale locks...")
+            self._cleanup_stale_lock()
+
+            self.lock_file = get_lock_file_path()
+            logger.debug(f"[PID:{current_pid}] Opening lock file: {self.lock_file}")
+
+            self.lock_fd = open(self.lock_file, 'w')
+            logger.debug(f"[PID:{current_pid}] Lock file opened, fd={self.lock_fd.fileno()}")
+
+            if sys.platform != PLATFORM_WIN32:
+                # Unix-like systems: use fcntl.flock
+                logger.debug(f"[PID:{current_pid}] Attempting fcntl.flock exclusive non-blocking...")
+                fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                logger.debug(f"[PID:{current_pid}] fcntl.flock acquired successfully")
+            else:
+                # Windows: use msvcrt.locking (exclusive lock on first byte)
+                try:
+                    import msvcrt
+                    # Lock the file - raises IOError if already locked
+                    msvcrt.locking(self.lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+                except (IOError, OSError) as e:
+                    logger.warning(f"[PID:{current_pid}] Failed to acquire lock (Windows): {e}")
+                    # File is already locked - another instance is running
+                    self._cleanup()
+                    return False
+
+            # Write our PID and timestamp
+            current_time = time.time()
+            _write_lock_data(current_pid, current_time)
+
+            self._acquired = True
+            logger.info(f"[PID:{current_pid}] Instance lock acquired successfully")
+
+            # Start background thread to periodically update timestamp
+            self._stop_update.clear()
+            self._update_thread = threading.Thread(
+                target=self._update_lock_timestamp,
+                daemon=True
+            )
+            self._update_thread.start()
+
+            return True
+
+        except (IOError, OSError, PermissionError, BlockingIOError) as e:
+            logger.warning(f"[PID:{current_pid}] Failed to acquire instance lock: {e}")
+            self._cleanup()
+            return False
+
+    def release(self):
+        """Release the instance lock."""
+        if self._acquired:
+            try:
+                # Stop the update thread
+                self._stop_update.set()
+                if self._update_thread and self._update_thread.is_alive():
+                    self._update_thread.join(timeout=2)
+
+                if sys.platform != PLATFORM_WIN32 and self.lock_fd:
+                    fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
+                self._cleanup()
+            except Exception:
+                pass
+            self._acquired = False
+
+    def _cleanup(self):
+        """Clean up lock file resources."""
+        try:
+            if self.lock_fd:
+                self.lock_fd.close()
+                self.lock_fd = None
+        except Exception:
+            pass
+
+    def is_running(self) -> bool:
+        """Check if another instance is running (without acquiring lock)."""
+        try:
+            data = _get_lock_data()
+            if not data:
+                return False
+
+            pid = data.get('pid', 0)
+            timestamp = data.get('timestamp', 0)
+            current_time = time.time()
+
+            # Check if lock has expired
+            if current_time - timestamp > LOCK_TIMEOUT_SECONDS:
+                return False
+
+            # Check if process is still running
+            return _is_process_running(pid)
+        except Exception:
+            return False
+
+
+def show_already_running_message():
+    """Show a message that another instance is already running."""
+    window_title = f"{APP_NAME} - {LOCK_MESSAGE_RUNNING}"
+    message = LOCK_MESSAGE_BODY
+
+    try:
+        import webview
+        html = f"""
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>{window_title}</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                       padding: 40px; text-align: center; background: #f5f5f5; }}
+                .info {{ background: white; padding: 30px; border-radius: 12px;
+                        max-width: 400px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                h1 {{ color: #3498db; margin-bottom: 20px; }}
+                .message {{ color: #333; margin-bottom: 20px; line-height: 1.6; }}
+            </style>
+        </head>
+        <body>
+            <div class="info">
+                <h1>⚠️ 已在运行</h1>
+                <p class="message">{message}</p>
+            </div>
+        </body>
+        </html>
+        """
+        # Create a small notification window
+        window = webview.create_window(
+            title=window_title,
+            html=html,
+            width=400,
+            height=200,
+            resizable=False,
+            frameless=False,
+        )
+        webview.start(func=None, debug=False)
+    except Exception:
+        print(f"ERROR: {message}", file=sys.stderr)
+
+
 # CRITICAL: Redirect stdout/stderr BEFORE any print statements
 # This prevents console window from appearing on Windows
-if sys.platform == 'win32':
+if sys.platform == PLATFORM_WIN32:
     # Use os.devnull as a persistent file object
     try:
         _null = open(os.devnull, 'w')
@@ -23,19 +354,9 @@ if sys.platform == 'win32':
 # Pre-configure logging (file only, no console)
 def setup_logging():
     """Setup logging - file only, no console to avoid window."""
-    # Determine log path
-    if getattr(sys, 'frozen', False):
-        app_dir = Path(sys.executable).parent
-        appdata_dir = os.environ.get('APPDATA')
-        if appdata_dir:
-            log_file = Path(appdata_dir) / "Anime1" / "anime1.log"
-        else:
-            log_file = app_dir / "anime1.log"
-    else:
-        app_dir = Path(__file__).parent.parent
-        log_file = app_dir / "anime1.log"
-
-    log_file.parent.mkdir(parents=True, exist_ok=True)
+    # Use the same data directory as lock file
+    data_dir = get_data_dir()
+    log_file = data_dir / "anime1.log"
 
     formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
@@ -61,7 +382,7 @@ LOG_FILE = setup_logging()
 logger = logging.getLogger(__name__)
 
 # Add project root to path
-if getattr(sys, 'frozen', False):
+if IS_FROZEN:
     # Running as frozen executable - resources are in _MEIPASS
     MEIPASS = sys._MEIPASS
     PROJECT_ROOT = Path(MEIPASS).parent.parent
@@ -306,23 +627,23 @@ def start_flask_server_subprocess(port: int):
 
     logger.info(f"Starting Flask server subprocess on port {port}...")
 
-    if getattr(sys, 'frozen', False):
+    if IS_FROZEN:
         # Running as frozen executable - use the executable itself
         exe_path = sys.executable
-        cmd = [exe_path, '--flask-only', '--port', str(port)]
+        cmd = [exe_path, ARG_FLASk_ONLY, ARG_SUBPROCESS, ARG_PORT, str(port)]
     else:
         python_exe = sys.executable
         app_path = os.path.abspath(__file__)
-        cmd = [python_exe, app_path, '--flask-only', '--port', str(port)]
+        cmd = [python_exe, app_path, ARG_FLASk_ONLY, ARG_SUBPROCESS, ARG_PORT, str(port)]
 
     # Windows: Use DETACHED_PROCESS + CREATE_NO_WINDOW to prevent console window
     creation_flags = 0x00000008  # DETACHED_PROCESS
-    if sys.platform == 'win32':
+    if sys.platform == PLATFORM_WIN32:
         creation_flags = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
 
     # Also set startupinfo to hide window on Windows
     startupinfo = None
-    if sys.platform == 'win32':
+    if sys.platform == PLATFORM_WIN32:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = 0  # SW_HIDE
@@ -332,7 +653,7 @@ def start_flask_server_subprocess(port: int):
 
     # Only set creationflags and startupinfo on Windows
     kwargs = {}
-    if sys.platform == 'win32':
+    if sys.platform == PLATFORM_WIN32:
         kwargs['creationflags'] = creation_flags
         kwargs['startupinfo'] = startupinfo
 
@@ -371,7 +692,7 @@ def run_flask_inline(port: int, debug: bool = False):
 
 def hide_console():
     """Hide console window on Windows."""
-    if sys.platform == 'win32':
+    if sys.platform == PLATFORM_WIN32:
         import ctypes
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
@@ -385,13 +706,37 @@ def main():
     # Hide console window immediately on Windows
     hide_console()
 
+    # Debug: log all arguments
+    logger.debug(f"[PID:{os.getpid()}] sys.argv = {sys.argv}")
+    logger.debug(f"[PID:{os.getpid()}] IS_FROZEN = {IS_FROZEN}")
+
+    # Subprocess mode: skip lock acquisition (lock is held by parent process)
+    is_subprocess = IS_FROZEN and len(sys.argv) > 1 and ARG_SUBPROCESS in sys.argv
+    logger.debug(f"[PID:{os.getpid()}] is_subprocess = {is_subprocess}")
+
+    if not is_subprocess:
+        # Check for single instance lock BEFORE any other initialization
+        lock = InstanceLock()
+        logger.debug(f"[PID:{os.getpid()}] Attempting to acquire lock...")
+        acquired = lock.acquire()
+        logger.debug(f"[PID:{os.getpid()}] Lock acquired = {acquired}")
+        if not acquired:
+            logger.warning("Another instance is already running")
+            # Show notification and exit
+            show_already_running_message()
+            sys.exit(0)
+    else:
+        lock = None
+        logger.debug(f"[PID:{os.getpid()}] Skipping lock acquisition (subprocess mode)")
+
     parser = argparse.ArgumentParser(description="Anime1 Desktop App")
-    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Window width")
-    parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Window height")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--remote", action="store_true", help="Open in browser instead of webview")
-    parser.add_argument("--flask-only", action="store_true", help="Run Flask server only (internal use)")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port for Flask server")
+    parser.add_argument(ARG_WIDTH, type=int, default=DEFAULT_WIDTH, help="Window width")
+    parser.add_argument(ARG_HEIGHT, type=int, default=DEFAULT_HEIGHT, help="Window height")
+    parser.add_argument(ARG_DEBUG, action="store_true", help="Enable debug mode")
+    parser.add_argument(ARG_REMOTE, action="store_true", help="Open in browser instead of webview")
+    parser.add_argument(ARG_FLASk_ONLY, action="store_true", help="Run Flask server only (internal use)")
+    parser.add_argument(ARG_SUBPROCESS, action="store_true", help="Running as subprocess (internal use)")
+    parser.add_argument(ARG_PORT, type=int, default=DEFAULT_PORT, help="Port for Flask server")
 
     args = parser.parse_args()
 
@@ -469,6 +814,8 @@ def main():
             flask_proc.wait()
         except KeyboardInterrupt:
             flask_proc.terminate()
+        finally:
+            lock.release()
     else:
         logger.info("Creating webview window...")
 
@@ -566,9 +913,12 @@ def main():
                 logger.error(f"启动失败: {e}")
                 logger.error(f"日志文件: {LOG_FILE}")
             flask_proc.terminate()
+            lock.release()
             sys.exit(1)
 
     logger.info("Application exited")
+    # Release the instance lock on normal exit
+    lock.release()
 
 
 if __name__ == "__main__":

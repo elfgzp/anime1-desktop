@@ -13,6 +13,8 @@ are infrequent. The rate limit of 60/hour is more than enough for normal usage.
 import re
 import platform
 import sys
+import os
+import logging
 from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -76,6 +78,11 @@ from .constants import (
 )
 
 
+# GitHub token for authenticated requests (higher rate limit)
+# Set via environment variable GITHUB_TOKEN
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
+
 class UpdateChannel(Enum):
     """Update channel type."""
     STABLE = "stable"  # 只检查稳定版本
@@ -133,8 +140,6 @@ class VersionComparator:
             - ("1.0.0-rc.1") -> ([1, 0, 0], "rc", "1")
             - ("1.0.0-abc123") -> ([1, 0, 0], "dev", "abc123")
         """
-        import re
-
         # Remove 'v' prefix if present
         version_str = version_str.lstrip(VERSION_PREFIXES)
 
@@ -269,14 +274,18 @@ class PlatformDetector:
     @staticmethod
     def get_platform_info() -> Tuple[str, str]:
         """Get current platform and architecture.
-        
+
         Returns:
             Tuple of (platform_name, architecture)
             Example: ("windows", "x64"), ("macos", "arm64"), ("linux", "x64")
         """
+        logger = logging.getLogger(__name__)
+
         system = platform.system().lower()
         machine = platform.machine().lower()
-        
+
+        logger.debug(f"[UPDATE] Platform detection: system={system}, machine={machine}")
+
         # Normalize platform name
         if system == SYSTEM_DARWIN:
             platform_name = PLATFORM_MACOS
@@ -286,7 +295,7 @@ class PlatformDetector:
             platform_name = PLATFORM_LINUX
         else:
             platform_name = system
-        
+
         # Normalize architecture
         if machine in (MACHINE_X86_64, MACHINE_AMD64):
             arch = ARCH_X64
@@ -296,7 +305,8 @@ class PlatformDetector:
             arch = ARCH_X86
         else:
             arch = machine
-        
+
+        logger.debug(f"[UPDATE] Platform detection result: platform={platform_name}, arch={arch}")
         return platform_name, arch
     
     @staticmethod
@@ -311,10 +321,13 @@ class PlatformDetector:
         Returns:
             True if asset matches platform and architecture
         """
+        logger = logging.getLogger(__name__)
+
         asset_lower = asset_name.lower()
 
         # Skip installer files (Windows setup.exe)
         if "-setup.exe" in asset_lower:
+            logger.debug(f"[UPDATE] Skipping installer file: {asset_name}")
             return False
 
         # Platform matching
@@ -323,41 +336,54 @@ class PlatformDetector:
             PLATFORM_MACOS: PLATFORM_MACOS_KEYWORDS,
             PLATFORM_LINUX: PLATFORM_LINUX_KEYWORDS,
         }
-        
+
         platform_match = False
         for keyword in platform_keywords.get(platform_name, []):
             if keyword in asset_lower:
                 platform_match = True
                 break
-        
+
+        logger.debug(f"[UPDATE] Asset '{asset_name}': platform_match={platform_match} (platform={platform_name})")
+
         if not platform_match:
             return False
-        
+
         # Architecture matching
         arch_keywords = {
             ARCH_X64: ARCH_X64_KEYWORDS,
             ARCH_ARM64: ARCH_ARM64_KEYWORDS,
             ARCH_X86: ARCH_X86_KEYWORDS,
         }
-        
+
         arch_match = False
         for keyword in arch_keywords.get(arch, []):
             if keyword in asset_lower:
                 arch_match = True
                 break
-        
+
+        logger.debug(f"[UPDATE] Asset '{asset_name}': arch_match={arch_match} (arch={arch})")
+
+        # Special handling for macOS DMG files (Universal Binaries)
+        # macOS DMG files typically contain Universal Binaries supporting both x64 and arm64
+        # Match if filename contains "mac" and ends with ".dmg"
+        if not arch_match and platform_name == PLATFORM_MACOS:
+            if "mac" in asset_lower and asset_lower.endswith('.dmg'):
+                logger.debug(f"[UPDATE] Asset '{asset_name}': macOS DMG universal binary")
+                arch_match = True
+
         # If no architecture keyword found, assume x64 for Windows/Linux
         if not arch_match and platform_name in (PLATFORM_WINDOWS, PLATFORM_LINUX):
             # Check if it's explicitly not arm64
             if ARCH_EXCLUDE_ARM not in asset_lower and ARCH_EXCLUDE_AARCH not in asset_lower:
                 arch_match = True
-        
+
+        logger.debug(f"[UPDATE] Asset '{asset_name}': final result={arch_match}")
         return arch_match
 
 
 class UpdateChecker:
     """Check for updates from GitHub Releases."""
-    
+
     def __init__(
         self,
         repo_owner: str,
@@ -367,7 +393,7 @@ class UpdateChecker:
         timeout: int = DEFAULT_TIMEOUT,
     ):
         """Initialize update checker.
-        
+
         Args:
             repo_owner: GitHub repository owner
             repo_name: GitHub repository name
@@ -375,12 +401,22 @@ class UpdateChecker:
             channel: Update channel (STABLE or TEST)
             timeout: Request timeout in seconds
         """
+        logger = logging.getLogger(__name__)
+
         self.repo_owner = repo_owner
         self.repo_name = repo_name
         self.current_version = current_version or __version__
         self.channel = channel
         self.timeout = timeout
         self.api_base = GITHUB_API_BASE
+
+        logger.debug(f"[UPDATE] UpdateChecker initialized:")
+        logger.debug(f"  repo_owner: {repo_owner}")
+        logger.debug(f"  repo_name: {repo_name}")
+        logger.debug(f"  current_version: {self.current_version}")
+        logger.debug(f"  channel: {channel}")
+        logger.debug(f"  sys.frozen: {getattr(sys, 'frozen', False)}")
+        logger.debug(f"  __version__ (imported): {__version__}")
         
     def _get_releases_url(self, latest_only: bool = False) -> str:
         """Get GitHub Releases API URL.
@@ -399,63 +435,89 @@ class UpdateChecker:
     
     def _fetch_releases(self, include_prerelease: bool = False) -> List[Dict]:
         """Fetch releases from GitHub API.
-        
+
         Note: For public repositories, no authentication token is required.
         Unauthenticated requests have a rate limit of 60 requests per hour.
-        
+        Authenticated requests (with GITHUB_TOKEN env var) have 5000 requests/hour.
+
+        The GITHUB_TOKEN can be set via environment variable to increase rate limit.
+        This is useful in CI/CD environments or when checking for updates frequently.
+
         Args:
             include_prerelease: Whether to include pre-release versions
-            
+
         Returns:
             List of release dictionaries
-            
+
         Raises:
             Exception: If API request fails or rate limit is exceeded
         """
+        logger = logging.getLogger(__name__)
+
         try:
-            # Use requests without authentication - works for public repos
-            # Rate limit: 60 requests/hour for unauthenticated requests
+            logger.debug(f"[UPDATE] _fetch_releases called:")
+            logger.debug(f"  include_prerelease: {include_prerelease}")
+            logger.debug(f"  channel: {self.channel}")
+            logger.debug(f"  GITHUB_TOKEN set: {bool(GITHUB_TOKEN)}")
+
+            # Build headers - add authentication if token is available
             headers = {
                 "Accept": GITHUB_API_ACCEPT_HEADER,
                 "User-Agent": GITHUB_USER_AGENT
             }
-            
+
+            # Add authentication header if token is available
+            # Authenticated requests get higher rate limit (5000 vs 60 requests/hour)
+            if GITHUB_TOKEN:
+                headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
+            # Rate limit: 60 requests/hour for unauthenticated requests
+            #           5000 requests/hour for authenticated requests
+
             if self.channel == UpdateChannel.STABLE and not include_prerelease:
                 # For stable channel, get only latest stable release
                 url = self._get_releases_url(latest_only=True)
+                logger.debug(f"[UPDATE] Fetching latest stable release from: {url}")
                 response = requests.get(url, headers=headers, timeout=self.timeout)
-                
+
                 # Handle rate limit
                 if response.status_code == HTTP_STATUS_FORBIDDEN:
                     rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
                     if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
                         raise Exception("GitHub API 速率限制已用完，请稍后再试")
-                
+
                 response.raise_for_status()
                 release = response.json()
+                logger.debug(f"[UPDATE] Latest release tag: {release.get(API_FIELD_TAG_NAME, 'unknown')}")
+                logger.debug(f"[UPDATE] Is prerelease: {release.get(API_FIELD_PRERELEASE, False)}")
+
                 # Filter out pre-releases for stable channel
                 if release.get(API_FIELD_PRERELEASE, False):
+                    logger.debug(f"[UPDATE] Latest release is prerelease, filtering out for stable channel")
                     return []
                 return [release]
             else:
                 # For test channel or when including pre-releases, get all releases
                 url = self._get_releases_url(latest_only=False)
+                logger.debug(f"[UPDATE] Fetching all releases from: {url}")
                 response = requests.get(url, headers=headers, timeout=self.timeout)
-                
+
                 # Handle rate limit
                 if response.status_code == HTTP_STATUS_FORBIDDEN:
                     rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
                     if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
                         raise Exception("GitHub API 速率限制已用完，请稍后再试")
-                
+
                 response.raise_for_status()
                 releases = response.json()
-                
+                logger.debug(f"[UPDATE] Fetched {len(releases)} releases")
+
                 # Filter based on channel
                 if self.channel == UpdateChannel.STABLE:
                     releases = [r for r in releases if not r.get(API_FIELD_PRERELEASE, False)]
+                    logger.debug(f"[UPDATE] After filtering prereleases: {len(releases)} releases")
                 # For test channel, include all releases
-                
+
                 return releases
         except requests.exceptions.Timeout:
             raise Exception("请求超时，请检查网络连接")
@@ -473,20 +535,54 @@ class UpdateChecker:
     
     def _find_matching_asset(self, assets: List[Dict]) -> Optional[Dict]:
         """Find asset matching current platform and architecture.
-        
+
+        For macOS, prefers ZIP files over DMG files for auto-update support.
+
         Args:
             assets: List of asset dictionaries from GitHub API
-            
+
         Returns:
             Matching asset dictionary or None
         """
+        logger = logging.getLogger(__name__)
+
         platform_name, arch = PlatformDetector.get_platform_info()
-        
+        logger.debug(f"[UPDATE] _find_matching_asset: platform={platform_name}, arch={arch}")
+        logger.debug(f"[UPDATE] Checking {len(assets)} assets...")
+
+        # For macOS, prefer ZIP over DMG for auto-update support
+        if platform_name == PLATFORM_MACOS:
+            # First, try to find a ZIP file that matches
+            for asset in assets:
+                asset_name = asset.get(API_FIELD_NAME, "")
+                asset_lower = asset_name.lower()
+                # Check if it's a ZIP file matching macOS + architecture
+                if (asset_lower.endswith('.zip') and
+                    PlatformDetector.match_asset(asset_name, platform_name, arch)):
+                    logger.debug(f"[UPDATE] Found macOS ZIP asset (preferred): {asset_name}")
+                    return asset
+
+            # If no ZIP found, fall back to DMG
+            for asset in assets:
+                asset_name = asset.get(API_FIELD_NAME, "")
+                asset_lower = asset_name.lower()
+                if (asset_lower.endswith('.dmg') and
+                    PlatformDetector.match_asset(asset_name, platform_name, arch)):
+                    logger.debug(f"[UPDATE] Found macOS DMG asset (fallback): {asset_name}")
+                    return asset
+
+            logger.debug(f"[UPDATE] No matching macOS asset found")
+            return None
+
+        # For other platforms, use the original logic (first match)
         for asset in assets:
             asset_name = asset.get(API_FIELD_NAME, "")
+            logger.debug(f"[UPDATE] Checking asset: {asset_name}")
             if PlatformDetector.match_asset(asset_name, platform_name, arch):
+                logger.debug(f"[UPDATE] Found matching asset: {asset_name}")
                 return asset
-        
+
+        logger.debug(f"[UPDATE] No matching asset found")
         return None
     
     def check_for_update(self) -> UpdateInfo:
@@ -495,12 +591,21 @@ class UpdateChecker:
         Returns:
             UpdateInfo object with update status
         """
+        logger = logging.getLogger(__name__)
+
+        logger.debug(f"[UPDATE] check_for_update called:")
+        logger.debug(f"  current_version: {self.current_version}")
+        logger.debug(f"  channel: {self.channel}")
+
         try:
             # Fetch releases
             include_prerelease = self.channel == UpdateChannel.TEST
             releases = self._fetch_releases(include_prerelease=include_prerelease)
 
+            logger.debug(f"[UPDATE] Got {len(releases)} releases to check")
+
             if not releases:
+                logger.debug(f"[UPDATE] No releases found, returning no update")
                 return UpdateInfo(
                     has_update=False,
                     current_version=self.current_version
@@ -524,8 +629,12 @@ class UpdateChecker:
                     absolute_latest_version = version_str
                     absolute_latest_release = release
 
+                # Compare with current version
+                cmp_result = VersionComparator.compare_versions(version_str, self.current_version)
+                logger.debug(f"[UPDATE] Comparing {version_str} vs {self.current_version}: {cmp_result}")
+
                 # Skip if not newer than current
-                if VersionComparator.compare_versions(version_str, self.current_version) <= 0:
+                if cmp_result <= 0:
                     continue
 
                 # Check if this is the latest we've seen (that's newer than current)
@@ -535,9 +644,13 @@ class UpdateChecker:
 
             # Use absolute latest for display
             latest_version_for_display = absolute_latest_release.get(API_FIELD_TAG_NAME, "") if absolute_latest_release else None
+            logger.debug(f"[UPDATE] absolute_latest_version: {absolute_latest_version}")
+            logger.debug(f"[UPDATE] update_version (newer than current): {update_version}")
+            logger.debug(f"[UPDATE] latest_version_for_display: {latest_version_for_display}")
 
             if update_release is None:
                 # No update available, but we know the latest version
+                logger.debug(f"[UPDATE] No update available (current version is latest or newer)")
                 return UpdateInfo(
                     has_update=False,
                     current_version=self.current_version,
@@ -546,7 +659,11 @@ class UpdateChecker:
 
             # Find matching asset
             assets = update_release.get(API_FIELD_ASSETS, [])
+            logger.debug(f"[UPDATE] All assets in release: {[a.get('name', '') for a in assets]}")
             matching_asset = self._find_matching_asset(assets)
+
+            logger.debug(f"[UPDATE] Update found: {update_version}")
+            logger.debug(f"[UPDATE] matching_asset: {matching_asset.get('name') if matching_asset else None}")
 
             if not matching_asset:
                 return UpdateInfo(
@@ -570,6 +687,7 @@ class UpdateChecker:
             )
 
         except Exception as e:
+            logger.error(f"[UPDATE] Error checking for updates: {e}", exc_info=True)
             # Return error state
             return UpdateInfo(
                 has_update=False,
