@@ -40,8 +40,14 @@ def get_previous_version_tag(current_version: str, repo_path: Path) -> str:
     return ""
 
 
-def generate_changelog_from_git(current_version: str, repo_path: Path) -> str:
-    """从 git commit 自动生成 changelog"""
+def generate_changelog_from_git(current_version: str, repo_path: Path, compact: bool = False) -> str:
+    """从 git commit 自动生成 changelog
+
+    Args:
+        current_version: 当前版本号
+        repo_path: 仓库路径
+        compact: 如果 True，不包含版本标题（用于 Release 页面）
+    """
     previous_tag = get_previous_version_tag(current_version, repo_path)
 
     if not previous_tag:
@@ -107,9 +113,10 @@ def generate_changelog_from_git(current_version: str, repo_path: Path) -> str:
     # 生成 changelog
     changelog_lines = []
 
-    # 添加发布日期
-    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    changelog_lines.append(f"## [{current_version}] - {date}\n")
+    # 如果不是简化模式，添加版本标题
+    if not compact:
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        changelog_lines.append(f"## [{current_version}] - {date}\n")
 
     # 按顺序添加各类型
     order = ["feat", "fix", "perf", "refactor", "docs", "chore", "other"]
@@ -162,11 +169,16 @@ def extract_changelog_from_file(version: str, changelog_file: Path = Path("CHANG
         return ""
 
 
-def extract_changelog(version: str, repo_path: Path = Path(".")) -> str:
+def extract_changelog(version: str, repo_path: Path = Path("."), compact: bool = False) -> str:
     """
     提取 changelog
 
     优先从 CHANGELOG.md 文件提取，如果没有则自动从 git commit 生成
+
+    Args:
+        version: 版本号
+        repo_path: 仓库路径
+        compact: 如果 True，不包含版本标题（用于 Release 页面）
     """
     # 首先尝试从文件提取
     changelog = extract_changelog_from_file(version)
@@ -174,7 +186,7 @@ def extract_changelog(version: str, repo_path: Path = Path(".")) -> str:
         return changelog
 
     # 如果文件没有，自动从 git 生成
-    changelog = generate_changelog_from_git(version, repo_path)
+    changelog = generate_changelog_from_git(version, repo_path, compact)
     if changelog:
         return changelog
 
@@ -183,14 +195,18 @@ def extract_changelog(version: str, repo_path: Path = Path(".")) -> str:
 
 def main():
     """主函数"""
-    if len(sys.argv) < 2:
-        print("Usage: extract_changelog.py <version>")
-        print("Example: extract_changelog.py 1.0.0")
-        sys.exit(1)
+    version = "test"
+    compact = False
 
-    version = sys.argv[1]
+    # 解析命令行参数
+    for arg in sys.argv[1:]:
+        if arg == "--compact":
+            compact = True
+        elif not arg.startswith("-"):
+            version = arg
+
     repo_path = Path(__file__).parent.parent
-    changelog = extract_changelog(version, repo_path)
+    changelog = extract_changelog(version, repo_path, compact)
 
     if changelog:
         print(changelog)
