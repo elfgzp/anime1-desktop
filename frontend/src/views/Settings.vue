@@ -269,14 +269,16 @@ const handleDownloadUpdate = async () => {
         // 自动安装模式，后端已完成安装准备
         ElMessage.success(response.data.message || '更新完成，正在重启...')
 
-        // 检查是否是 Windows（需要运行 updater 并退出）
-        if (window.ipcRenderer) {
-          // Windows 桌面应用：需要运行 updater 并退出
-          if (response.data.updater_path) {
-            // 调用后端运行 updater 并退出应用
-            await settingsAPI.runUpdater(response.data.updater_path)
-            // 应用将在后端调用 sys.exit(0) 后关闭
-          }
+        // 根据 updater_type 处理不同的退出逻辑
+        const updaterType = response.data.updater_type
+
+        if (updaterType === 'macos_dmg') {
+          // macOS DMG: 调用 exit API 关闭应用，updater 会在后台完成安装
+          await settingsAPI.exitApp()
+          // 应用将在后端调用 os._exit(0) 后关闭
+        } else if (window.ipcRenderer && response.data.updater_path) {
+          // Windows: 调用后端运行 updater 并退出应用
+          await settingsAPI.runUpdater(response.data.updater_path)
         } else {
           // Web 模式：刷新页面
           setTimeout(() => {

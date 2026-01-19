@@ -11,6 +11,7 @@ vi.mock('../utils/api', () => ({
     checkUpdate: vi.fn(),
     downloadUpdate: vi.fn(),
     runUpdater: vi.fn(),
+    exitApp: vi.fn(),
     openPath: vi.fn(),
     getTheme: vi.fn(),
     saveTheme: vi.fn(),
@@ -232,7 +233,8 @@ describe('Settings View - Update Functionality', () => {
           success: true,
           restarting: true,
           message: '更新完成，正在重启...',
-          updater_path: 'C:\\anime1\\updater.exe'
+          updater_path: 'C:\\anime1\\updater.exe',
+          updater_type: 'windows'
         }
       })
       settingsAPI.runUpdater.mockResolvedValue({})
@@ -247,7 +249,10 @@ describe('Settings View - Update Functionality', () => {
           const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, true)
           if (response.data.success && response.data.restarting) {
             ElMessage.success(response.data.message || '更新完成，正在重启...')
-            if (window.ipcRenderer && response.data.updater_path) {
+            const updaterType = response.data.updater_type
+            if (updaterType === 'macos_dmg') {
+              await settingsAPI.exitApp()
+            } else if (window.ipcRenderer && response.data.updater_path) {
               await settingsAPI.runUpdater(response.data.updater_path)
             }
           }
@@ -261,6 +266,56 @@ describe('Settings View - Update Functionality', () => {
       await handleDownloadUpdate()
       expect(downloadingUpdate.value).toBe(false)
       expect(ElMessage.success).toHaveBeenCalled()
+      expect(settingsAPI.runUpdater).toHaveBeenCalledWith('C:\\anime1\\updater.exe')
+    })
+
+    it('should handle macOS DMG mode (exit app)', async () => {
+      const updateInfo = ref({
+        download_url: 'https://github.com/.../anime1-macos-0.2.1.dmg'
+      })
+      const downloadingUpdate = ref(false)
+      const settingsAPI = (await import('../utils/api')).settingsAPI
+      const ElMessage = (await import('element-plus')).ElMessage
+
+      settingsAPI.downloadUpdate.mockResolvedValue({
+        data: {
+          success: true,
+          restarting: true,
+          message: '正在安装更新...',
+          updater_type: 'macos_dmg',
+          download_path: '/Users/user/Downloads/anime1-macos-0.2.1.dmg'
+        }
+      })
+      settingsAPI.exitApp.mockResolvedValue({})
+
+      // No ipcRenderer for webview mode
+      global.window = {}
+
+      const handleDownloadUpdate = async () => {
+        if (!updateInfo.value.download_url) return
+        downloadingUpdate.value = true
+        try {
+          const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, true)
+          if (response.data.success && response.data.restarting) {
+            ElMessage.success(response.data.message || '更新完成，正在重启...')
+            const updaterType = response.data.updater_type
+            if (updaterType === 'macos_dmg') {
+              await settingsAPI.exitApp()
+            } else if (window.ipcRenderer && response.data.updater_path) {
+              await settingsAPI.runUpdater(response.data.updater_path)
+            }
+          }
+        } catch (error) {
+          // Handle error
+        } finally {
+          downloadingUpdate.value = false
+        }
+      }
+
+      await handleDownloadUpdate()
+      expect(downloadingUpdate.value).toBe(false)
+      expect(ElMessage.success).toHaveBeenCalled()
+      expect(settingsAPI.exitApp).toHaveBeenCalled()
     })
 
     it('should handle web mode (refresh page)', async () => {

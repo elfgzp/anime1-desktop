@@ -161,6 +161,9 @@ export const settingsAPI = {
     updater_path: updaterPath
   }),
 
+  // 退出应用（用于 macOS DMG 更新后关闭当前实例）
+  exitApp: () => api.post('/settings/exit'),
+
   // 打开文件或路径
   openPath: (path) => api.post(API_ENDPOINTS.SETTINGS.OPEN_PATH, {
     path: path
