@@ -844,3 +844,149 @@ if __name__ == "__main__":
 
     # Also run simulation tests
     run_simulation_tests()
+
+
+@pytest.mark.unit
+class TestUpdateRouteCacheHeaders:
+    """Tests for no-cache headers in update routes."""
+
+    def test_update_check_route_has_no_cache_headers(self):
+        """Test that /api/update/check endpoint returns no-cache headers."""
+        from flask import Flask
+        from src.routes.update import update_bp
+
+        app = Flask(__name__)
+        app.register_blueprint(update_bp)
+
+        # Mock the UpdateChecker
+        with app.test_client() as client:
+            with patch('src.routes.update.UpdateChecker') as MockChecker:
+                mock_instance = MockChecker.return_value
+                mock_info = Mock()
+                mock_info.has_update = False
+                mock_info.current_version = "0.1.0"
+                mock_info.latest_version = "v0.2.0"
+                mock_info.is_prerelease = False
+                mock_info.release_notes = None
+                mock_info.download_url = None
+                mock_info.asset_name = None
+                mock_info.download_size = None
+                mock_info.published_at = None
+                mock_instance.check_for_update.return_value = mock_info
+
+                response = client.get('/api/update/check')
+
+                # Check response status
+                assert response.status_code == 200
+
+                # Check no-cache headers
+                assert 'Cache-Control' in response.headers
+                assert 'no-cache, no-store, must-revalidate' in response.headers['Cache-Control']
+                assert 'Pragma' in response.headers
+                assert response.headers['Pragma'] == 'no-cache'
+                assert 'Expires' in response.headers
+                assert response.headers['Expires'] == '0'
+
+    def test_update_info_route_has_no_cache_headers(self):
+        """Test that /api/update/info endpoint returns no-cache headers."""
+        from flask import Flask
+        from src.routes.update import update_bp
+
+        app = Flask(__name__)
+        app.register_blueprint(update_bp)
+
+        with app.test_client() as client:
+            response = client.get('/api/update/info')
+
+            # Check response status
+            assert response.status_code == 200
+
+            # Check no-cache headers
+            assert 'Cache-Control' in response.headers
+            assert 'no-cache, no-store, must-revalidate' in response.headers['Cache-Control']
+            assert 'Pragma' in response.headers
+            assert response.headers['Pragma'] == 'no-cache'
+            assert 'Expires' in response.headers
+            assert response.headers['Expires'] == '0'
+
+    def test_update_check_route_error_has_no_cache_headers(self):
+        """Test that error responses from /api/update/check also have no-cache headers."""
+        from flask import Flask
+        from src.routes.update import update_bp
+
+        app = Flask(__name__)
+        app.register_blueprint(update_bp)
+
+        # Mock to raise exception
+        with app.test_client() as client:
+            with patch('src.routes.update.UpdateChecker') as MockChecker:
+                MockChecker.side_effect = Exception("Test error")
+
+                response = client.get('/api/update/check')
+
+                # Check response status is 500
+                assert response.status_code == 500
+
+                # Check no-cache headers are still present
+                assert 'Cache-Control' in response.headers
+                assert 'no-cache, no-store, must-revalidate' in response.headers['Cache-Control']
+                assert 'Pragma' in response.headers
+                assert response.headers['Pragma'] == 'no-cache'
+                assert 'Expires' in response.headers
+                assert response.headers['Expires'] == '0'
+
+    def test_update_check_response_always_includes_latest_version(self):
+        """Test that update check response always includes latest_version field."""
+        from flask import Flask
+        from src.routes.update import update_bp
+        import json
+
+        app = Flask(__name__)
+        app.register_blueprint(update_bp)
+
+        # Test with update available
+        with app.test_client() as client:
+            with patch('src.routes.update.UpdateChecker') as MockChecker:
+                mock_instance = MockChecker.return_value
+                mock_info = Mock()
+                mock_info.has_update = True
+                mock_info.current_version = "0.1.0"
+                mock_info.latest_version = "v0.2.4"
+                mock_info.is_prerelease = False
+                mock_info.release_notes = "Release notes"
+                mock_info.download_url = "https://example.com/download"
+                mock_info.asset_name = "anime1.dmg"
+                mock_info.download_size = 1000000
+                mock_info.published_at = "2026-01-01T00:00:00Z"
+                mock_instance.check_for_update.return_value = mock_info
+
+                response = client.get('/api/update/check')
+                data = json.loads(response.data)
+
+                assert 'latest_version' in data
+                assert data['latest_version'] == "v0.2.4"
+                assert data['has_update'] is True
+
+        # Test with no update available
+        with app.test_client() as client:
+            with patch('src.routes.update.UpdateChecker') as MockChecker:
+                mock_instance = MockChecker.return_value
+                mock_info = Mock()
+                mock_info.has_update = False
+                mock_info.current_version = "0.2.4"
+                mock_info.latest_version = "v0.2.4"
+                mock_info.is_prerelease = False
+                mock_info.release_notes = None
+                mock_info.download_url = None
+                mock_info.asset_name = None
+                mock_info.download_size = None
+                mock_info.published_at = None
+                mock_instance.check_for_update.return_value = mock_info
+
+                response = client.get('/api/update/check')
+                data = json.loads(response.data)
+
+                # latest_version should ALWAYS be present
+                assert 'latest_version' in data
+                assert data['latest_version'] == "v0.2.4"
+                assert data['has_update'] is False

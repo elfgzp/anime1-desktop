@@ -1,6 +1,8 @@
 """Desktop application entry point using pywebview."""
 import os
 import sys
+# Ensure sys is properly resolved for PyInstaller frozen apps
+_sys_module = sys
 import socket
 import threading
 import webview
@@ -399,6 +401,7 @@ from src.app import create_app, download_static_resources, find_free_port, is_po
 from src.config import DEFAULT_PORT
 from src import __version__
 from src.utils.version import get_window_title
+from src.cli.update_check import run_check_update
 from src.constants.settings import (
     MACOS_APP_NAME,
     MACOS_BUNDLE_ID,
@@ -753,64 +756,19 @@ def main():
 
     # Handle --check-update mode
     if args.check_update:
-        from src.services.update_checker import UpdateChecker, UpdateChannel
-        from src.config import GITHUB_REPO_OWNER, GITHUB_REPO_NAME
-
         logger.info(f"[CHECK-UPDATE] Mode: checking for updates...")
         logger.info(f"[CHECK-UPDATE] Current version: {__version__}")
 
         # Determine channel from args
-        channel = UpdateChannel.TEST if args.channel == "test" else UpdateChannel.STABLE
+        channel = "test" if args.channel == "test" else "stable"
+        logger.info(f"[CHECK-UPDATE] Channel: {channel}")
 
-        logger.info(f"[CHECK-UPDATE] Channel: {channel.value}")
-
-        # Create checker and check for updates
-        checker = UpdateChecker(
-            repo_owner=GITHUB_REPO_OWNER,
-            repo_name=GITHUB_REPO_NAME,
-            current_version=__version__,
-            channel=channel
-        )
-
-        logger.info(f"[CHECK-UPDATE] Checker initialized with version: {checker.current_version}")
-
-        try:
-            update_info = checker.check_for_update()
-            logger.info("=" * 50)
-            logger.info("Update Check Result:")
-            logger.info(f"  Current Version: {update_info.current_version}")
-            logger.info(f"  Has Update: {update_info.has_update}")
-            if update_info.has_update:
-                logger.info(f"  Latest Version: {update_info.latest_version}")
-                logger.info(f"  Is Prerelease: {update_info.is_prerelease}")
-                if update_info.download_url:
-                    logger.info(f"  Download URL: {update_info.download_url}")
-                    logger.info(f"  Asset: {update_info.asset_name}")
-            else:
-                logger.info(f"  Latest Version: {update_info.latest_version or 'unknown'}")
-            logger.info("=" * 50)
-
-            # Also print to console for visibility
-            print(f"\n{'='*50}")
-            print(f"Update Check Result:")
-            print(f"  Current Version: {update_info.current_version}")
-            print(f"  Has Update: {update_info.has_update}")
-            if update_info.has_update:
-                print(f"  Latest Version: {update_info.latest_version}")
-            else:
-                print(f"  Latest Version: {update_info.latest_version or 'unknown'}")
-            print(f"{'='*50}\n")
-
-        except Exception as e:
-            logger.error(f"[CHECK-UPDATE] Error: {e}")
-            print(f"[CHECK-UPDATE] Error: {e}")
-            import sys
-            sys.exit(1)
+        exit_code = run_check_update(__version__, channel)
 
         # Exit without starting the app
         logger.info("[CHECK-UPDATE] Exiting after update check.")
         print("[CHECK-UPDATE] Exiting after update check.")
-        sys.exit(0)
+        sys.exit(exit_code)
 
     # Flask-only mode (used by subprocess)
     if args.flask_only:
