@@ -489,10 +489,79 @@ del "%~f0"
                     }
                 )
             elif sys.platform == 'darwin':
-                # macOS: Use the updater script for DMG files
-                if is_dmg:
-                    # macOS DMG auto-install using the updater script
-                    logger.info(f"Preparing macOS DMG auto-install for {file_path}")
+                # macOS: Prefer ZIP for direct extraction, fall back to DMG
+                # ZIP allows in-place replacement without mounting/unmounting
+                is_zip = filename.lower().endswith('.zip')
+
+                if is_zip:
+                    # macOS ZIP auto-install - extract directly (preferred method)
+                    logger.info(f"Preparing macOS ZIP auto-install for {file_path}")
+
+                    # Get app path for macOS
+                    app_path = Path(sys.executable).resolve()
+                    if app_path.name == 'Anime1':
+                        install_dir = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
+                    else:
+                        install_dir = Path('/Applications/Anime1.app')
+
+                    # Backup existing app
+                    backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                    logger.info(f"Creating backup at {backup_dir}")
+                    backup_created = False
+                    if install_dir.exists():
+                        try:
+                            shutil.copytree(install_dir, backup_dir)
+                            backup_created = True
+                        except Exception as e:
+                            logger.warning(f"Could not create backup: {e}")
+
+                    # Extract new version
+                    try:
+                        with zipfile.ZipFile(file_path, 'r') as zf:
+                            zf.extractall(install_dir.parent)
+                        logger.info(f"Extracted update to {install_dir}")
+                    except Exception as e:
+                        logger.error(f"Failed to extract update: {e}")
+                        if backup_created and backup_dir.exists():
+                            logger.info("Restoring from backup...")
+                            if install_dir.exists():
+                                shutil.rmtree(install_dir)
+                            shutil.copytree(backup_dir, install_dir)
+                            shutil.rmtree(backup_dir)
+                        return error_response(f"安装失败: {str(e)}", 500)
+
+                    if backup_created and backup_dir.exists():
+                        shutil.rmtree(backup_dir)
+
+                    file_path.unlink()
+
+                    # Launch the new app
+                    exe_path = install_dir / "Contents" / "MacOS" / "Anime1"
+                    logger.info(f"Restarting application: {exe_path}")
+
+                    # Create a shell script to restart after exit
+                    temp_dir_restart = Path(tempfile.mkdtemp(prefix='anime1_restart_'))
+                    restart_script = temp_dir_restart / 'restart.sh'
+                    restart_content = f'''#!/bin/bash
+sleep 2
+"{exe_path}" &
+'''
+                    restart_script.write_text(restart_content, encoding='utf-8')
+                    os.chmod(restart_script, 0o755)
+                    subprocess.Popen(
+                        ['bash', str(restart_script)],
+                        start_new_session=True
+                    )
+
+                    return success_response(
+                        message="更新完成，正在重启...",
+                        data={
+                            "success": True,
+                            "restarting": True,
+                            "updater_type": "macos_zip"
+                        }
+                    )
+                elif is_dmg:
 
                     # Get the path to the current app
                     app_path = Path(sys.executable).resolve()
@@ -584,127 +653,65 @@ exit $RESULT
                             "download_path": str(file_path)
                         }
                     )
+            else:
+                # Linux or other non-Windows, non-macOS platforms
+                logger.info(f"Preparing Linux update for {file_path}")
+
+                # Get app path
+                exe_path = Path(sys.executable)
+                if exe_path.name == 'Anime1':
+                    install_dir = exe_path.parent  # /opt/anime1 directory
                 else:
-                    # macOS ZIP or other archives
-                    # Check if it's a ZIP file that can be extracted
-                    is_zip = filename.lower().endswith('.zip')
+                    install_dir = Path('/opt/anime1')
 
-                    if is_zip:
-                        # macOS portable ZIP - can be extracted directly like Linux
-                        logger.info(f"Preparing macOS ZIP auto-install for {file_path}")
+                # Backup existing app
+                backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                logger.info(f"Creating backup at {backup_dir}")
+                backup_created = False
+                if install_dir.exists():
+                    try:
+                        shutil.copytree(install_dir, backup_dir)
+                        backup_created = True
+                    except Exception as e:
+                        logger.warning(f"Could not create backup: {e}")
 
-                        # Get app path for macOS
-                        app_path = Path(sys.executable).resolve()
-                        if app_path.name == 'Anime1':
-                            install_dir = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
-                        else:
-                            install_dir = Path('/Applications/Anime1.app')
-
-                        # Backup existing app
-                        backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                        logger.info(f"Creating backup at {backup_dir}")
-                        backup_created = False
+                # Extract new version
+                try:
+                    with zipfile.ZipFile(file_path, 'r') as zf:
+                        zf.extractall(install_dir)
+                    logger.info(f"Extracted update to {install_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to extract update: {e}")
+                    if backup_created and backup_dir.exists():
+                        logger.info("Restoring from backup...")
                         if install_dir.exists():
-                            try:
-                                shutil.copytree(install_dir, backup_dir)
-                                backup_created = True
-                            except Exception as e:
-                                logger.warning(f"Could not create backup: {e}")
+                            shutil.rmtree(install_dir)
+                        shutil.copytree(backup_dir, install_dir)
+                        shutil.rmtree(backup_dir)
+                    return error_response(f"安装失败: {str(e)}", 500)
 
-                        # Extract new version
-                        try:
-                            with zipfile.ZipFile(file_path, 'r') as zf:
-                                zf.extractall(install_dir.parent)
-                            logger.info(f"Extracted update to {install_dir}")
-                        except Exception as e:
-                            logger.error(f"Failed to extract update: {e}")
-                            if backup_created and backup_dir.exists():
-                                logger.info("Restoring from backup...")
-                                if install_dir.exists():
-                                    shutil.rmtree(install_dir)
-                                shutil.copytree(backup_dir, install_dir)
-                                shutil.rmtree(backup_dir)
-                            return error_response(f"安装失败: {str(e)}", 500)
+                if backup_created and backup_dir.exists():
+                    shutil.rmtree(backup_dir)
 
-                        if backup_created and backup_dir.exists():
-                            shutil.rmtree(backup_dir)
+                file_path.unlink()
 
-                        file_path.unlink()
+                # Restart the app
+                new_exe_path = install_dir / "Anime1"
+                logger.info(f"Restarting application: {new_exe_path}")
+                subprocess.Popen(
+                    [str(new_exe_path)],
+                    cwd=str(install_dir),
+                    start_new_session=True
+                )
 
-                        # Launch the new app
-                        exe_path = install_dir / "Contents" / "MacOS" / "Anime1"
-                        logger.info(f"Restarting application: {exe_path}")
-
-                        # Create a shell script to restart after exit
-                        temp_dir = Path(tempfile.mkdtemp(prefix='anime1_restart_'))
-                        restart_script = temp_dir / 'restart.sh'
-                        restart_content = f'''#!/bin/bash
-sleep 2
-"{exe_path}" &
-'''
-                        restart_script.write_text(restart_content, encoding='utf-8')
-                        os.chmod(restart_script, 0o755)
-                        if sys.platform == 'win32':
-                            subprocess.Popen(
-                                ['bash', str(restart_script)],
-                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                            )
-                        else:
-                            subprocess.Popen(
-                                ['bash', str(restart_script)],
-                                start_new_session=True
-                            )
-
-                        return success_response(
-                            message="更新完成，正在重启...",
-                            data={
-                                "success": True,
-                                "restarting": True,
-                                "updater_type": "macos_zip"
-                            }
-                        )
-                    else:
-                        # Linux or other non-Windows, non-macOS platforms
-                        # Same as before for tar.gz etc.
-                        backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                        logger.info(f"Creating backup at {backup_dir}")
-                        try:
-                            shutil.copytree(install_dir, backup_dir)
-                            backup_created = True
-                        except Exception as e:
-                            logger.warning(f"Could not create backup: {e}")
-                            backup_created = False
-
-                        # Extract new version
-                        try:
-                            with zipfile.ZipFile(file_path, 'r') as zf:
-                                zf.extractall(install_dir)
-                            logger.info(f"Extracted update to {install_dir}")
-                        except Exception as e:
-                            logger.error(f"Failed to extract update: {e}")
-                            if backup_created and backup_dir.exists():
-                                logger.info("Restoring from backup...")
-                                shutil.rmtree(install_dir)
-                                shutil.copytree(backup_dir, install_dir)
-                                shutil.rmtree(backup_dir)
-                            return error_response(f"安装失败: {str(e)}", 500)
-
-                        if backup_created and backup_dir.exists():
-                            shutil.rmtree(backup_dir)
-
-                        file_path.unlink()
-
-                        exe_path = Path(sys.executable)
-                        logger.info(f"Restarting application: {exe_path}")
-                        subprocess.Popen([str(exe_path)], cwd=str(install_dir))
-
-                        return success_response(
-                            message="更新完成，正在重启...",
-                            data={
-                                "success": True,
-                                "restarting": True
-                            }
-                        )
+                return success_response(
+                    message="更新完成，正在重启...",
+                    data={
+                        "success": True,
+                        "restarting": True,
+                        "updater_type": "linux_zip"
+                    }
+                )
         else:
             # Manual mode: just download and let user handle it
             return success_response(
