@@ -276,5 +276,72 @@ class TestRunUpdater:
             assert response.status_code == 404
 
 
+@pytest.mark.unit
+class TestSettingsModuleImport:
+    """Tests for module import integrity."""
+
+    def test_settings_module_imports_successfully(self):
+        """Test that settings module can be imported without errors.
+
+        This catches NameError bugs like missing imports for functions
+        used in the module.
+        """
+        # This should not raise any exceptions
+        from src.routes import settings
+        assert settings is not None
+
+    def test_get_project_root_available(self):
+        """Test that get_project_root is available in utils."""
+        from src.utils import get_project_root
+        from src.utils.constants import PROJECT_ROOT_MARKERS
+
+        root = get_project_root()
+        assert root is not None
+        assert isinstance(root, Path)
+        # Should point to project root (contains pyproject.toml)
+        assert any((root / marker).exists() for marker in PROJECT_ROOT_MARKERS)
+
+    def test_subprocess_popen_does_not_use_detached_param(self):
+        """Test that subprocess.Popen is called with correct parameters (not 'detached').
+
+        The 'detached' parameter was deprecated and removed in Python 3.11+.
+        On Unix, use 'start_new_session=True'.
+        On Windows, use 'creationflags=subprocess.CREATE_NEW_PROCESS_GROUP'.
+        """
+        import ast
+        import inspect
+
+        # Get the source code of the settings module
+        from src import routes
+        settings_module_path = inspect.getfile(routes.settings)
+
+        with open(settings_module_path, 'r') as f:
+            source_code = f.read()
+
+        # Parse the AST to find all Popen calls
+        tree = ast.parse(source_code)
+
+        popen_calls = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Attribute):
+                    if node.func.attr == 'Popen':
+                        popen_calls.append(node)
+
+        # Check that no Popen call uses 'detached' parameter
+        for call in popen_calls:
+            for keyword in call.keywords:
+                if keyword.arg == 'detached':
+                    # Get line number for better error message
+                    line_no = call.lineno
+                    raise AssertionError(
+                        f"Found 'detached' parameter in subprocess.Popen call at line {line_no}. "
+                        f"Use 'start_new_session=True' (Unix) or 'creationflags=subprocess.CREATE_NEW_PROCESS_GROUP' (Windows) instead."
+                    )
+
+        # All good if we get here
+        assert len(popen_calls) >= 0  # Just to have an assertion
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

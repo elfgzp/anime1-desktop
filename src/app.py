@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(os.path.abspath(__file__)).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import DEFAULT_HOST, DEFAULT_PORT, STATIC_CACHE_DIR
+from src.constants.app import IS_FROZEN
 from src.routes import (
     anime_bp,
     proxy_bp,
@@ -35,10 +36,22 @@ from src.cli.update_check import run_check_update
 
 
 def download_static_resources():
-    """Download and cache static resources on startup."""
-    import requests
+    """Download and cache static resources on startup.
 
+    For frozen executables, static resources are bundled and no download is needed.
+    This function only downloads if running from source (not frozen).
+    """
+    # Skip if running as frozen executable - resources are bundled
+    if IS_FROZEN:
+        logger.info("[STARTUP] Skipping download (frozen executable)")
+        return
+
+    import requests
+    import time as time_module
+
+    logger.info("[STARTUP] Creating static cache directory...")
     STATIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"[STARTUP] Static cache directory: {STATIC_CACHE_DIR}")
 
     # Static resources to cache (only download if not exists to speed up startup)
     resources = {
@@ -47,24 +60,30 @@ def download_static_resources():
 
     for filename, url in resources.items():
         filepath = STATIC_CACHE_DIR / filename
+        t0 = time_module.time()
         try:
             # Skip if already exists (speed up startup)
             if filepath.exists() and filepath.stat().st_size > 0:
+                logger.info(f"[STARTUP] Cache exists: {filename}")
                 continue
 
-            print(f"Downloading {filename}...")
+            logger.info(f"[STARTUP] Downloading {filename}...")
             response = requests.get(url, timeout=10, allow_redirects=True)
+            logger.info(f"[STARTUP] Download response status: {response.status_code}")
+
             response.raise_for_status()
 
             if response.content:
                 filepath.write_bytes(response.content)
-                print(f"  Downloaded {filename} ({len(response.content)} bytes)")
+                logger.info(f"[STARTUP] Downloaded {filename} ({len(response.content)} bytes, {time_module.time() - t0:.2f}s)")
             else:
-                print(f"  Empty response for {filename}")
+                logger.warning(f"[STARTUP] Empty response for {filename}")
 
         except Exception as e:
-            print(f"  Failed to download {filename}: {e}")
+            logger.error(f"[STARTUP] Failed to download {filename}: {e}")
             # Continue anyway - the resource might be served from elsewhere
+
+    logger.info(f"[STARTUP] Static resources ready in {time_module.time() - t0:.2f}s")
 
 
 def create_app() -> Flask:

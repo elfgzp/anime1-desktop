@@ -42,4 +42,46 @@ ARG_HEIGHT: Final[str] = "--height"
 ARG_DEBUG: Final[str] = "--debug"
 ARG_REMOTE: Final[str] = "--remote"
 ARG_CHECK_UPDATE: Final[str] = "--check-update"
+ARG_AUTO_UPDATE: Final[str] = "--auto-update"
 ARG_CHANNEL: Final[str] = "--channel"
+
+# Auto-update constants
+UPDATE_LOG_PREFIX: Final[str] = "[AUTO-UPDATE]"
+UPDATE_DOWNLOAD_PREFIX: Final[str] = "[DOWNLOAD]"
+UPDATE_UPDATER_PREFIX: Final[str] = "[UPDATER]"
+UPDATE_CHECK_PREFIX: Final[str] = "[CHECK-UPDATE]"
+
+# File extensions
+EXT_DMG: Final[str] = ".dmg"
+EXT_ZIP: Final[str] = ".zip"
+EXT_PY: Final[str] = ".py"
+EXT_SH: Final[str] = ".sh"
+
+# Update file naming
+UPDATE_FILE_PREFIX: Final[str] = "anime1_update_"
+UPDATE_TEMP_PREFIX: Final[str] = "anime1_update_"
+
+# macOS app bundle
+MACOS_APP_NAME: Final[str] = "Anime1.app"
+MACOS_APP_PATH: Final[str] = "/Applications/Anime1.app"
+MACOS_UPDATER_SCRIPT: Final[str] = "macos_updater.py"
+MACOS_UPDATER_SHELL: Final[str] = "run_updater.sh"
+
+# macOS app bundle structure
+# Contents/MacOS/executable -> Contents -> .app
+MACOS_STRUCTURE_DEPTH: Final[int] = 3  # executable -> MacOS -> Contents -> .app
+
+# Shell script template for macOS updater
+MACOS_UPDATER_TEMPLATE: Final[str] = '''#!/bin/bash
+cd "{temp_dir}"
+"{python_path}" "{updater_script}" --dmg "{dmg_path}" --app "{app_path}" --no-cleanup
+RESULT=$?
+exit $RESULT
+'''
+
+# Shell command
+SHELL_BASH: Final[str] = "bash"
+
+# Download constants
+DOWNLOAD_CHUNK_SIZE: Final[int] = 8192
+DOWNLOAD_TIMEOUT: Final[int] = 300  # seconds

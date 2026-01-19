@@ -34,6 +34,7 @@ from src.constants.app import (
     ARG_DEBUG,
     ARG_REMOTE,
     ARG_CHECK_UPDATE,
+    ARG_AUTO_UPDATE,
     ARG_CHANNEL,
 )
 
@@ -401,7 +402,7 @@ from src.app import create_app, download_static_resources, find_free_port, is_po
 from src.config import DEFAULT_PORT
 from src import __version__
 from src.utils.version import get_window_title
-from src.cli.update_check import run_check_update
+from src.cli.update_check import run_check_update, run_auto_update
 from src.constants.settings import (
     MACOS_APP_NAME,
     MACOS_BUNDLE_ID,
@@ -416,11 +417,16 @@ def setup_macos_app():
     if sys.platform != "darwin":
         return
 
+    import time as time_module
+    t0 = time_module.time()
+
     try:
+        logger.info(f"[STARTUP] tB0={time_module.time() - start_time:.2f}s - Importing Cocoa frameworks...")
         from Foundation import NSBundle, NSProcessInfo
         from AppKit import NSApplication, NSMenu, NSMenuItem, NSWindow, NSWindowStyleMask
         from WebKit import WKWebView
         import objc
+        logger.info(f"[STARTUP] tB1={time_module.time() - start_time:.2f}s - Cocoa frameworks imported")
 
         # 启用 WKWebView 开发者工具（必须在创建 webview 之前调用）
         try:
@@ -707,6 +713,10 @@ def hide_console():
 def main():
     """Main entry point for desktop application."""
     import argparse
+    import time as time_module
+
+    start_time = time_module.time()
+    logger.info(f"[STARTUP] t0={0:.2f}s - App starting...")
 
     # Hide console window immediately on Windows
     hide_console()
@@ -718,6 +728,8 @@ def main():
     # Subprocess mode: skip lock acquisition (lock is held by parent process)
     is_subprocess = IS_FROZEN and len(sys.argv) > 1 and ARG_SUBPROCESS in sys.argv
     logger.debug(f"[PID:{os.getpid()}] is_subprocess = {is_subprocess}")
+
+    logger.info(f"[STARTUP] t00={time_module.time() - start_time:.2f}s - Before lock acquisition")
 
     if not is_subprocess:
         # Check for single instance lock BEFORE any other initialization
@@ -734,6 +746,8 @@ def main():
         lock = None
         logger.debug(f"[PID:{os.getpid()}] Skipping lock acquisition (subprocess mode)")
 
+    logger.info(f"[STARTUP] t01={time_module.time() - start_time:.2f}s - After lock acquisition")
+
     parser = argparse.ArgumentParser(description="Anime1 Desktop App")
     parser.add_argument(ARG_WIDTH, type=int, default=DEFAULT_WIDTH, help="Window width")
     parser.add_argument(ARG_HEIGHT, type=int, default=DEFAULT_HEIGHT, help="Window height")
@@ -743,8 +757,9 @@ def main():
     parser.add_argument(ARG_SUBPROCESS, action="store_true", help="Running as subprocess (internal use)")
     parser.add_argument(ARG_PORT, type=int, default=DEFAULT_PORT, help="Port for Flask server")
     parser.add_argument(ARG_CHECK_UPDATE, action="store_true", help="Check for updates and exit")
+    parser.add_argument(ARG_AUTO_UPDATE, action="store_true", help="Check for updates and auto-install if available")
     parser.add_argument(ARG_CHANNEL, default="stable", choices=["stable", "test"],
-                        help="Update channel for --check-update (default: stable)")
+                        help="Update channel for --check-update/--auto-update (default: stable)")
 
     args = parser.parse_args()
 
@@ -770,6 +785,22 @@ def main():
         print("[CHECK-UPDATE] Exiting after update check.")
         sys.exit(exit_code)
 
+    # Handle --auto-update mode
+    if args.auto_update:
+        logger.info(f"[AUTO-UPDATE] Mode: check and auto-install updates...")
+        logger.info(f"[AUTO-UPDATE] Current version: {__version__}")
+
+        # Determine channel from args
+        channel = "test" if args.channel == "test" else "stable"
+        logger.info(f"[AUTO-UPDATE] Channel: {channel}")
+
+        exit_code = run_auto_update(__version__, channel)
+
+        # Exit after auto-update attempt
+        logger.info("[AUTO-UPDATE] Exiting after auto-update attempt.")
+        print("[AUTO-UPDATE] Exiting after auto-update attempt.")
+        sys.exit(exit_code)
+
     # Flask-only mode (used by subprocess)
     if args.flask_only:
         run_flask_inline(args.port)
@@ -779,8 +810,11 @@ def main():
     logger.info("Anime1 Desktop App")
     logger.info("=" * 50)
 
+    logger.info(f"[STARTUP] tA={time_module.time() - start_time:.2f}s - After argument parsing")
+
     # 设置 macOS 应用名称
     setup_macos_app()
+    logger.info(f"[STARTUP] tB={time_module.time() - start_time:.2f}s - After setup_macos_app")
 
     logger.info(f"Arguments: width={args.width}, height={args.height}, debug={args.debug}, remote={args.remote}")
 
@@ -794,37 +828,42 @@ def main():
     else:
         logger.info(f"Using default port: {port}")
 
+    logger.info(f"[STARTUP] tC={time_module.time() - start_time:.2f}s - After port check")
+
     # Download static resources first
-    logger.info("Preparing static resources...")
+    logger.info(f"[STARTUP] tW={time_module.time() - start_time:.2f}s - Preparing static resources...")
     try:
+        t_resources = time_module.time()
         download_static_resources()
-        logger.info("Static resources prepared successfully")
+        logger.info(f"[STARTUP] tW2={time_module.time() - start_time:.2f}s - Static resources prepared successfully")
     except Exception as e:
         logger.error(f"Failed to download static resources: {e}")
         # Continue anyway - resources might already exist
 
     print_banner("127.0.0.1", port)
-    logger.info("Starting desktop application...")
+    logger.info(f"[STARTUP] tV={time_module.time() - start_time:.2f}s - Starting desktop application...")
 
     # Start Flask as subprocess (no console window on Windows)
+    logger.info("[STARTUP] Starting Flask subprocess...")
     flask_proc = start_flask_server_subprocess(port)
+    logger.info(f"[STARTUP] Flask subprocess started, pid={flask_proc.pid}")
 
     # Wait for Flask server to be ready
     url = f"http://127.0.0.1:{port}"
-    logger.info(f"Web server URL: {url}")
+    logger.info(f"[STARTUP] tX={time_module.time() - start_time:.2f}s - Web server URL: {url}")
 
     # Test server connection
     import socket
     server_ready = False
     for i in range(20):  # Wait up to 2 seconds
-        time.sleep(0.1)
+        time_module.sleep(0.1)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(0.5)
         try:
             result = sock.connect_ex(('127.0.0.1', port))
             if result == 0:
                 server_ready = True
-                logger.info("Flask server is ready")
+                logger.info(f"[STARTUP] tY={time_module.time() - start_time:.2f}s - Flask server is ready")
                 break
         except:
             pass
@@ -833,6 +872,8 @@ def main():
 
     if not server_ready:
         logger.warning("Flask server may not be ready, continuing anyway...")
+
+    logger.info(f"[STARTUP] tZ={time_module.time() - start_time:.2f}s - Ready to create webview")
 
     if args.remote:
         # Open in system browser
@@ -847,17 +888,22 @@ def main():
         finally:
             lock.release()
     else:
-        logger.info("Creating webview window...")
+        logger.info("[STARTUP] Creating webview window...")
 
         try:
+            t1 = time_module.time()
+            logger.info(f"[STARTUP] t1={t1 - start_time:.2f}s - Creating window...")
+
             # Create webview window
             window_title = get_window_title()
+            logger.info(f"[STARTUP] t2={time_module.time() - start_time:.2f}s - Got window title")
 
             # Note: pywebview 5.0 does not support icon parameter
             # Icon is set at OS level via the executable's icon (PyInstaller icon)
 
             # Create JS API instance for anime1.pw handling
             js_api = WebviewApi()
+            logger.info(f"[STARTUP] t3={time_module.time() - start_time:.2f}s - Created JS API")
 
             window = webview.create_window(
                 title=window_title,
@@ -871,10 +917,10 @@ def main():
                 # Note: icon parameter removed (not supported in pywebview 5.0)
                 # WEBVIEW_SETTINGS removed to avoid WebView2 compatibility issues
             )
-            logger.info("Webview window created successfully")
+            logger.info(f"[STARTUP] t4={time_module.time() - start_time:.2f}s - Webview window created")
 
             # 手动暴露 API 方法（pywebview 5.x 需要手动调用 expose）
-            logger.info("Exposing JS API methods...")
+            logger.info("[STARTUP] Exposing JS API methods...")
             window.expose(
                 js_api.navigate,
                 js_api.evaluate_js,
@@ -883,13 +929,15 @@ def main():
                 js_api.minimize,
                 js_api.maximize
             )
-            logger.info("JS API methods exposed")
+            logger.info(f"[STARTUP] t5={time_module.time() - start_time:.2f}s - JS API methods exposed")
 
             # Start webview (blocking) - 默认开启 debug 模式
             # 注意：不要在这里设置 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，会导致 pywebview 兼容性问题
-            logger.info("Starting webview with DevTools enabled...")
+            logger.info("[STARTUP] Starting webview (this may take a while)...")
+            t_start = time_module.time()
             webview.start(debug=True)
-            logger.info("Webview closed")
+            t_end = time_module.time()
+            logger.info(f"[STARTUP] t6={t_end - start_time:.2f}s - Webview closed (ran for {t_end - t_start:.2f}s)")
 
             # Terminate Flask subprocess when webview closes
             flask_proc.terminate()
