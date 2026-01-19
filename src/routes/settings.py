@@ -572,13 +572,16 @@ exit $RESULT
                     logger.info("Launched macOS updater, exiting app...")
 
                     # Exit the application so the updater can replace files
+                    # Use os._exit to bypass Flask's error handlers
+                    import os
                     return success_response(
                         message="正在安装更新...",
                         data={
                             "success": True,
                             "restarting": True,
                             "updater_type": "macos_dmg",
-                            "cleanup_delay": 5
+                            "cleanup_delay": 5,
+                            "download_path": str(file_path)
                         }
                     )
                 else:
@@ -778,6 +781,40 @@ def run_updater():
     except Exception as e:
         logger.error(f"Error running updater: {e}")
         return error_response(str(e), 500)
+
+
+@settings_bp.route("/exit", methods=["POST"])
+def exit_app():
+    """Exit the application gracefully.
+
+    This is used after an update has been prepared to close the app
+    so the updater can replace files.
+
+    Returns:
+        Success response (app will exit after this).
+    """
+    import os
+
+    logger.info("[EXIT] exit_app called, shutting down...")
+
+    try:
+        # Shutdown services
+        from src.app import shutdown_services
+        shutdown_services()
+
+        # Release the instance lock
+        from src.desktop import InstanceLock
+        lock = InstanceLock()
+        if lock._acquired:
+            lock.release()
+
+        # Exit immediately without calling Flask's error handlers
+        logger.info("[EXIT] Exiting application...")
+        os._exit(0)
+
+    except Exception as e:
+        logger.error(f"Error during exit: {e}")
+        os._exit(1)
 
 
 @settings_bp.route("/open_path", methods=["POST"])
