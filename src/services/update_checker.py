@@ -608,7 +608,8 @@ class UpdateChecker:
                 logger.debug(f"[UPDATE] No releases found, returning no update")
                 return UpdateInfo(
                     has_update=False,
-                    current_version=self.current_version
+                    current_version=self.current_version,
+                    latest_version=None
                 )
 
             # Find the absolute latest version (for display purposes)
@@ -688,8 +689,9 @@ class UpdateChecker:
 
         except Exception as e:
             logger.error(f"[UPDATE] Error checking for updates: {e}", exc_info=True)
-            # Return error state
+            # Return error state - include latest_version as None for proper error display
             return UpdateInfo(
                 has_update=False,
-                current_version=self.current_version
+                current_version=self.current_version,
+                latest_version=None
             )
