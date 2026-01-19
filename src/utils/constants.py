@@ -1,5 +1,8 @@
 """Constants for version utilities."""
 
+# Project root markers (files or directories that indicate project root)
+PROJECT_ROOT_MARKERS = ["pyproject.toml", "setup.py", "setup.cfg", "src"]
+
 # Environment variable
 ENV_VERSION = "ANIME1_VERSION"
 

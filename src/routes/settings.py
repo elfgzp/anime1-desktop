@@ -25,6 +25,7 @@ from src.constants.api import (
     THEME_SYSTEM
 )
 from src.utils.app_dir import get_app_data_dir, get_download_dir, get_install_dir
+from src.utils import get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -395,10 +396,16 @@ def download_update():
     Returns:
         Path to the downloaded file or install result.
     """
+    logger.info("[DOWNLOAD] download_update called")
+    logger.info(f"[DOWNLOAD] Request URL: {request.url}")
+    logger.info(f"[DOWNLOAD] Request method: {request.method}")
+
     try:
         data = request.get_json() or {}
         url = data.get("url")
         auto_install = data.get("auto_install", False)
+
+        logger.info(f"[DOWNLOAD] url={url}, auto_install={auto_install}")
 
         if not url:
             return error_response("url is required", 400)
@@ -408,16 +415,20 @@ def download_update():
         if not filename:
             filename = f"anime1_update_{uuid.uuid4().hex[:8]}.zip"
 
+        logger.info(f"[DOWNLOAD] filename={filename}")
+
         # Check if it's a DMG file (macOS disk image)
         is_dmg = filename.lower().endswith('.dmg')
+        logger.info(f"[DOWNLOAD] is_dmg={is_dmg}")
 
         # Get download directory
         download_dir = get_download_dir()
+        logger.info(f"[DOWNLOAD] download_dir={download_dir}")
         download_dir.mkdir(parents=True, exist_ok=True)
         file_path = download_dir / filename
 
         # Download the file
-        logger.info(f"Downloading update from {url} to {file_path}")
+        logger.info(f"[DOWNLOAD] Downloading from {url} to {file_path}")
 
         response = requests.get(url, stream=True, timeout=300)
         response.raise_for_status()
@@ -429,14 +440,14 @@ def download_update():
                     f.write(chunk)
                     downloaded_size += len(chunk)
 
-        logger.info(f"Downloaded {downloaded_size} bytes to {file_path}")
+        logger.info(f"[DOWNLOAD] Downloaded {downloaded_size} bytes")
 
         if auto_install:
             # Auto-install mode
-            logger.info(f"Auto-installing update from {file_path}")
+            logger.info(f"[DOWNLOAD] auto_install=true, platform={sys.platform}")
 
             install_dir = get_install_dir()
-            logger.info(f"Installation directory: {install_dir}")
+            logger.info(f"[DOWNLOAD] install_dir={install_dir}")
 
             if sys.platform == 'win32':
                 # Windows: Create a batch file that handles the update after app exits
@@ -536,14 +547,27 @@ exit $RESULT
                     shell_script.write_text(shell_content, encoding='utf-8')
                     os.chmod(shell_script, 0o755)
 
-                    logger.info(f"Created shell updater script at {shell_script}")
+                    logger.info(f"[DOWNLOAD] Created shell updater script at {shell_script}")
 
                     # Launch the updater detached and exit
-                    subprocess.Popen(
-                        ['bash', str(shell_script)],
-                        detached=True,
-                        cwd=str(temp_dir)
-                    )
+                    logger.info(f"[DOWNLOAD] Launching updater with subprocess.Popen, platform={sys.platform}")
+                    try:
+                        if sys.platform == 'win32':
+                            proc = subprocess.Popen(
+                                ['bash', str(shell_script)],
+                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                                cwd=str(temp_dir)
+                            )
+                        else:
+                            proc = subprocess.Popen(
+                                ['bash', str(shell_script)],
+                                start_new_session=True,
+                                cwd=str(temp_dir)
+                            )
+                        logger.info(f"[DOWNLOAD] subprocess.Popen started successfully, pid={proc.pid}")
+                    except Exception as popen_err:
+                        logger.error(f"[DOWNLOAD] subprocess.Popen failed: {popen_err}")
+                        raise
 
                     logger.info("Launched macOS updater, exiting app...")
 
@@ -617,7 +641,16 @@ sleep 2
 '''
                         restart_script.write_text(restart_content, encoding='utf-8')
                         os.chmod(restart_script, 0o755)
-                        subprocess.Popen(['bash', str(restart_script)], detached=True)
+                        if sys.platform == 'win32':
+                            subprocess.Popen(
+                                ['bash', str(restart_script)],
+                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                            )
+                        else:
+                            subprocess.Popen(
+                                ['bash', str(restart_script)],
+                                start_new_session=True
+                            )
 
                         return success_response(
                             message="更新完成，正在重启...",
@@ -700,24 +733,43 @@ def run_updater():
     Returns:
         Success message (app will exit after this).
     """
+    logger.info("[UPDATER] run_updater called")
+    logger.info(f"[UPDATER] Request URL: {request.url}")
+    logger.info(f"[UPDATER] Request JSON: {request.get_json(silent=True)}")
+
     try:
         data = request.get_json() or {}
         updater_path = data.get("updater_path")
+
+        logger.info(f"[UPDATER] updater_path={updater_path}")
 
         if not updater_path:
             return error_response("updater_path is required", 400)
 
         updater = Path(updater_path)
+        logger.info(f"[UPDATER] updater exists={updater.exists()}")
+
         if not updater.exists():
             return error_response(f"Updater not found: {updater_path}", 404)
 
-        logger.info(f"Running updater: {updater}")
+        logger.info(f"[UPDATER] Running updater: {updater}, platform={sys.platform}")
 
         # Run the updater and exit
-        if sys.platform == 'win32':
-            subprocess.Popen(['cmd', '/c', str(updater)], detached=True, creationflags=subprocess.DETACHED_PROCESS)
-        else:
-            subprocess.Popen([str(updater)], detached=True)
+        try:
+            if sys.platform == 'win32':
+                proc = subprocess.Popen(
+                    ['cmd', '/c', str(updater)],
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                proc = subprocess.Popen(
+                    [str(updater)],
+                    start_new_session=True
+                )
+            logger.info(f"[UPDATER] subprocess.Popen started successfully, pid={proc.pid}")
+        except Exception as popen_err:
+            logger.error(f"[UPDATER] subprocess.Popen failed: {popen_err}")
+            raise
 
         # Exit the application
         logger.info("Exiting application for update...")
