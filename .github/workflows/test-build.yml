@@ -7,7 +7,7 @@ on:
       platform:
         description: '指定构建平台 (linux/windows/macos/arm64/x64/all)'
         required: false
-        default: 'macos'
+        default: 'all'
         type: string
   push:
     branches:
