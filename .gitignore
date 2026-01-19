@@ -45,6 +45,11 @@ release/
 # Version file (auto-generated during build)
 src/_version.txt
 src/version.txt
+src/_version.py
+
+# macOS plist files (auto-generated during build)
+distInfo.plist
+Info.plist
 
 # Test environments
 .test-venv/
