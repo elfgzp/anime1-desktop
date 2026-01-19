@@ -92,3 +92,6 @@ nul
 
 # Serena
 .serena/
+
+# Coverage
+coverage.xml
