@@ -258,28 +258,61 @@ class InstanceLock:
 
     def release(self):
         """Release the instance lock."""
-        if self._acquired:
-            try:
-                # Stop the update thread
-                self._stop_update.set()
-                if self._update_thread and self._update_thread.is_alive():
-                    self._update_thread.join(timeout=2)
+        try:
+            # Stop the update thread
+            self._stop_update.set()
+            if self._update_thread and self._update_thread.is_alive():
+                self._update_thread.join(timeout=2)
 
-                if sys.platform != PLATFORM_WIN32 and self.lock_fd:
+            # Release file lock (fcntl on Unix, no-op on Windows)
+            if sys.platform != PLATFORM_WIN32 and self.lock_fd:
+                try:
                     fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
-                self._cleanup()
-            except Exception:
-                pass
-            self._acquired = False
+                except Exception:
+                    pass
+
+            self._cleanup()
+        except Exception:
+            pass
+        self._acquired = False
+
+    def force_release(self):
+        """Force release the lock without requiring _acquired flag.
+
+        Used when the app is exiting and needs to release the lock for updater.
+        This method doesn't check _acquired flag and tries to clean up regardless.
+        """
+        try:
+            # Stop the update thread
+            self._stop_update.set()
+            if self._update_thread and self._update_thread.is_alive():
+                self._update_thread.join(timeout=1)
+
+            # Release file lock
+            if sys.platform != PLATFORM_WIN32 and self.lock_fd:
+                try:
+                    fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+
+            self._cleanup()
+        except Exception:
+            pass
+        self._acquired = False
 
     def _cleanup(self):
-        """Clean up lock file resources."""
+        """Clean up lock file resources and delete the lock file."""
         try:
             if self.lock_fd:
                 self.lock_fd.close()
                 self.lock_fd = None
-        except Exception:
-            pass
+            # Delete the lock file to allow new instance to start
+            lock_path = get_lock_file_path()
+            if lock_path.exists():
+                lock_path.unlink(missing_ok=True)
+                logger.debug(f"[PID:{os.getpid()}] Lock file deleted: {lock_path}")
+        except Exception as e:
+            logger.warning(f"[PID:{os.getpid()}] Error cleaning up lock file: {e}")
 
     def is_running(self) -> bool:
         """Check if another instance is running (without acquiring lock)."""
@@ -638,6 +671,12 @@ def start_flask_server_subprocess(port: int):
 
     logger.info(f"Starting Flask server subprocess on port {port}...")
 
+    # Pass parent PID so subprocess can signal parent to exit on update
+    parent_pid = os.getpid()
+    env = os.environ.copy()
+    env['PARENT_PID'] = str(parent_pid)
+    env['WERKZEUG_RUN_MAIN'] = 'false'
+
     if IS_FROZEN:
         # Running as frozen executable - use the executable itself
         exe_path = sys.executable
@@ -658,9 +697,6 @@ def start_flask_server_subprocess(port: int):
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = 0  # SW_HIDE
-
-    env = os.environ.copy()
-    env['WERKZEUG_RUN_MAIN'] = 'false'
 
     # Only set creationflags and startupinfo on Windows
     kwargs = {}
@@ -734,11 +770,29 @@ def main():
     if not is_subprocess:
         # Check for single instance lock BEFORE any other initialization
         lock = InstanceLock()
-        logger.debug(f"[PID:{os.getpid()}] Attempting to acquire lock...")
+        logger.info(f"[PID:{os.getpid()}] Attempting to acquire lock...")
+        logger.info(f"[PID:{os.getpid()}] Lock file path: {get_lock_file_path()}")
+        logger.info(f"[PID:{os.getpid()}] Lock file exists: {get_lock_file_path().exists()}")
+
+        # 读取锁文件内容用于调试
+        if get_lock_file_path().exists():
+            try:
+                with open(get_lock_file_path(), 'r') as f:
+                    lock_content = f.read().strip()
+                logger.info(f"[PID:{os.getpid()}] Lock file content: {repr(lock_content)}")
+            except Exception as e:
+                logger.warning(f"[PID:{os.getpid()}] Failed to read lock file: {e}")
+
         acquired = lock.acquire()
-        logger.debug(f"[PID:{os.getpid()}] Lock acquired = {acquired}")
+        logger.info(f"[PID:{os.getpid()}] Lock acquired = {acquired}")
+
         if not acquired:
-            logger.warning("Another instance is already running")
+            # 获取锁数据用于日志
+            lock_data = _get_lock_data()
+            logger.warning(f"[PID:{os.getpid()}] Another instance is already running!")
+            logger.warning(f"[PID:{os.getpid()}] Running PID from lock: {lock_data.get('pid', 'unknown')}")
+            logger.warning(f"[PID:{os.getpid()}] Will show already-running notification and exit")
+
             # Show notification and exit
             show_already_running_message()
             sys.exit(0)
@@ -764,10 +818,15 @@ def main():
     args = parser.parse_args()
 
     # Log version information for debugging
+    logger.info(f"[VERSION] ============================================")
+    logger.info(f"[VERSION] Anime1 Desktop Application Starting")
+    logger.info(f"[VERSION] ============================================")
     logger.info(f"[VERSION] App version: {__version__}")
     logger.info(f"[VERSION] Frozen: {IS_FROZEN}")
     logger.info(f"[VERSION] Executable: {sys.executable}")
+    logger.info(f"[VERSION] Data directory: {get_data_dir()}")
     logger.info(f"[VERSION] sys.argv: {sys.argv}")
+    logger.info(f"[VERSION] ============================================")
 
     # Handle --check-update mode
     if args.check_update:

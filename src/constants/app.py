@@ -62,7 +62,8 @@ UPDATE_FILE_PREFIX: Final[str] = "anime1_update_"
 UPDATE_TEMP_PREFIX: Final[str] = "anime1_update_"
 
 # macOS app bundle
-MACOS_APP_NAME: Final[str] = "Anime1.app"
+MACOS_APP_NAME: Final[str] = "Anime1"
+MACOS_APP_BUNDLE_NAME: Final[str] = "Anime1.app"
 MACOS_APP_PATH: Final[str] = "/Applications/Anime1.app"
 MACOS_UPDATER_SCRIPT: Final[str] = "macos_updater.py"
 MACOS_UPDATER_SHELL: Final[str] = "run_updater.sh"

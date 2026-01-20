@@ -2,7 +2,9 @@
 import logging
 import os
 import platform
+import signal
 import subprocess
+import time
 import uuid
 import zipfile
 import shutil
@@ -23,6 +25,42 @@ from src.constants.api import (
     THEME_DARK,
     THEME_LIGHT,
     THEME_SYSTEM
+)
+from src.constants.app import (
+    PLATFORM_WIN32,
+    PLATFORM_DARWIN,
+    EXT_DMG,
+    EXT_ZIP,
+    SHELL_BASH,
+    MACOS_APP_PATH,
+    MACOS_APP_NAME,
+    UPDATE_TEMP_PREFIX,
+    UPDATE_FILE_PREFIX,
+)
+from src.services.constants import (
+    PLATFORM_WINDOWS,
+    PLATFORM_MACOS,
+    PLATFORM_LINUX,
+    CMD_BASH,
+    CMD_CMD,
+    CMD_ARG_C,
+    BAT_SCRIPT_EXT,
+    UPDATER_TEMP_PREFIX,
+    UPDATER_BATCH_NAME,
+    RESTART_SCRIPT_NAME,
+    RESTART_SCRIPT_FILE,
+    RESTART_SCRIPT_PREFIX,
+    MACOS_APP_BUNDLE_PATH,
+    MACOS_APP_CONTENTS_MACOS,
+    LINUX_INSTALL_DIR,
+    LINUX_APP_NAME,
+    SYSTEM_PLATFORM_WIN32,
+    SYSTEM_DARWIN,
+    SYSTEM_LINUX,
+    SHELL_SHEBANG,
+    UPDATE_FILENAME_PREFIX,
+    SUBPROCESS_WAIT_INTERVAL,
+    SUBPROCESS_WAIT_TIMEOUT,
 )
 from src.utils.app_dir import get_app_data_dir, get_download_dir, get_install_dir
 from src.utils import get_project_root
@@ -346,7 +384,8 @@ def open_logs_folder():
 
         log_dir_str = str(log_dir)
 
-        if platform.system() == "Windows":
+        system = platform.system().lower()
+        if system == PLATFORM_WINDOWS:
             # Use subprocess to avoid encoding issues with os.startfile
             subprocess.run(
                 ["explorer.exe", log_dir_str],
@@ -354,7 +393,7 @@ def open_logs_folder():
                 shell=True,
                 capture_output=True
             )
-        elif platform.system() == "Darwin":  # macOS
+        elif system == PLATFORM_DARWIN:  # macOS (Darwin)
             subprocess.run(
                 ["open", log_dir_str],
                 check=True,
@@ -372,10 +411,11 @@ def open_logs_folder():
         logger.warning(f"Failed to open logs folder via subprocess: {e}")
         # Fallback to os.system
         try:
-            if platform.system() == "Windows":
+            system = platform.system().lower()
+            if system == PLATFORM_WINDOWS:
                 os.startfile(str(log_dir))
             else:
-                os.system(f'xdg-open "{log_dir}"' if platform.system() != "Darwin" else f'open "{log_dir}"')
+                os.system(f'xdg-open "{log_dir}"' if system != PLATFORM_DARWIN else f'open "{log_dir}"')
             return success_response(message=f"已打开日志文件夹: {log_dir}")
         except Exception as fallback_error:
             logger.error(f"Fallback also failed: {fallback_error}")
@@ -413,12 +453,12 @@ def download_update():
         # Get filename from URL
         filename = url.split("/")[-1].split("?")[0]
         if not filename:
-            filename = f"anime1_update_{uuid.uuid4().hex[:8]}.zip"
+            filename = f"{UPDATE_FILENAME_PREFIX}{uuid.uuid4().hex[:8]}{EXT_ZIP}"
 
         logger.info(f"[DOWNLOAD] filename={filename}")
 
         # Check if it's a DMG file (macOS disk image)
-        is_dmg = filename.lower().endswith('.dmg')
+        is_dmg = filename.lower().endswith(EXT_DMG)
         logger.info(f"[DOWNLOAD] is_dmg={is_dmg}")
 
         # Get download directory
@@ -449,13 +489,13 @@ def download_update():
             install_dir = get_install_dir()
             logger.info(f"[DOWNLOAD] install_dir={install_dir}")
 
-            if sys.platform == 'win32':
+            if platform.system() == PLATFORM_WINDOWS:
                 # Windows: Create a batch file that handles the update after app exits
                 # This is necessary because Windows doesn't allow replacing running files
 
                 # Create a temp directory for the updater
-                temp_dir = Path(tempfile.mkdtemp(prefix='anime1_update_'))
-                updater_batch = temp_dir / 'update.bat'
+                temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
+                updater_batch = temp_dir / (UPDATER_BATCH_NAME + BAT_SCRIPT_EXT)
                 zip_copy = temp_dir / file_path.name
 
                 # Copy the zip to temp location
@@ -491,35 +531,111 @@ del "%~f0"
             elif sys.platform == 'darwin':
                 # macOS: Prefer ZIP for direct extraction, fall back to DMG
                 # ZIP allows in-place replacement without mounting/unmounting
-                is_zip = filename.lower().endswith('.zip')
+                is_zip = filename.lower().endswith(EXT_ZIP)
 
                 if is_zip:
                     # macOS ZIP auto-install - extract directly (preferred method)
-                    logger.info(f"Preparing macOS ZIP auto-install for {file_path}")
+                    logger.info(f"[UPDATE-MACOS] Preparing ZIP auto-install: {file_path}")
+                    logger.info(f"[UPDATE-MACOS] Filename: {filename}")
 
                     # Get app path for macOS
                     app_path = Path(sys.executable).resolve()
-                    if app_path.name == 'Anime1':
+                    logger.info(f"[UPDATE-MACOS] Current app path: {app_path}")
+
+                    if app_path.name == MACOS_APP_NAME:
                         install_dir = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
                     else:
-                        install_dir = Path('/Applications/Anime1.app')
+                        install_dir = Path(MACOS_APP_BUNDLE_PATH)
+
+                    logger.info(f"[UPDATE-MACOS] Install directory: {install_dir}")
+                    logger.info(f"[UPDATE-MACOS] Current app exists: {install_dir.exists()}")
 
                     # Backup existing app
                     backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                    logger.info(f"Creating backup at {backup_dir}")
+                    logger.info(f"[UPDATE-MACOS] Backup directory: {backup_dir}")
                     backup_created = False
                     if install_dir.exists():
                         try:
                             shutil.copytree(install_dir, backup_dir)
                             backup_created = True
+                            logger.info(f"[UPDATE-MACOS] Backup created successfully")
                         except Exception as e:
-                            logger.warning(f"Could not create backup: {e}")
+                            logger.warning(f"[UPDATE-MACOS] Could not create backup: {e}")
 
                     # Extract new version
                     try:
+                        logger.info(f"[UPDATE-MACOS] Opening ZIP file: {file_path}")
+                        logger.info(f"[UPDATE-MACOS] Extracting to install dir: {install_dir}")
                         with zipfile.ZipFile(file_path, 'r') as zf:
-                            zf.extractall(install_dir.parent)
-                        logger.info(f"Extracted update to {install_dir}")
+                            # Check ZIP structure to handle both formats:
+                            # 1. anime1-macos-0.2.4/Contents/... (portable format)
+                            # 2. Anime1.app/Contents/... (app bundle format)
+                            names = zf.namelist()
+                            logger.info(f"[UPDATE-MACOS] ZIP file count: {len(names)} files")
+                            logger.info(f"[UPDATE-MACOS] ZIP contents (first 10): {names[:10]}")
+
+                            # Check if ZIP has Anime1.app/ prefix
+                            has_app_prefix = any(name.startswith('Anime1.app/') for name in names)
+                            logger.info(f"[UPDATE-MACOS] ZIP has Anime1.app/ prefix: {has_app_prefix}")
+
+                            if has_app_prefix:
+                                # ZIP has Anime1.app/ prefix, extract directly
+                                logger.info(f"[UPDATE-MACOS] Extracting to {install_dir.parent}...")
+                                zf.extractall(install_dir.parent)
+                                logger.info(f"[UPDATE-MACOS] Direct extraction complete")
+                                logger.info(f"[UPDATE-MACOS] New app exists: {(install_dir.parent / 'Anime1.app').exists()}")
+                            else:
+                                # ZIP has portable format like anime1-macos-0.2.4/Contents/...
+                                # Extract to a temp location first, then move the .app to /Applications/
+                                logger.info(f"[UPDATE-MACOS] Using portable format extraction...")
+                                temp_extract_dir = Path(tempfile.mkdtemp(prefix='anime1_extract_'))
+                                logger.info(f"[UPDATE-MACOS] Temp dir: {temp_extract_dir}")
+
+                                zf.extractall(temp_extract_dir)
+                                logger.info(f"[UPDATE-MACOS] Extracted to temp dir")
+
+                                # Find the extracted app folder
+                                extracted_folders = list(temp_extract_dir.iterdir())
+                                logger.info(f"[UPDATE-MACOS] Extracted folders: {extracted_folders}")
+
+                                if len(extracted_folders) == 1 and extracted_folders[0].is_dir():
+                                    extracted_app = extracted_folders[0]
+                                    logger.info(f"[UPDATE-MACOS] Moving app: {extracted_app.name}")
+                                    # Remove old install_dir if exists (backup already created)
+                                    if install_dir.exists():
+                                        logger.info(f"[UPDATE-MACOS] Removing old installation...")
+                                        shutil.rmtree(install_dir)
+                                    # Move the extracted app to /Applications/
+                                    shutil.move(str(extracted_app), str(install_dir))
+                                    logger.info(f"[UPDATE-MACOS] App moved to {install_dir}")
+                                    logger.info(f"[UPDATE-MACOS] New app exists: {install_dir.exists()}")
+                                else:
+                                    # Fallback: try to find .app folder
+                                    logger.info(f"[UPDATE-MACOS] Searching for .app folder...")
+                                    for item in temp_extract_dir.rglob('*.app'):
+                                        if item.is_dir():
+                                            logger.info(f"[UPDATE-MACOS] Found .app: {item}")
+                                            if install_dir.exists():
+                                                shutil.rmtree(install_dir)
+                                            shutil.move(str(item), str(install_dir))
+                                            break
+                                # Clean up temp dir
+                                shutil.rmtree(temp_extract_dir)
+                                logger.info(f"[UPDATE-MACOS] Temp dir cleaned up")
+
+                        logger.info(f"[UPDATE-MACOS] Installation to {install_dir} complete")
+
+                        # Ensure executable has proper permissions (zipfile may strip them)
+                        exe_path = install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME
+                        logger.info(f"[UPDATE-MACOS] Checking executable: {exe_path}")
+                        if exe_path.exists():
+                            current_mode = oct(os.stat(exe_path).st_mode)[-3:]
+                            logger.info(f"[UPDATE-MACOS] Current permissions: {current_mode}")
+                            os.chmod(exe_path, 0o755)
+                            new_mode = oct(os.stat(exe_path).st_mode)[-3:]
+                            logger.info(f"[UPDATE-MACOS] Set execute permissions: {new_mode}")
+                        else:
+                            logger.error(f"[UPDATE-MACOS] Executable NOT FOUND: {exe_path}")
                     except Exception as e:
                         logger.error(f"Failed to extract update: {e}")
                         if backup_created and backup_dir.exists():
@@ -535,48 +651,166 @@ del "%~f0"
 
                     file_path.unlink()
 
+                    # 记录安装成功信息
+                    logger.info(f"[UPDATE-MACOS] Update installed successfully to {install_dir}")
+
+                    # 获取新版本信息
+                    from src import __version__
+                    logger.info(f"[UPDATE-MACOS] New version: {__version__}")
+
                     # Launch the new app
-                    exe_path = install_dir / "Contents" / "MacOS" / "Anime1"
-                    logger.info(f"Restarting application: {exe_path}")
+                    exe_path = install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME
+                    logger.info(f"[UPDATE-MACOS] Restarting application: {exe_path}")
+                    logger.info(f"[UPDATE-MACOS] Executable exists: {exe_path.exists()}")
+
+                    # 创建独立的更新日志文件（更容易追踪更新流程）
+                    update_log_path = Path.home() / "Library/Application Support/Anime1/update.log"
+                    logger.info(f"[UPDATE-MACOS] Update log path: {update_log_path}")
 
                     # Create a shell script to restart after exit
-                    temp_dir_restart = Path(tempfile.mkdtemp(prefix='anime1_restart_'))
-                    restart_script = temp_dir_restart / 'restart.sh'
-                    restart_content = f'''#!/bin/bash
+                    temp_dir_restart = Path(tempfile.mkdtemp(prefix=RESTART_SCRIPT_PREFIX))
+                    restart_script = temp_dir_restart / RESTART_SCRIPT_FILE
+                    # 标记文件：重启脚本启动后创建，父进程检查此文件确认脚本已获取控制权
+                    ready_marker = temp_dir_restart / "restart_ready"
+                    restart_content = f'''{SHELL_SHEBANG}
+# 标记文件：表示重启脚本已开始执行
+READY_FILE="{ready_marker}"
+
+# 记录重启日志
+UPDATE_LOG="$HOME/Library/Application Support/Anime1/update.log"
+echo "========================================" >> "$UPDATE_LOG"
+echo "[RESTART] $(date): Starting Anime1 restart process" >> "$UPDATE_LOG"
+echo "[RESTART] Executable path: {exe_path}" >> "$UPDATE_LOG"
+echo "[RESTART] App path: {install_dir}" >> "$UPDATE_LOG"
+
+# 标记脚本已开始执行（让父进程知道可以安全退出了）
+touch "$READY_FILE"
+echo "[RESTART] $(date): Restart script initialized, ready marker created" >> "$UPDATE_LOG"
+
+# 查找并终止所有 Anime1 进程 - 使用多种方法确保完全终止
+echo "[RESTART] $(date): Looking for running Anime1 processes..." >> "$UPDATE_LOG"
+
+# 方法1: 使用 pgrep -a 查找所有包含 Anime1 的进程（-a 确保返回所有匹配）
+PIDS=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
+if [ -n "$PIDS" ]; then
+    echo "[RESTART] $(date): Found Anime1 processes: $PIDS" >> "$UPDATE_LOG"
+    for pid in $PIDS; do
+        echo "[RESTART] $(date): Killing process $pid..." >> "$UPDATE_LOG"
+        kill -9 "$pid" 2>/dev/null || true
+    done
+fi
+
+# 方法2: 杀死 /Applications/Anime1.app 相关的进程
+APPPIDS=$(pgrep -a -f "/Applications/Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
+if [ -n "$APPPIDS" ]; then
+    echo "[RESTART] $(date): Found app bundle processes: $APPPIDS" >> "$UPDATE_LOG"
+    for pid in $APPPIDS; do
+        echo "[RESTART] $(date): Killing process $pid..." >> "$UPDATE_LOG"
+        kill -9 "$pid" 2>/dev/null || true
+    done
+fi
+
+# 等待进程完全退出
 sleep 2
+
+# 再次检查并强制终止
+REMAINING=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
+if [ -n "$REMAINING" ]; then
+    echo "[RESTART] $(date): WARNING - Some processes still running: $REMAINING" >> "$UPDATE_LOG"
+    # 最后一次尝试杀死
+    for pid in $REMAINING; do
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    sleep 1
+fi
+
+# 最终验证
+FINAL_CHECK=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
+if [ -z "$FINAL_CHECK" ]; then
+    echo "[RESTART] $(date): All Anime1 processes terminated" >> "$UPDATE_LOG"
+else
+    echo "[RESTART] $(date): WARNING - Some processes may still be running: $FINAL_CHECK" >> "$UPDATE_LOG"
+fi
+
+# 清理旧的 _MEIPASS 目录（PyInstaller 临时文件）
+# 这些目录可能包含旧的版本文件，需要在启动新版本前清理
+echo "[RESTART] $(date): Cleaning up old PyInstaller temp directories..." >> "$UPDATE_LOG"
+for meipass_dir in /tmp/_MEI*; do
+    if [ -d "$meipass_dir" ]; then
+        rm -rf "$meipass_dir" 2>/dev/null || true
+        echo "[RESTART] $(date): Cleaned up: $meipass_dir" >> "$UPDATE_LOG"
+    fi
+done
+
+echo "[RESTART] $(date): Launching updated app..." >> "$UPDATE_LOG"
 "{exe_path}" &
+APP_PID=$!
+echo "[RESTART] $(date): App launched with PID: $APP_PID" >> "$UPDATE_LOG"
+
+# 等待一小段时间确保应用启动
+sleep 3
+
+# 检查进程是否在运行
+if kill -0 $APP_PID 2>/dev/null; then
+    echo "[RESTART] $(date): SUCCESS - Anime1 restarted successfully (PID: $APP_PID)" >> "$UPDATE_LOG"
+else
+    echo "[RESTART] $(date): WARNING - Process may have exited (PID: $APP_PID)" >> "$UPDATE_LOG"
+fi
+
+echo "========================================" >> "$UPDATE_LOG"
 '''
                     restart_script.write_text(restart_content, encoding='utf-8')
                     os.chmod(restart_script, 0o755)
-                    subprocess.Popen(
-                        ['bash', str(restart_script)],
+                    logger.info(f"[UPDATE-MACOS] Created restart script: {restart_script}")
+
+                    proc = subprocess.Popen(
+                        [CMD_BASH, str(restart_script)],
                         start_new_session=True
                     )
+                    logger.info(f"[UPDATE-MACOS] Restart script started (PID: {proc.pid})")
+
+                    # 等待重启脚本创建标记文件，确认已获取控制权
+                    logger.info(f"[UPDATE-MACOS] Waiting for restart script to initialize...")
+                    for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
+                        if ready_marker.exists():
+                            logger.info(f"[UPDATE-MACOS] Restart script initialized successfully")
+                            break
+                        time.sleep(SUBPROCESS_WAIT_INTERVAL)
+                    else:
+                        logger.warning(f"[UPDATE-MACOS] Restart script may not have initialized (marker not found)")
 
                     return success_response(
                         message="更新完成，正在重启...",
                         data={
                             "success": True,
                             "restarting": True,
-                            "updater_type": "macos_zip"
+                            "updater_type": "macos_zip",
+                            "download_path": str(file_path)
                         }
                     )
                 elif is_dmg:
+                    logger.info("[UPDATE-MACOS-DMG] Starting DMG auto-update process")
+                    logger.info("[UPDATE-MACOS-DMG] Downloaded file: %s", file_path)
+                    logger.info("[UPDATE-MACOS-DMG] File size: %d bytes", downloaded_size)
 
                     # Get the path to the current app
                     app_path = Path(sys.executable).resolve()
+                    logger.info("[UPDATE-MACOS-DMG] Current executable: %s", app_path)
 
                     # For PyInstaller apps, the executable is inside the .app bundle
-                    if app_path.name == 'Anime1':
+                    if app_path.name == MACOS_APP_NAME:
                         app_bundle = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
+                        logger.info("[UPDATE-MACOS-DMG] Executable inside .app bundle")
                     else:
                         # Try to find the app bundle
-                        app_bundle = Path('/Applications/Anime1.app')
+                        app_bundle = Path(MACOS_APP_BUNDLE_PATH)
+                        logger.info("[UPDATE-MACOS-DMG] Trying standard path: %s", app_bundle)
                         if not app_bundle.exists():
-                            app_bundle = Path.home() / 'Applications/Anime1.app'
+                            app_bundle = Path.home() / MACOS_APP_BUNDLE_PATH.lstrip('/')
+                            logger.info("[UPDATE-MACOS-DMG] Trying home path: %s", app_bundle)
                         if not app_bundle.exists():
                             # Fallback: return manual install
-                            logger.warning("Could not find app bundle, falling back to manual install")
+                            logger.warning("[UPDATE-MACOS-DMG] Could not find app bundle, falling back to manual install")
                             return success_response(
                                 message="下载完成，请手动打开并安装 DMG 文件",
                                 data={
@@ -588,12 +822,16 @@ sleep 2
                                 }
                             )
 
+                    logger.info("[UPDATE-MACOS-DMG] App bundle found: %s", app_bundle)
+                    logger.info("[UPDATE-MACOS-DMG] App bundle exists: %s", app_bundle.exists())
+
                     # Create the updater script path
                     root = get_project_root()
                     updater_script = root / "src" / "scripts" / "macos_updater.py"
+                    logger.info("[UPDATE-MACOS-DMG] Updater script: %s", updater_script)
 
                     # Create a temp directory for the updater
-                    temp_dir = Path(tempfile.mkdtemp(prefix='anime1_update_'))
+                    temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
                     updater_script_copy = temp_dir / 'macos_updater.py'
 
                     # Copy the updater script to temp location
@@ -602,8 +840,8 @@ sleep 2
                     # Get the real app path
                     real_app_path = app_bundle.resolve()
 
-                    logger.info(f"App bundle: {real_app_path}")
-                    logger.info(f"Updater script: {updater_script_copy}")
+                    logger.info("[UPDATE-MACOS-DMG] App bundle: %s", real_app_path)
+                    logger.info("[UPDATE-MACOS-DMG] Updater script: %s", updater_script_copy)
 
                     # Create a shell script that runs the updater and then the new app
                     shell_script = temp_dir / 'run_updater.sh'
@@ -618,18 +856,27 @@ exit $RESULT
 
                     logger.info(f"[DOWNLOAD] Created shell updater script at {shell_script}")
 
+                    # Release the instance lock BEFORE launching updater
+                    # This prevents a race condition where updater tries to acquire the lock
+                    # while anime1 is still running
+                    logger.info("[DOWNLOAD] Releasing instance lock before launching updater...")
+                    from src.desktop import InstanceLock
+                    lock = InstanceLock()
+                    lock.force_release()
+                    logger.info("[DOWNLOAD] Instance lock released")
+
                     # Launch the updater detached and exit
                     logger.info(f"[DOWNLOAD] Launching updater with subprocess.Popen, platform={sys.platform}")
                     try:
-                        if sys.platform == 'win32':
+                        if sys.platform == SYSTEM_PLATFORM_WIN32:
                             proc = subprocess.Popen(
-                                ['bash', str(shell_script)],
+                                [CMD_BASH, str(shell_script)],
                                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                                 cwd=str(temp_dir)
                             )
                         else:
                             proc = subprocess.Popen(
-                                ['bash', str(shell_script)],
+                                [CMD_BASH, str(shell_script)],
                                 start_new_session=True,
                                 cwd=str(temp_dir)
                             )
@@ -638,11 +885,28 @@ exit $RESULT
                         logger.error(f"[DOWNLOAD] subprocess.Popen failed: {popen_err}")
                         raise
 
-                    logger.info("Launched macOS updater, exiting app...")
+                    # 等待 updater 进程开始执行
+                    logger.info("[DOWNLOAD] Waiting for updater to start...")
+                    updater_started = False
+                    for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
+                        try:
+                            result = subprocess.run(
+                                ['pgrep', '-f', 'macos_updater'],
+                                capture_output=True,
+                                text=True,
+                                timeout=1
+                            )
+                            if result.returncode == 0:
+                                updater_started = True
+                                logger.info(f"[DOWNLOAD] Updater is running")
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(SUBPROCESS_WAIT_INTERVAL)
+                    if not updater_started:
+                        logger.warning("[DOWNLOAD] Updater may not have started")
 
-                    # Exit the application so the updater can replace files
-                    # Use os._exit to bypass Flask's error handlers
-                    import os
+                    logger.info("Launched macOS updater, exiting app...")
                     return success_response(
                         message="正在安装更新...",
                         data={
@@ -659,10 +923,10 @@ exit $RESULT
 
                 # Get app path
                 exe_path = Path(sys.executable)
-                if exe_path.name == 'Anime1':
+                if exe_path.name == LINUX_APP_NAME:
                     install_dir = exe_path.parent  # /opt/anime1 directory
                 else:
-                    install_dir = Path('/opt/anime1')
+                    install_dir = Path(LINUX_INSTALL_DIR)
 
                 # Backup existing app
                 backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
@@ -704,12 +968,17 @@ exit $RESULT
                     start_new_session=True
                 )
 
+                # 等待新进程启动，避免过早退出
+                logger.info(f"Waiting for new app to start...")
+                time.sleep(SUBPROCESS_WAIT_TIMEOUT)
+
                 return success_response(
                     message="更新完成，正在重启...",
                     data={
                         "success": True,
                         "restarting": True,
-                        "updater_type": "linux_zip"
+                        "updater_type": "linux_zip",
+                        "download_path": str(file_path)
                     }
                 )
         else:
@@ -717,7 +986,7 @@ exit $RESULT
             return success_response(
                 message="下载完成",
                 data={
-                    "file_path": str(file_path),
+                    "download_path": str(file_path),
                     "file_size": downloaded_size,
                     "open_path": str(file_path)
                 }
@@ -743,15 +1012,21 @@ def run_updater():
     Returns:
         Success message (app will exit after this).
     """
+    logger.info("[UPDATER] ============================================")
     logger.info("[UPDATER] run_updater called")
-    logger.info(f"[UPDATER] Request URL: {request.url}")
-    logger.info(f"[UPDATER] Request JSON: {request.get_json(silent=True)}")
+    logger.info("[UPDATER] PID: %d", os.getpid())
+    logger.info("[UPDATER] Request URL: %s", request.url)
+    logger.info("[UPDATER] ============================================")
 
     try:
         data = request.get_json() or {}
         updater_path = data.get("updater_path")
 
-        logger.info(f"[UPDATER] updater_path={updater_path}")
+        logger.info("[UPDATER] updater_path=%s", updater_path)
+
+        if updater_path:
+            updater = Path(updater_path)
+            logger.info("[UPDATER] Updater exists: %s", updater.exists())
 
         if not updater_path:
             return error_response("updater_path is required", 400)
@@ -764,11 +1039,20 @@ def run_updater():
 
         logger.info(f"[UPDATER] Running updater: {updater}, platform={sys.platform}")
 
+        # Release the instance lock BEFORE launching updater
+        # This prevents a race condition where updater tries to acquire the lock
+        # while anime1 is still running
+        logger.info("[UPDATER] Releasing instance lock before launching updater...")
+        from src.desktop import InstanceLock
+        lock = InstanceLock()
+        lock.force_release()
+        logger.info("[UPDATER] Instance lock released")
+
         # Run the updater and exit
         try:
-            if sys.platform == 'win32':
+            if sys.platform == SYSTEM_PLATFORM_WIN32:
                 proc = subprocess.Popen(
-                    ['cmd', '/c', str(updater)],
+                    [CMD_CMD, CMD_ARG_C, str(updater)],
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
                 )
             else:
@@ -783,7 +1067,13 @@ def run_updater():
 
         # Exit the application
         logger.info("Exiting application for update...")
+
+        # Return success response and exit
+        # Note: In tests, sys.exit is mocked so the test can continue
+        # In real usage, sys.exit(0) will terminate the process after the response is sent
+        response = success_response(data={"success": True}, message="启动更新程序")
         sys.exit(0)
+        return response  # Unreachable but needed for type checking
 
     except Exception as e:
         logger.error(f"Error running updater: {e}")
@@ -800,28 +1090,110 @@ def exit_app():
     Returns:
         Success response (app will exit after this).
     """
-    import os
-
+    logger.info("[EXIT] ============================================")
     logger.info("[EXIT] exit_app called, shutting down...")
+    logger.info("[EXIT] PID: %d", os.getpid())
+    logger.info("[EXIT] ============================================")
+
+    # Get parent PID from environment (set by start_flask_server_subprocess)
+    parent_pid = os.environ.get('PARENT_PID')
+    if parent_pid:
+        try:
+            parent_pid = int(parent_pid)
+            logger.info("[EXIT] Parent PID: %d", parent_pid)
+
+            # Try to terminate parent process gracefully first
+            try:
+                os.kill(parent_pid, signal.SIGTERM)
+                logger.info("[EXIT] Sent SIGTERM to parent process")
+                # Give the parent process a moment to exit gracefully
+                time.sleep(1)
+            except ProcessLookupError:
+                logger.info("[EXIT] Parent process already exited")
+            except PermissionError:
+                logger.warning("[EXIT] Cannot send SIGTERM to parent (permission denied)")
+
+            # Check if parent is still running, if so, force kill
+            try:
+                os.kill(parent_pid, 0)  # This checks if process exists
+                logger.info("[EXIT] Parent still running, sending SIGKILL...")
+                os.kill(parent_pid, signal.SIGKILL)
+                logger.info("[EXIT] Sent SIGKILL to parent process")
+            except ProcessLookupError:
+                logger.info("[EXIT] Parent process exited after SIGTERM")
+            except PermissionError:
+                logger.warning("[EXIT] Cannot send SIGKILL to parent (permission denied)")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"[EXIT] Invalid parent PID: {e}")
+
+    # Also kill any child processes
+    try:
+        import psutil
+        current_process = psutil.Process()
+        children = current_process.children(recursive=True)
+        for child in children:
+            try:
+                logger.info("[EXIT] Killing child process: %d", child.pid)
+                child.kill()
+            except Exception as e:
+                logger.warning(f"[EXIT] Failed to kill child process {child.pid}: {e}")
+        if children:
+            psutil.wait_procs(children, timeout=2)
+            logger.info("[EXIT] All child processes terminated")
+    except ImportError:
+        logger.debug("[EXIT] psutil not available, skipping child process cleanup")
+
+    # Calculate lock file path directly (avoiding imports that may fail in PyInstaller)
+    try:
+        data_dir = Path.home() / "Library" / "Application Support" / "Anime1"
+        lock_file_path = data_dir / "instance.lock"
+        logger.info("[EXIT] Lock file path: %s", lock_file_path)
+        logger.info("[EXIT] Lock file exists: %s", lock_file_path.exists())
+
+        if lock_file_path.exists():
+            lock_file_path.unlink()
+            logger.info("[EXIT] Deleted lock file")
+        else:
+            logger.info("[EXIT] Lock file doesn't exist, no need to delete")
+    except Exception as lock_error:
+        logger.warning(f"[EXIT] Could not handle lock file: {lock_error}")
 
     try:
         # Shutdown services
         from src.app import shutdown_services
+        logger.info("[EXIT] Shutting down services...")
         shutdown_services()
-
-        # Release the instance lock
-        from src.desktop import InstanceLock
-        lock = InstanceLock()
-        if lock._acquired:
-            lock.release()
-
-        # Exit immediately without calling Flask's error handlers
-        logger.info("[EXIT] Exiting application...")
-        os._exit(0)
-
+        logger.info("[EXIT] Services shutdown complete")
     except Exception as e:
-        logger.error(f"Error during exit: {e}")
-        os._exit(1)
+        logger.warning(f"[EXIT] Error shutting down services: {e}")
+
+    # 等待重启脚本执行，避免过早退出导致重启脚本被终止
+    # 检查是否有 anime1 restart 相关的进程在运行
+    logger.info("[EXIT] Checking for restart script...")
+    for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', 'anime1.*restart'],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            if result.returncode != 0:
+                # 没有找到重启进程，可以安全退出
+                logger.info("[EXIT] No restart script detected, safe to exit")
+                break
+            logger.info("[EXIT] Restart script still running, waiting...")
+            time.sleep(SUBPROCESS_WAIT_INTERVAL)
+        except Exception:
+            break
+    else:
+        logger.warning("[EXIT] Restart script may still be running, proceeding with exit")
+
+    # Exit immediately without calling Flask's error handlers
+    logger.info("[EXIT] ============================================")
+    logger.info("[EXIT] Exiting application (PID: %d)...", os.getpid())
+    logger.info("[EXIT] ============================================")
+    os._exit(0)
 
 
 @settings_bp.route("/open_path", methods=["POST"])
@@ -848,7 +1220,8 @@ def open_path():
 
         path_str = str(path)
 
-        if platform.system() == "Windows":
+        system = platform.system().lower()
+        if system == PLATFORM_WINDOWS:
             # Use subprocess to avoid encoding issues
             subprocess.run(
                 ["explorer.exe", "/select,", path_str],
@@ -856,7 +1229,7 @@ def open_path():
                 shell=True,
                 capture_output=True
             )
-        elif platform.system() == "Darwin":  # macOS
+        elif system == PLATFORM_DARWIN:  # macOS (Darwin)
             subprocess.run(
                 ["open", "-R", path_str],  # -R reveals in Finder
                 check=True,
@@ -880,10 +1253,11 @@ def open_path():
         logger.warning(f"Failed to open path via subprocess: {e}")
         # Fallback to os.system
         try:
-            if platform.system() == "Windows":
+            system = platform.system().lower()
+            if system == PLATFORM_WINDOWS:
                 os.startfile(str(path))
             else:
-                os.system(f'xdg-open "{path}"' if platform.system() != "Darwin" else f'open "{path}"')
+                os.system(f'xdg-open "{path}"' if system != PLATFORM_DARWIN else f'open "{path}"')
             return success_response(message=f"已打开: {path_str}")
         except Exception as fallback_error:
             logger.error(f"Fallback also failed: {fallback_error}")
