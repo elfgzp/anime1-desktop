@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-01-20
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Security
+
+
 ### 计划中
 - 待添加的功能和修复
 
