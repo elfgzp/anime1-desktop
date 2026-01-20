@@ -224,17 +224,36 @@ const initPlayer = async () => {
   })
 
   // 视频加载完成（可以流畅播放），隐藏封面和加载状态
-  // 使用 canplaythrough 而不是 canplay，因为 canplay 会在每个 variant stream 时触发多次
-  player.on('canplaythrough', () => {
+  // 使用 loadedmetadata，因为它在 Safari 上更可靠
+  const onVideoReady = (event) => {
+    console.log('[VideoPlayer] 收到事件:', event.type, 'isInitialLoading:', isInitialLoading.value)
+    if (!isInitialLoading.value) return
     videoLoaded.value = true
-    isInitialLoading.value = false  // 关闭初始加载状态
+    isInitialLoading.value = false
+    console.log('[VideoPlayer] 视频加载完成, videoLoaded:', videoLoaded.value)
     // 隐藏 video.js 自带的 poster，确保封面完全隐藏
     const el = player.el?.() || player.el
     const posterEl = el?.querySelector?.('.vjs-poster')
     if (posterEl) {
       posterEl.style.display = 'none'
     }
-    console.log('[VideoPlayer] 视频加载完成 (canplaythrough), videoLoaded:', videoLoaded.value)
+  }
+  player.on('loadedmetadata', onVideoReady)
+  player.on('canplay', onVideoReady)
+  player.on('canplaythrough', onVideoReady)
+
+  // 监听所有可能的事件来调试
+  player.on('error', (e) => {
+    console.error('[VideoPlayer] 播放错误:', player.error())
+    console.error('[VideoPlayer] 错误详情:', player.error()?.message, player.error()?.code)
+  })
+
+  player.on('loadeddata', () => {
+    console.log('[VideoPlayer] loadeddata 事件触发')
+  })
+
+  player.on('play', () => {
+    console.log('[VideoPlayer] play 事件触发')
   })
 
   // 实际开始播放时，隐藏播放按钮
