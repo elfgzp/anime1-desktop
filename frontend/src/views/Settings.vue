@@ -309,10 +309,19 @@ const handleDownloadUpdate = async () => {
           // macOS ZIP: 后端已启动重启脚本，调用 exit API 关闭当前应用
           console.log('[UPDATE-FRONTEND] macos_zip 模式，调用 settingsAPI.exitApp()...')
           await settingsAPI.exitApp()
-        } else if (window.ipcRenderer && response.data.updater_path) {
+        } else if (updaterType === 'windows') {
           // Windows: 调用后端运行 updater 并退出应用
-          console.log('[UPDATE-FRONTEND] Windows 模式，调用 settingsAPI.runUpdater()...')
-          await settingsAPI.runUpdater(response.data.updater_path)
+          console.log('[UPDATE-FRONTEND] Windows 模式，调用 runUpdater 然后退出...')
+          const updaterPath = response.data.updater_path || response.data.data?.updater_path
+          if (updaterPath) {
+            await settingsAPI.runUpdater(updaterPath)
+          }
+          // 退出应用（让后端启动的更新器继续工作）
+          if (window.pywebview && window.pywebview.api) {
+            window.pywebview.api.exit()
+          } else {
+            await settingsAPI.exitApp()
+          }
         } else {
           // Web 模式：刷新页面
           console.log('[UPDATE-FRONTEND] Web 模式，刷新页面...')
