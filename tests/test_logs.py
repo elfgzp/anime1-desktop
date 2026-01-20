@@ -89,6 +89,7 @@ class TestLogOpen:
     def test_open_logs_folder_windows(self):
         """Test Windows log folder opening."""
         from src.routes.settings import open_logs_folder
+        from flask import Flask
 
         with tempfile.TemporaryDirectory() as tmpdir:
             expected_log_dir = Path(tmpdir) / "Anime1" / "logs"
@@ -98,7 +99,10 @@ class TestLogOpen:
                     with patch('subprocess.run') as mock_run:
                         mock_run.return_value = MagicMock(returncode=0)
 
-                        result = open_logs_folder()
+                        # Create Flask app context
+                        app = Flask(__name__)
+                        with app.app_context():
+                            result = open_logs_folder()
 
                         # Verify explorer.exe was called
                         call_args = mock_run.call_args

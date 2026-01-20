@@ -396,7 +396,7 @@ class TestPerformanceUtils:
                                '../frontend/src/utils/performance.js')
 
         if os.path.exists(js_path):
-            with open(js_path, 'r') as f:
+            with open(js_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
             # 检查关键函数存在
