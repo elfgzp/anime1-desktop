@@ -1,0 +1,29 @@
+name: test-windows-update
+description: Test Windows auto-update flow (v0.0.1 -> current build)
+instructions: |
+  This skill tests the complete Windows auto-update flow:
+  1. Stop all Anime1 processes (including dev server on port 5172)
+  2. Build old version v0.0.1 and install to local test directory
+  3. Clear logs in $APPDATA\Anime1\
+  4. Start app and wait for API (poll 127.0.0.1:5172)
+  5. Verify current version is 0.0.1
+  6. Check for updates from GitHub
+  7. Trigger download and auto-install via API
+  8. Wait for auto-restart via PowerShell updater (20-30 seconds)
+  9. Verify new version is running
+  10. Display update log for debugging
+
+  Requirements:
+  - Python 3.8+
+  - Build must exist in release/anime1-windows-*.zip
+  - Network access to GitHub releases
+  - Test version in script: OLD_VERSION="0.0.1"
+
+  The skill will fail if:
+  - Update download fails
+  - updater_type is not "windows" (indicates platform detection issue)
+  - Auto-restart doesn't complete properly
+  - New version doesn't start properly
+
+  Run with: python test_update_flow.py
+  Or: python scripts/test-windows-update.py

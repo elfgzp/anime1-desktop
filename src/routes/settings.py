@@ -489,35 +489,135 @@ def download_update():
             install_dir = get_install_dir()
             logger.info(f"[DOWNLOAD] install_dir={install_dir}")
 
-            if platform.system() == PLATFORM_WINDOWS:
+            if platform.system().lower() == PLATFORM_WINDOWS:
                 # Windows: Create a batch file that handles the update after app exits
                 # This is necessary because Windows doesn't allow replacing running files
+                logger.info(f"[DOWNLOAD-WINDOWS] Starting Windows update flow")
 
                 # Create a temp directory for the updater
                 temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
+                logger.info(f"[DOWNLOAD-WINDOWS] Created temp dir: {temp_dir}")
+
                 updater_batch = temp_dir / (UPDATER_BATCH_NAME + BAT_SCRIPT_EXT)
                 zip_copy = temp_dir / file_path.name
+                logger.info(f"[DOWNLOAD-WINDOWS] zip_copy: {zip_copy}")
 
                 # Copy the zip to temp location
                 shutil.copy2(file_path, zip_copy)
+                logger.info(f"[DOWNLOAD-WINDOWS] Copied zip to temp location")
 
                 # Get the executable path
                 exe_path = Path(sys.executable)
+                logger.info(f"[DOWNLOAD-WINDOWS] exe_path: {exe_path}")
 
-                # Create batch file content
+                # Create PowerShell script for update (Windows has built-in PowerShell)
+                logger.info(f"[DOWNLOAD-WINDOWS] Creating PowerShell update script...")
+                logger.info(f"[DOWNLOAD-WINDOWS] - zip_copy: {zip_copy}")
+                logger.info(f"[DOWNLOAD-WINDOWS] - install_dir: {install_dir}")
+                logger.info(f"[DOWNLOAD-WINDOWS] - exe_path: {exe_path}")
+
+                # Use PowerShell's Expand-Archive (built-in since PowerShell 5.0 / Windows 10)
+                ps_script = f'''$ErrorActionPreference = 'Stop'
+Write-Host "[UPDATER] Anime1 Update Starting"
+Write-Host "[UPDATER] Source: {zip_copy}"
+Write-Host "[UPDATER] Target: {install_dir}"
+
+# Wait for parent process to exit (allow more time)
+Write-Host "[UPDATER] Waiting for parent process to exit..."
+Start-Sleep -Seconds 5
+
+# Keep waiting until the exe is no longer locked
+Write-Host "[UPDATER] Checking if exe is unlocked..."
+$exePath = "{exe_path}"
+$maxWait = 30
+$waited = 0
+while (Test-Path $exePath) {{
+    try {{
+        $lock = [System.IO.File]::Open($exePath, 'Open', 'ReadWrite', 'None')
+        $lock.Close()
+        break
+    }} catch {{
+        Start-Sleep -Seconds 1
+        $waited += 1
+        if ($waited -ge $maxWait) {{
+            Write-Host "[UPDATER] WARNING: Exe still locked after {0} seconds, continuing anyway..." -f $maxWait
+            break
+        }}
+    }}
+}}
+
+Write-Host "[UPDATER] Extracting update..."
+$tempDir = "{temp_dir}"
+$zipCopy = "{zip_copy}"
+$installDir = "{install_dir}"
+
+# Extract using PowerShell's Expand-Archive (no external Python needed)
+try {{
+    Expand-Archive -Path $zipCopy -DestinationPath $installDir -Force -ErrorAction Stop
+    Write-Host "[UPDATER] Extraction complete"
+}} catch {{
+    Write-Host "[UPDATER] ERROR: $_"
+    Start-Sleep -Seconds 5
+    exit 1
+}}
+
+# Clean up - use rename then delete to handle locked files
+try {{
+    # Rename zip first (often works even when delete fails)
+    $orphanedZip = "$env:TEMP\orphaned_update_$([guid]::NewGuid().ToString('N').Substring(0,8)).zip"
+    try {{
+        Move-Item -Path $zipCopy -Destination $orphanedZip -Force -ErrorAction Stop
+        Write-Host "[UPDATER] Moved zip to temp"
+    }} catch {{
+        Write-Host "[UPDATER] Could not move zip, trying delete..."
+        Remove-Item $zipCopy -Force -ErrorAction SilentlyContinue
+    }}
+    Write-Host "[UPDATER] Cleanup complete"
+}} catch {{}}
+
+Write-Host "[UPDATER] Launching updated app..."
+if (Test-Path $exePath) {{
+    Start-Process -FilePath $exePath -WindowStyle Normal
+    Write-Host "[UPDATER] Update complete"
+}} else {{
+    Write-Host "[UPDATER] ERROR: Executable not found: $exePath"
+}}
+
+# Self-delete after a delay
+Start-Sleep -Seconds 2
+'''
+                ps_script_path = temp_dir / "update.ps1"
+                ps_script_path.write_text(ps_script, encoding='utf-8')
+                logger.info(f"[DOWNLOAD-WINDOWS] Created PowerShell script: {ps_script_path}")
+
+                # Create batch file that launches PowerShell script
                 batch_content = f'''@echo off
-timeout /t 3 /nobreak >nul
-echo 正在安装更新...
-"{sys.executable}" -c "import zipfile; import shutil; import sys; zf=zipfile.ZipFile(r'{zip_copy}'); zf.extractall(r'{install_dir}'); import os; os.remove(r'{zip_copy}'); os.rmdir(r'{temp_dir}')"
-if exist r"{exe_path}" start "" "{exe_path}"
+echo [UPDATER] Anime1 Update Starting
+echo [UPDATER] Launching PowerShell for extraction...
+powershell -ExecutionPolicy Bypass -File "{ps_script_path}"
 del "%~f0"
 '''
                 updater_batch.write_text(batch_content, encoding='utf-8')
 
-                logger.info(f"Created updater batch at {updater_batch}")
+                logger.info(f"[DOWNLOAD] Created updater batch at {updater_batch}")
 
-                # Clean up the original download
-                file_path.unlink()
+                # Clean up the original download with error handling
+                # The file might be locked by browser download or antivirus
+                try:
+                    if file_path.exists():
+                        file_path.unlink(missing_ok=True)
+                        logger.info(f"[DOWNLOAD] Deleted original download file: {file_path}")
+                except PermissionError as pe:
+                    logger.warning(f"[DOWNLOAD] Could not delete download file (locked): {file_path}. Will be cleaned up on next startup.")
+                    # Rename instead of delete - some programs hold locks on the original file
+                    try:
+                        orphaned_path = file_path.parent / f"orphaned_update_{uuid.uuid4().hex[:8]}.zip"
+                        file_path.rename(orphaned_path)
+                        logger.info(f"[DOWNLOAD] Renamed to orphaned file: {orphaned_path}")
+                    except Exception as rename_err:
+                        logger.warning(f"[DOWNLOAD] Could not rename file either: {rename_err}")
+                except Exception as delete_err:
+                    logger.warning(f"[DOWNLOAD] Failed to clean up download file: {delete_err}")
 
                 # Return info that app needs to restart
                 return success_response(
@@ -525,6 +625,7 @@ del "%~f0"
                     data={
                         "success": True,
                         "restarting": True,
+                        "updater_type": "windows",
                         "updater_path": str(updater_batch)
                     }
                 )
@@ -1102,27 +1203,53 @@ def exit_app():
             parent_pid = int(parent_pid)
             logger.info("[EXIT] Parent PID: %d", parent_pid)
 
-            # Try to terminate parent process gracefully first
-            try:
-                os.kill(parent_pid, signal.SIGTERM)
-                logger.info("[EXIT] Sent SIGTERM to parent process")
-                # Give the parent process a moment to exit gracefully
-                time.sleep(1)
-            except ProcessLookupError:
-                logger.info("[EXIT] Parent process already exited")
-            except PermissionError:
-                logger.warning("[EXIT] Cannot send SIGTERM to parent (permission denied)")
+            # Use multiple methods to detect Windows platform
+            # sys.platform might not work correctly in some environments (e.g., MSYS2)
+            is_windows = (
+                sys.platform == SYSTEM_PLATFORM_WIN32 or
+                os.name == 'nt' or
+                platform.system().lower() == 'windows'
+            )
 
-            # Check if parent is still running, if so, force kill
-            try:
-                os.kill(parent_pid, 0)  # This checks if process exists
-                logger.info("[EXIT] Parent still running, sending SIGKILL...")
-                os.kill(parent_pid, signal.SIGKILL)
-                logger.info("[EXIT] Sent SIGKILL to parent process")
-            except ProcessLookupError:
-                logger.info("[EXIT] Parent process exited after SIGTERM")
-            except PermissionError:
-                logger.warning("[EXIT] Cannot send SIGKILL to parent (permission denied)")
+            if is_windows:
+                # Windows: Use taskkill to terminate the parent process
+                logger.info("[EXIT] Windows platform detected (sys.platform=%s, os.name=%s, platform.system()=%s), using taskkill...",
+                           sys.platform, os.name, platform.system())
+                try:
+                    result = subprocess.run(
+                        ['taskkill', '/F', '/PID', str(parent_pid)],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        logger.info("[EXIT] Sent taskkill to parent process")
+                    else:
+                        logger.warning(f"[EXIT] taskkill failed: {result.stderr}")
+                except Exception as e:
+                    logger.warning(f"[EXIT] Failed to kill parent process: {e}")
+            else:
+                # Unix: Use signals
+                # Try to terminate parent process gracefully first
+                try:
+                    os.kill(parent_pid, signal.SIGTERM)
+                    logger.info("[EXIT] Sent SIGTERM to parent process")
+                    # Give the parent process a moment to exit gracefully
+                    time.sleep(1)
+                except ProcessLookupError:
+                    logger.info("[EXIT] Parent process already exited")
+                except PermissionError:
+                    logger.warning("[EXIT] Cannot send SIGTERM to parent (permission denied)")
+
+                # Check if parent is still running, if so, force kill
+                try:
+                    os.kill(parent_pid, 0)  # This checks if process exists
+                    logger.info("[EXIT] Parent still running, sending SIGKILL...")
+                    os.kill(parent_pid, signal.SIGKILL)
+                    logger.info("[EXIT] Sent SIGKILL to parent process")
+                except ProcessLookupError:
+                    logger.info("[EXIT] Parent process exited after SIGTERM")
+                except PermissionError:
+                    logger.warning("[EXIT] Cannot send SIGKILL to parent (permission denied)")
         except (ValueError, TypeError) as e:
             logger.warning(f"[EXIT] Invalid parent PID: {e}")
 
@@ -1145,7 +1272,12 @@ def exit_app():
 
     # Calculate lock file path directly (avoiding imports that may fail in PyInstaller)
     try:
-        data_dir = Path.home() / "Library" / "Application Support" / "Anime1"
+        if sys.platform == SYSTEM_PLATFORM_WIN32:
+            # Windows: Use APPDATA
+            data_dir = Path.home() / "AppData" / "Roaming" / "Anime1"
+        else:
+            # Unix/Mac: Use Library/Application Support
+            data_dir = Path.home() / "Library" / "Application Support" / "Anime1"
         lock_file_path = data_dir / "instance.lock"
         logger.info("[EXIT] Lock file path: %s", lock_file_path)
         logger.info("[EXIT] Lock file exists: %s", lock_file_path.exists())
@@ -1172,13 +1304,30 @@ def exit_app():
     logger.info("[EXIT] Checking for restart script...")
     for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
         try:
-            result = subprocess.run(
-                ['pgrep', '-f', 'anime1.*restart'],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            if result.returncode != 0:
+            restart_running = False
+            if sys.platform == SYSTEM_PLATFORM_WIN32:
+                # Windows: Use tasklist to check for restart processes
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'imagename eq cmd.exe'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                # Check if any cmd.exe is running with "anime1" in the command line
+                if 'anime1' in result.stdout.lower():
+                    restart_running = True
+            else:
+                # Unix: Use pgrep
+                result = subprocess.run(
+                    ['pgrep', '-f', 'anime1.*restart'],
+                    capture_output=True,
+                    text=True,
+                    timeout=1
+                )
+                if result.returncode == 0:
+                    restart_running = True
+
+            if not restart_running:
                 # 没有找到重启进程，可以安全退出
                 logger.info("[EXIT] No restart script detected, safe to exit")
                 break

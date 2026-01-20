@@ -8,11 +8,12 @@ import threading
 import webview
 import logging
 import time
-import fcntl
 import tempfile
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
+from src.utils.lock import FileLock, is_file_locked
 from src.constants.app import (
     APP_NAME,
     PLATFORM_DARWIN,
@@ -102,14 +103,6 @@ def _get_lock_data() -> dict:
     return {}
 
 
-def _write_lock_data(pid: int, timestamp: float):
-    """Write lock file with PID, timestamp, and executable path."""
-    lock_path = get_lock_file_path()
-    exe_path = sys.executable if IS_FROZEN else os.path.abspath(__file__)
-    with open(lock_path, 'w') as f:
-        f.write(f"{pid}\n{timestamp}\n{exe_path}")
-
-
 def _is_process_running(pid: int) -> bool:
     """Check if a process with given PID is running."""
     try:
@@ -134,8 +127,7 @@ class InstanceLock:
     """Single instance lock using file locking with timestamp-based timeout."""
 
     def __init__(self):
-        self.lock_file = None
-        self.lock_fd = None
+        self._file_lock: Optional[FileLock] = None
         self._acquired = False
         self._update_thread = None
         self._stop_update = threading.Event()
@@ -191,14 +183,10 @@ class InstanceLock:
         """Periodically update the lock timestamp to prevent timeout."""
         while not self._stop_update.wait(LOCK_UPDATE_INTERVAL):
             try:
-                if self._acquired and self.lock_fd:
+                if self._acquired and self._file_lock:
                     current_time = time.time()
-                    self.lock_fd.seek(0)
-                    self.lock_fd.truncate()
-                    # Write PID, timestamp, and exe path
-                    exe_path = sys.executable if IS_FROZEN else os.path.abspath(__file__)
-                    self.lock_fd.write(f"{os.getpid()}\n{current_time}\n{exe_path}")
-                    self.lock_fd.flush()
+                    # Write timestamp and PID using FileLock's method
+                    self._file_lock.write_timestamp(current_time, pid=os.getpid())
                     logger.debug(f"[PID:{os.getpid()}] Lock timestamp updated")
             except Exception:
                 break
@@ -211,32 +199,22 @@ class InstanceLock:
             logger.debug(f"[PID:{current_pid}] Cleaning up stale locks...")
             self._cleanup_stale_lock()
 
-            self.lock_file = get_lock_file_path()
-            logger.debug(f"[PID:{current_pid}] Opening lock file: {self.lock_file}")
+            lock_file_path = str(get_lock_file_path())
+            logger.debug(f"[PID:{current_pid}] Creating FileLock: {lock_file_path}")
 
-            self.lock_fd = open(self.lock_file, 'w')
-            logger.debug(f"[PID:{current_pid}] Lock file opened, fd={self.lock_fd.fileno()}")
+            self._file_lock = FileLock(lock_file_path)
+            acquired = self._file_lock.acquire(blocking=False)
 
-            if sys.platform != PLATFORM_WIN32:
-                # Unix-like systems: use fcntl.flock
-                logger.debug(f"[PID:{current_pid}] Attempting fcntl.flock exclusive non-blocking...")
-                fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                logger.debug(f"[PID:{current_pid}] fcntl.flock acquired successfully")
-            else:
-                # Windows: use msvcrt.locking (exclusive lock on first byte)
-                try:
-                    import msvcrt
-                    # Lock the file - raises IOError if already locked
-                    msvcrt.locking(self.lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
-                except (IOError, OSError) as e:
-                    logger.warning(f"[PID:{current_pid}] Failed to acquire lock (Windows): {e}")
-                    # File is already locked - another instance is running
-                    self._cleanup()
-                    return False
+            if not acquired:
+                logger.warning(f"[PID:{current_pid}] Failed to acquire file lock - another instance may be running")
+                self._file_lock = None
+                return False
 
-            # Write our PID and timestamp
+            logger.debug(f"[PID:{current_pid}] FileLock acquired successfully")
+
+            # Write our PID and timestamp using FileLock's method (keeps file handle open)
             current_time = time.time()
-            _write_lock_data(current_pid, current_time)
+            self._file_lock.write_timestamp(current_time, pid=current_pid)
 
             self._acquired = True
             logger.info(f"[PID:{current_pid}] Instance lock acquired successfully")
@@ -264,12 +242,10 @@ class InstanceLock:
             if self._update_thread and self._update_thread.is_alive():
                 self._update_thread.join(timeout=2)
 
-            # Release file lock (fcntl on Unix, no-op on Windows)
-            if sys.platform != PLATFORM_WIN32 and self.lock_fd:
-                try:
-                    fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
+            # Release file lock via FileLock
+            if self._file_lock:
+                self._file_lock.release()
+                self._file_lock = None
 
             self._cleanup()
         except Exception:
@@ -289,11 +265,9 @@ class InstanceLock:
                 self._update_thread.join(timeout=1)
 
             # Release file lock
-            if sys.platform != PLATFORM_WIN32 and self.lock_fd:
-                try:
-                    fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
+            if self._file_lock:
+                self._file_lock.release()
+                self._file_lock = None
 
             self._cleanup()
         except Exception:
@@ -303,9 +277,6 @@ class InstanceLock:
     def _cleanup(self):
         """Clean up lock file resources and delete the lock file."""
         try:
-            if self.lock_fd:
-                self.lock_fd.close()
-                self.lock_fd = None
             # Delete the lock file to allow new instance to start
             lock_path = get_lock_file_path()
             if lock_path.exists():
@@ -761,9 +732,11 @@ def main():
     logger.debug(f"[PID:{os.getpid()}] sys.argv = {sys.argv}")
     logger.debug(f"[PID:{os.getpid()}] IS_FROZEN = {IS_FROZEN}")
 
-    # Subprocess mode: skip lock acquisition (lock is held by parent process)
-    is_subprocess = IS_FROZEN and len(sys.argv) > 1 and ARG_SUBPROCESS in sys.argv
-    logger.debug(f"[PID:{os.getpid()}] is_subprocess = {is_subprocess}")
+    # Check if we're running as a subprocess (Flask server, updater, etc.)
+    # Subprocesses should NOT attempt to acquire the instance lock
+    # Also skip lock if running in Flask-only mode
+    is_subprocess = len(sys.argv) > 1 and (ARG_SUBPROCESS in sys.argv or ARG_FLASk_ONLY in sys.argv)
+    logger.debug(f"[PID:{os.getpid()}] is_subprocess = {is_subprocess} (skipping lock acquisition)")
 
     logger.info(f"[STARTUP] t00={time_module.time() - start_time:.2f}s - Before lock acquisition")
 

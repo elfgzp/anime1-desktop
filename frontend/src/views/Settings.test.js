@@ -252,8 +252,12 @@ describe('Settings View - Update Functionality', () => {
             const updaterType = response.data.updater_type
             if (updaterType === 'macos_dmg') {
               await settingsAPI.exitApp()
-            } else if (window.ipcRenderer && response.data.updater_path) {
-              await settingsAPI.runUpdater(response.data.updater_path)
+            } else if (updaterType === 'windows') {
+              const updaterPath = response.data.updater_path
+              if (updaterPath) {
+                await settingsAPI.runUpdater(updaterPath)
+              }
+              await settingsAPI.exitApp()
             }
           }
         } catch (error) {
@@ -288,7 +292,7 @@ describe('Settings View - Update Functionality', () => {
       })
       settingsAPI.exitApp.mockResolvedValue({})
 
-      // No ipcRenderer for webview mode
+      // No ipcRenderer or pywebview for webview mode
       global.window = {}
 
       const handleDownloadUpdate = async () => {
@@ -301,7 +305,7 @@ describe('Settings View - Update Functionality', () => {
             const updaterType = response.data.updater_type
             if (updaterType === 'macos_dmg') {
               await settingsAPI.exitApp()
-            } else if (window.ipcRenderer && response.data.updater_path) {
+            } else if (updaterType === 'windows' && (window.ipcRenderer || window.pywebview) && response.data.updater_path) {
               await settingsAPI.runUpdater(response.data.updater_path)
             }
           }
@@ -334,7 +338,7 @@ describe('Settings View - Update Functionality', () => {
         }
       })
 
-      // No ipcRenderer for web mode
+      // No ipcRenderer or pywebview for web mode
       global.window = {}
 
       const originalLocation = window.location
@@ -348,7 +352,10 @@ describe('Settings View - Update Functionality', () => {
           const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, true)
           if (response.data.success && response.data.restarting) {
             ElMessage.success(response.data.message || '更新完成，正在重启...')
-            if (!window.ipcRenderer) {
+            const updaterType = response.data.updater_type
+            if (updaterType === 'windows' && (window.ipcRenderer || window.pywebview) && response.data.updater_path) {
+              await settingsAPI.runUpdater(response.data.updater_path)
+            } else {
               setTimeout(() => window.location.reload(), 2000)
             }
           }
