@@ -109,9 +109,9 @@ class CoverFinder:
         """Search Bangumi for cover.
 
         Search strategy:
-        1. First try with simplified Chinese (Bangumi uses simplified Chinese)
-        2. Try full title search (original)
-        3. Try core keyword search
+        1. Try both traditional and simplified Chinese, merge results
+        2. Score all results using original title, pick best match
+        3. Try core keyword search if no good match
         4. Try Wikipedia search as fallback
 
         Args:
@@ -121,29 +121,155 @@ class CoverFinder:
         Returns:
             Dict with cover_url, score, and optionally subject_url, or None.
         """
-        # Strategy 1: Try with simplified Chinese first (Bangumi uses simplified Chinese)
+        # Collect all results from different search variants
+        all_results = []
+
+        # Strategy 1: Try both traditional and simplified Chinese searches
+        # and merge results for best match selection
         title_simplified = self._to_simplified_chinese(title)
+
+        # Search with original (traditional) title
+        original_results = self._search_with_keyword_multi(title, include_details)
+        all_results.extend(original_results)
+
+        # Search with simplified title if different
         if title_simplified and title_simplified != title:
-            result = self._search_with_keyword(title_simplified, include_details)
-            if result:
-                return result
+            simplified_results = self._search_with_keyword_multi(title_simplified, include_details,
+                                                                  original_title=title)
+            all_results.extend(simplified_results)
 
-        # Strategy 2: Try full title
-        result = self._search_with_keyword(title, include_details)
-        if result:
-            return result
+        # Find best result from all merged results
+        if all_results:
+            best_result = self._pick_best_result(title, all_results)
+            if best_result:
+                return best_result
 
-        # Strategy 3: Try core keywords if full title failed
+        # Strategy 2: Try core keywords if full title failed
         core_keywords = self._extract_core_keywords(title)
         if core_keywords and core_keywords != title:
-            result = self._search_with_keyword(core_keywords, include_details)
-            if result:
-                return result
+            core_results = self._search_with_keyword_multi(core_keywords, include_details,
+                                                           original_title=title)
+            if core_results:
+                best_result = self._pick_best_result(title, core_results)
+                if best_result:
+                    return best_result
 
-        # Strategy 4: Try Wikipedia search as fallback
+        # Strategy 3: Try Wikipedia search as fallback
         result = self._search_wikipedia(title, include_details)
         if result:
             return result
+
+        return None
+
+    def _search_with_keyword_multi(self, keyword: str, include_details: bool = False,
+                                    original_title: Optional[str] = None) -> list:
+        """Search Bangumi with keyword and return multiple results with scores.
+
+        Args:
+            keyword: Search keyword.
+            include_details: If True, include subject URL.
+            original_title: Original title for similarity comparison.
+
+        Returns:
+            List of result dicts with cover_url, title, subject_url, and score.
+        """
+        if not keyword:
+            return []
+
+        encoded_keyword = re.sub(PATTERNS["non_word_chars"], "", keyword).strip()
+        if not encoded_keyword:
+            return []
+
+        url = self._bangumi_url.format(keyword=encoded_keyword)
+        try:
+            html = self.client.get(url)
+            soup = BeautifulSoup(html, "html.parser")
+            items = soup.select("li.item")
+
+            if not items:
+                return []
+
+            compare_title = original_title if original_title else keyword
+            return self._score_all_results(compare_title, items, include_details)
+        except Exception:
+            return []
+
+    def _score_all_results(self, original_title: str, items: list,
+                           include_details: bool = False) -> list:
+        """Score all search results and return sorted list.
+
+        Args:
+            original_title: Original anime title for comparison.
+            items: List of Bangumi search result items.
+            include_details: If True, include subject URL.
+
+        Returns:
+            List of result dicts sorted by score (highest first).
+        """
+        results = []
+
+        for item in items:
+            name_elem = item.select_one("h3 a")
+            result_name = name_elem.get_text(strip=True) if name_elem else ""
+
+            if not result_name:
+                continue
+
+            # Skip results that are too short (likely wrong matches like single character titles)
+            result_name_clean = re.sub(PATTERNS["non_word_chars"], "", result_name).strip()
+            if len(result_name_clean) < MIN_TITLE_LENGTH:
+                # Give a very low score to very short titles
+                score = 0
+            else:
+                # Calculate similarity score
+                score = self._calculate_title_similarity(original_title, result_name)
+
+            # Extract cover URL
+            cover_url = self._extract_cover_from_item(item)
+            if not cover_url:
+                continue
+
+            # Extract subject URL
+            subject_url = None
+            if include_details and name_elem:
+                href = name_elem.get("href", "")
+                if href:
+                    subject_url = BANGUMI_BASE_URL + href
+
+            results.append({
+                "cover_url": cover_url,
+                "title": result_name,
+                "subject_url": subject_url,
+                "score": score
+            })
+
+        # Sort by score descending
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
+
+    def _pick_best_result(self, original_title: str, results: list) -> Optional[dict]:
+        """Pick the best matching result from scored results.
+
+        Args:
+            original_title: Original anime title.
+            results: List of scored results.
+
+        Returns:
+            Best matching result or None if no good match found.
+        """
+        if not results:
+            return None
+
+        # Find best result that meets minimum score threshold
+        for result in results:
+            if result.get("score", 0) >= MIN_MATCH_SCORE:
+                return result
+
+        # If no result meets threshold, return the top result but with lower confidence
+        # This allows fallback to first result when no good match exists
+        if results:
+            results[0]["score"] = 0  # Mark as low confidence
+            return results[0]
 
         return None
 

@@ -16,7 +16,6 @@
           </template>
         </el-input>
         <el-button type="primary" @click="handleSearch" :icon="Search">搜索</el-button>
-        <el-button v-if="isSearching" @click="handleClearSearch">清除搜索</el-button>
       </div>
     </el-card>
 
@@ -261,7 +260,8 @@ const toggleFavorite = async (animeId) => {
 const handleSearch = () => {
   const keyword = searchKeyword.value?.trim() || ''
   if (!keyword) {
-    ElMessage.warning('请输入搜索关键词')
+    // 没有关键字，清除搜索状态，显示默认列表
+    handleClearSearch()
     return
   }
   isSearching.value = true
@@ -279,7 +279,11 @@ const handleClearSearch = () => {
   const query = { ...route.query }
   delete query.q
   delete query.page
-  router.replace({ query })
+  if (Object.keys(query).length > 0) {
+    router.replace({ query })
+  } else {
+    router.replace({ query: undefined })
+  }
   fetchAnimeList(1)
 }
 
