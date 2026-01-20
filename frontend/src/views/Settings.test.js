@@ -396,6 +396,59 @@ describe('Settings View - Update Functionality', () => {
       await handleDownloadUpdate()
       expect(window.open).toHaveBeenCalledWith(updateInfo.value.download_url, '_blank')
     })
+
+    it('should show download path in manual mode', async () => {
+      const updateInfo = ref({
+        download_url: 'https://github.com/.../anime1-macos-0.2.1.zip'
+      })
+      const downloadingUpdate = ref(false)
+      const settingsAPI = (await import('../utils/api')).settingsAPI
+      const ElMessageBox = (await import('element-plus')).ElMessageBox
+
+      // Manual mode response (restarting: false)
+      settingsAPI.downloadUpdate.mockResolvedValue({
+        data: {
+          success: true,
+          restarting: false,
+          message: '下载完成',
+          data: {
+            download_path: '/Users/user/Downloads/anime1-macos-0.2.1.zip',
+            file_size: 1024000,
+            open_path: '/Users/user/Downloads/anime1-macos-0.2.1.zip'
+          }
+        }
+      })
+      ElMessageBox.confirm.mockResolvedValue('confirm')
+
+      const handleDownloadUpdate = async () => {
+        if (!updateInfo.value.download_url) return
+        downloadingUpdate.value = true
+        try {
+          const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, false)
+          if (response.data.success) {
+            if (response.data.restarting) {
+              // Auto-install mode
+            } else {
+              // Manual mode
+              const confirmed = await ElMessageBox.confirm(
+                `更新已下载到: ${response.data.data?.download_path || '未知'}\n\n是否打开？`,
+                '下载完成',
+                { confirmButtonText: '打开', cancelButtonText: '关闭', type: 'success' }
+              ).then(() => true).catch(() => false)
+            }
+          }
+        } finally {
+          downloadingUpdate.value = false
+        }
+      }
+
+      await handleDownloadUpdate()
+      expect(downloadingUpdate.value).toBe(false)
+      // Verify message box was called with correct path
+      expect(ElMessageBox.confirm).toHaveBeenCalled()
+      const messageArg = ElMessageBox.confirm.mock.calls[0][0]
+      expect(messageArg).toContain('/Users/user/Downloads/anime1-macos-0.2.1.zip')
+    })
   })
 
   describe('formatReleaseNotes', () => {

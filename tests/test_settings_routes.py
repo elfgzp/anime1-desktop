@@ -275,6 +275,43 @@ class TestRunUpdater:
 
             assert response.status_code == 404
 
+    def test_run_updater_releases_lock_before_launching(self):
+        """Test that run_updater releases instance lock before launching updater.
+
+        This is critical to prevent race conditions where the updater tries to
+        acquire the lock while anime1 is still running.
+        """
+        from src.routes.settings import settings_bp
+        from flask import Flask
+        import tempfile
+        from pathlib import Path
+
+        app = Flask(__name__)
+        app.register_blueprint(settings_bp)
+
+        # Create a temporary updater batch file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            updater_path = Path(tmpdir) / 'updater.bat'
+            updater_path.write_text('@echo off\n echo Updating...')
+
+            with app.test_client() as client:
+                with patch('subprocess.Popen') as mock_popen, \
+                     patch('src.desktop.InstanceLock') as mock_lock_class, \
+                     patch('sys.exit') as mock_exit:
+                    mock_lock = Mock()
+                    mock_lock_class.return_value = mock_lock
+
+                    response = client.post(
+                        '/api/settings/update/run-updater',
+                        json={'updater_path': str(updater_path)}
+                    )
+
+                    # Verify that force_release was called before Popen
+                    assert mock_lock.force_release.called, "force_release should be called"
+                    assert mock_popen.called, "subprocess.Popen should be called"
+                    # Verify sys.exit was called to exit the app
+                    assert mock_exit.called, "sys.exit should be called"
+
 
 @pytest.mark.unit
 class TestSettingsModuleImport:
@@ -289,6 +326,71 @@ class TestSettingsModuleImport:
         # This should not raise any exceptions
         from src.routes import settings
         assert settings is not None
+
+    def test_download_update_no_local_variable_os_bug(self):
+        """Test that download_update function doesn't have 'os' local variable bug.
+
+        Regression test for the bug where 'import os' was placed inside the
+        function after os.chmod() was already called, causing:
+        "cannot access local variable 'os' where it is not associated with a value"
+
+        The bug occurred because Python sees 'os' is assigned via 'import os'
+        inside the function, making it a local variable throughout the entire
+        function scope. When os.chmod() was called before the import, Python
+        would throw an error since the local variable wasn't yet assigned.
+        """
+        import ast
+        import inspect
+
+        # Get the source code of the settings module
+        from src.routes import settings
+        settings_module_path = inspect.getfile(settings)
+
+        with open(settings_module_path, 'r') as f:
+            source_code = f.read()
+
+        # Parse the AST
+        tree = ast.parse(source_code)
+
+        # Find the download_update function
+        download_update_func = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == 'download_update':
+                download_update_func = node
+                break
+
+        assert download_update_func is not None, "download_update function not found"
+
+        # Check for 'os' being assigned via import inside the function
+        # This would create a local variable and cause the bug
+        os_import_in_func = False
+        for node in ast.walk(download_update_func):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == 'os':
+                        os_import_in_func = True
+                        break
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == 'os':
+                    os_import_in_func = True
+
+        # The fix: there should be NO import os inside the function
+        # because os is imported globally at the top of the module
+        assert not os_import_in_func, (
+            "Found 'import os' inside download_update function. "
+            "This causes a local variable bug when os.chmod() is called before the import. "
+            "Remove the local import and use the global import at module top."
+        )
+
+        # Verify os is used in the function (chmod calls)
+        os_used_in_func = False
+        for node in ast.walk(download_update_func):
+            if isinstance(node, ast.Attribute):
+                if node.attr == 'chmod':
+                    os_used_in_func = True
+                    break
+
+        assert os_used_in_func, "os.chmod should be called in download_update"
 
     def test_get_project_root_available(self):
         """Test that get_project_root is available in utils."""

@@ -75,6 +75,16 @@ from .constants import (
     MACHINE_X86,
     ARCH_EXCLUDE_ARM,
     ARCH_EXCLUDE_AARCH,
+    EXT_DMG,
+    EXT_ZIP,
+    FILENAME_EXCLUDE_SETUP_EXE,
+    DEV_VERSION_PATTERN,
+    ERR_RATE_LIMIT_EXHAUSTED,
+    ERR_REQUEST_TIMEOUT,
+    ERR_CONNECTION_FAILED,
+    ERR_REPO_NOT_FOUND,
+    ERR_API_REQUEST_FAILED,
+    ERR_GET_RELEASE_FAILED,
 )
 
 
@@ -181,7 +191,7 @@ class VersionComparator:
             # Format: "x.x.x-abc123" where abc123 is a git short commit id (4-40 alphanumeric chars)
             # Git short commit ids are typically 7 chars but can be 4-40
             # Must contain at least one digit to distinguish from words like "alpha", "beta"
-            elif re.match(r'^[0-9a-z]{4,40}$', pre_release, re.IGNORECASE) and re.search(r'\d', pre_release):
+            elif re.match(DEV_VERSION_PATTERN, pre_release, re.IGNORECASE) and re.search(r'\d', pre_release):
                 pre_release_type = PRE_RELEASE_DEV
                 pre_release_extra = pre_release
 
@@ -333,63 +343,106 @@ class PlatformDetector:
             True if asset matches platform and architecture
         """
         logger = logging.getLogger(__name__)
-
         asset_lower = asset_name.lower()
 
         # Skip installer files (Windows setup.exe)
-        if "-setup.exe" in asset_lower:
-            logger.debug(f"[UPDATE] Skipping installer file: {asset_name}")
+        if FILENAME_EXCLUDE_SETUP_EXE in asset_lower:
+            logger.debug(f"[MATCH] match_asset: {asset_name} skipped (setup.exe)")
             return False
 
-        # Platform matching
-        platform_keywords = {
+        # Check platform match
+        platform_match = PlatformDetector._match_platform(asset_lower, platform_name)
+        logger.debug(f"[MATCH] match_asset: {asset_name}, platform_match={platform_match}")
+        if not platform_match:
+            return False
+
+        # Check architecture match
+        arch_match = PlatformDetector._match_architecture(asset_lower, platform_name, arch)
+        logger.debug(f"[MATCH] match_asset: {asset_name}, arch_match={arch_match}")
+        return arch_match
+
+    @staticmethod
+    def _match_platform(asset_lower: str, platform_name: str) -> bool:
+        """Check if asset matches platform keywords."""
+        keywords_map = {
             PLATFORM_WINDOWS: PLATFORM_WINDOWS_KEYWORDS,
             PLATFORM_MACOS: PLATFORM_MACOS_KEYWORDS,
             PLATFORM_LINUX: PLATFORM_LINUX_KEYWORDS,
         }
+        keywords = keywords_map.get(platform_name, [])
+        return any(kw in asset_lower for kw in keywords)
 
-        platform_match = False
-        for keyword in platform_keywords.get(platform_name, []):
-            if keyword in asset_lower:
-                platform_match = True
+    @staticmethod
+    def _match_architecture(asset_lower: str, platform_name: str, arch: str) -> bool:
+        """Check if asset matches architecture keywords with platform-specific rules."""
+        logger = logging.getLogger(__name__)
+
+        # Collect all architecture keywords for checking, ordered by length (longer first)
+        # This ensures that 'x86_64' is matched before 'x86'
+        all_arch_keywords_with_length = [
+            (kw, len(kw)) for kw in
+            ARCH_X64_KEYWORDS + ARCH_ARM64_KEYWORDS + ARCH_X86_KEYWORDS
+        ]
+        # Sort by length descending to match longer keywords first
+        all_arch_keywords_with_length.sort(key=lambda x: x[1], reverse=True)
+        all_arch_keywords = [kw for kw, _ in all_arch_keywords_with_length]
+
+        # Check if asset explicitly specifies ANY architecture
+        explicitly_specified_arch = None
+        for kw in all_arch_keywords:
+            if kw in asset_lower:
+                explicitly_specified_arch = kw
                 break
 
-        logger.debug(f"[UPDATE] Asset '{asset_name}': platform_match={platform_match} (platform={platform_name})")
+        logger.debug(f"[MATCH] _match_architecture: asset={asset_lower}, platform={platform_name}, arch={arch}")
+        logger.debug(f"[MATCH] explicitly_specified_arch={explicitly_specified_arch}")
 
-        if not platform_match:
-            return False
+        # macOS: DMG and ZIP files without explicit arch spec are Universal Binaries
+        if platform_name == PLATFORM_MACOS:
+            is_macos_bundle = "mac" in asset_lower
+            is_universal_format = asset_lower.endswith(EXT_DMG) or asset_lower.endswith(EXT_ZIP)
+            logger.debug(f"[MATCH] is_macos_bundle={is_macos_bundle}, is_universal_format={is_universal_format}")
+            if is_macos_bundle and is_universal_format:
+                # If no explicit architecture, treat as universal
+                if not explicitly_specified_arch:
+                    logger.debug(f"[MATCH] macOS universal binary (no explicit arch), returning True")
+                    return True
+                # If has explicit architecture, DMG is still universal (can run on any mac)
+                if asset_lower.endswith(EXT_DMG):
+                    logger.debug(f"[MATCH] macOS DMG with explicit arch, returning True")
+                    return True
+                # For ZIP files with explicit arch, check if it matches
+                if explicitly_specified_arch:
+                    arch_keywords = {
+                        ARCH_X64: ARCH_X64_KEYWORDS,
+                        ARCH_ARM64: ARCH_ARM64_KEYWORDS,
+                        ARCH_X86: ARCH_X86_KEYWORDS,
+                    }
+                    matching_keywords = arch_keywords.get(arch, [])
+                    result = explicitly_specified_arch in matching_keywords
+                    logger.debug(f"[MATCH] ZIP with explicit arch={explicitly_specified_arch}, arch={arch}, matching={result}")
+                    return result
 
-        # Architecture matching
-        arch_keywords = {
-            ARCH_X64: ARCH_X64_KEYWORDS,
-            ARCH_ARM64: ARCH_ARM64_KEYWORDS,
-            ARCH_X86: ARCH_X86_KEYWORDS,
-        }
+        # If asset explicitly specifies architecture (for non-macOS or non-universal files)
+        if explicitly_specified_arch:
+            arch_keywords = {
+                ARCH_X64: ARCH_X64_KEYWORDS,
+                ARCH_ARM64: ARCH_ARM64_KEYWORDS,
+                ARCH_X86: ARCH_X86_KEYWORDS,
+            }
+            matching_keywords = arch_keywords.get(arch, [])
+            result = explicitly_specified_arch in matching_keywords
+            logger.debug(f"[MATCH] explicit arch={explicitly_specified_arch}, result={result}")
+            return result
 
-        arch_match = False
-        for keyword in arch_keywords.get(arch, []):
-            if keyword in asset_lower:
-                arch_match = True
-                break
-
-        logger.debug(f"[UPDATE] Asset '{asset_name}': arch_match={arch_match} (arch={arch})")
-
-        # Special handling for macOS DMG files (Universal Binaries)
-        # macOS DMG files typically contain Universal Binaries supporting both x64 and arm64
-        # Match if filename contains "mac" and ends with ".dmg"
-        if not arch_match and platform_name == PLATFORM_MACOS:
-            if "mac" in asset_lower and asset_lower.endswith('.dmg'):
-                logger.debug(f"[UPDATE] Asset '{asset_name}': macOS DMG universal binary")
-                arch_match = True
-
-        # If no architecture keyword found, assume x64 for Windows/Linux
-        if not arch_match and platform_name in (PLATFORM_WINDOWS, PLATFORM_LINUX):
-            # Check if it's explicitly not arm64
+        # Windows/Linux: assume x64 if not explicitly excluded
+        if platform_name in (PLATFORM_WINDOWS, PLATFORM_LINUX):
             if ARCH_EXCLUDE_ARM not in asset_lower and ARCH_EXCLUDE_AARCH not in asset_lower:
-                arch_match = True
+                logger.debug(f"[MATCH] Windows/Linux, no exclusion, returning True")
+                return True
 
-        logger.debug(f"[UPDATE] Asset '{asset_name}': final result={arch_match}")
-        return arch_match
+        logger.debug(f"[MATCH] No match, returning False")
+        return False
 
 
 class UpdateChecker:
@@ -496,7 +549,7 @@ class UpdateChecker:
                 if response.status_code == HTTP_STATUS_FORBIDDEN:
                     rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
                     if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
-                        raise Exception("GitHub API 速率限制已用完，请稍后再试")
+                        raise Exception(ERR_RATE_LIMIT_EXHAUSTED)
 
                 response.raise_for_status()
                 release = response.json()
@@ -518,7 +571,7 @@ class UpdateChecker:
                 if response.status_code == HTTP_STATUS_FORBIDDEN:
                     rate_limit_remaining = response.headers.get(RATE_LIMIT_REMAINING_HEADER, RATE_LIMIT_EXHAUSTED)
                     if rate_limit_remaining == RATE_LIMIT_EXHAUSTED:
-                        raise Exception("GitHub API 速率限制已用完，请稍后再试")
+                        raise Exception(ERR_RATE_LIMIT_EXHAUSTED)
 
                 response.raise_for_status()
                 releases = response.json()
@@ -532,18 +585,18 @@ class UpdateChecker:
 
                 return releases
         except requests.exceptions.Timeout:
-            raise Exception("请求超时，请检查网络连接")
+            raise Exception(ERR_REQUEST_TIMEOUT)
         except requests.exceptions.ConnectionError:
-            raise Exception("网络连接失败，请检查网络设置")
+            raise Exception(ERR_CONNECTION_FAILED)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == HTTP_STATUS_NOT_FOUND:
-                raise Exception("仓库或发布版本不存在")
+                raise Exception(ERR_REPO_NOT_FOUND)
             elif e.response.status_code == HTTP_STATUS_FORBIDDEN:
-                raise Exception("GitHub API 速率限制已用完，请稍后再试")
+                raise Exception(ERR_RATE_LIMIT_EXHAUSTED)
             else:
-                raise Exception(f"GitHub API 请求失败: {e.response.status_code}")
+                raise Exception(f"{ERR_API_REQUEST_FAILED}{e.response.status_code}")
         except requests.exceptions.RequestException as e:
-            raise Exception(f"获取发布信息失败: {str(e)}")
+            raise Exception(f"{ERR_GET_RELEASE_FAILED}{str(e)}")
     
     def _find_matching_asset(self, assets: List[Dict]) -> Optional[Dict]:
         """Find asset matching current platform and architecture.
@@ -556,45 +609,35 @@ class UpdateChecker:
         Returns:
             Matching asset dictionary or None
         """
-        logger = logging.getLogger(__name__)
-
         platform_name, arch = PlatformDetector.get_platform_info()
-        logger.debug(f"[UPDATE] _find_matching_asset: platform={platform_name}, arch={arch}")
-        logger.debug(f"[UPDATE] Checking {len(assets)} assets...")
 
-        # For macOS, prefer ZIP over DMG for auto-update support
+        # macOS: prefer ZIP over DMG
         if platform_name == PLATFORM_MACOS:
-            # First, try to find a ZIP file that matches
-            for asset in assets:
-                asset_name = asset.get(API_FIELD_NAME, "")
-                asset_lower = asset_name.lower()
-                # Check if it's a ZIP file matching macOS + architecture
-                if (asset_lower.endswith('.zip') and
-                    PlatformDetector.match_asset(asset_name, platform_name, arch)):
-                    logger.debug(f"[UPDATE] Found macOS ZIP asset (preferred): {asset_name}")
-                    return asset
+            return self._find_macOS_asset(assets, arch)
 
-            # If no ZIP found, fall back to DMG
-            for asset in assets:
-                asset_name = asset.get(API_FIELD_NAME, "")
-                asset_lower = asset_name.lower()
-                if (asset_lower.endswith('.dmg') and
-                    PlatformDetector.match_asset(asset_name, platform_name, arch)):
-                    logger.debug(f"[UPDATE] Found macOS DMG asset (fallback): {asset_name}")
-                    return asset
-
-            logger.debug(f"[UPDATE] No matching macOS asset found")
-            return None
-
-        # For other platforms, use the original logic (first match)
+        # Other platforms: first match
         for asset in assets:
             asset_name = asset.get(API_FIELD_NAME, "")
-            logger.debug(f"[UPDATE] Checking asset: {asset_name}")
             if PlatformDetector.match_asset(asset_name, platform_name, arch):
-                logger.debug(f"[UPDATE] Found matching asset: {asset_name}")
                 return asset
+        return None
 
-        logger.debug(f"[UPDATE] No matching asset found")
+    def _find_macOS_asset(self, assets: List[Dict], arch: str) -> Optional[Dict]:
+        """Find macOS asset, preferring ZIP over DMG."""
+        for asset in assets:
+            asset_name = asset.get(API_FIELD_NAME, "")
+            asset_lower = asset_name.lower()
+            if asset_lower.endswith(EXT_ZIP):
+                if PlatformDetector.match_asset(asset_name, PLATFORM_MACOS, arch):
+                    return asset
+
+        # Fall back to DMG
+        for asset in assets:
+            asset_name = asset.get(API_FIELD_NAME, "")
+            asset_lower = asset_name.lower()
+            if asset_lower.endswith(EXT_DMG):
+                if PlatformDetector.match_asset(asset_name, PLATFORM_MACOS, arch):
+                    return asset
         return None
     
     def check_for_update(self) -> UpdateInfo:
@@ -655,8 +698,11 @@ class UpdateChecker:
                     update_version = version_str
                     update_release = release
 
-            # Use absolute latest for display
-            latest_version_for_display = absolute_latest_release.get(API_FIELD_TAG_NAME, "") if absolute_latest_release else None
+            # Use absolute latest for display (strip 'v' prefix for consistent display)
+            latest_version_for_display = (
+                absolute_latest_release.get(API_FIELD_TAG_NAME, "").lstrip(VERSION_PREFIXES)
+                if absolute_latest_release else None
+            )
             logger.debug(f"[UPDATE] absolute_latest_version: {absolute_latest_version}")
             logger.debug(f"[UPDATE] update_version (newer than current): {update_version}")
             logger.debug(f"[UPDATE] latest_version_for_display: {latest_version_for_display}")
@@ -682,7 +728,7 @@ class UpdateChecker:
                 return UpdateInfo(
                     has_update=True,
                     current_version=self.current_version,
-                    latest_version=update_release.get(API_FIELD_TAG_NAME, ""),
+                    latest_version=update_release.get(API_FIELD_TAG_NAME, "").lstrip(VERSION_PREFIXES),
                     is_prerelease=update_release.get(API_FIELD_PRERELEASE, False),
                     release_notes=update_release.get(API_FIELD_BODY, ""),
                 )
@@ -690,7 +736,7 @@ class UpdateChecker:
             return UpdateInfo(
                 has_update=True,
                 current_version=self.current_version,
-                latest_version=update_release.get(API_FIELD_TAG_NAME, ""),
+                latest_version=update_release.get(API_FIELD_TAG_NAME, "").lstrip(VERSION_PREFIXES),
                 is_prerelease=update_release.get(API_FIELD_PRERELEASE, False),
                 release_notes=update_release.get(API_FIELD_BODY, ""),
                 download_url=matching_asset.get(API_FIELD_BROWSER_DOWNLOAD_URL),

@@ -1,0 +1,26 @@
+name: test-macos-update
+description: Test macOS auto-update flow (v0.1.0 -> v0.2.4)
+instructions: |
+  This skill tests the complete macOS auto-update flow:
+  1. Stop all Anime1 processes (using pgrep -a -f to find all)
+  2. Reinstall v0.1.0 to /Applications
+  3. Clear logs in ~/Library/Application Support/Anime1/
+  4. Start app and wait for API (poll 127.0.0.1:5172)
+  5. Verify current version is 0.1.0
+  6. Check for updates (should detect v0.2.4)
+  7. Trigger download and auto-install via API
+  8. Wait for auto-restart (15 seconds)
+  9. Verify new version 0.2.4 is running
+  10. Display update log for debugging
+
+  Requirements:
+  - Build must exist in dist/Anime1.app
+  - GitHub token for API access
+  - Test version in script: EXPECTED_OLD_VERSION="0.1.0", EXPECTED_NEW_VERSION="0.2.4"
+
+  The skill will fail if:
+  - Update detection fails (has_update != True)
+  - Auto-restart doesn't terminate all processes
+  - New version doesn't start properly
+
+  Run with: ./scripts/test-macos-update.sh

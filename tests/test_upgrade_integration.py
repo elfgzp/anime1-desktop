@@ -148,7 +148,7 @@ class TestGitHubAPIMocking:
             result = checker.check_for_update()
 
             assert result.has_update is True
-            assert result.latest_version == "v1.0.0"
+            assert result.latest_version == "1.0.0"
             assert result.download_url is not None
             print("[PASS] Stable channel correctly returns stable release")
 
@@ -263,7 +263,7 @@ class TestGitHubAPIMocking:
             result = checker.check_for_update()
 
             assert result.has_update is True
-            assert result.latest_version == "v1.0.0"
+            assert result.latest_version == "1.0.0"
             print("[PASS] Correctly finds latest version among multiple releases")
 
     @pytest.mark.unit
@@ -1566,7 +1566,7 @@ class TestCrossPlatformUpdateFlow:
         info = UpdateInfo(
             has_update=True,
             current_version="0.2.0",
-            latest_version="v0.2.1",
+            latest_version="0.2.1",
             is_prerelease=False,
             download_url="https://github.com/elfgzp/anime1-desktop/releases/download/v0.2.1/anime1-macos-0.2.1.zip",
             asset_name="anime1-macos-0.2.1.zip",
@@ -1578,7 +1578,7 @@ class TestCrossPlatformUpdateFlow:
         # Verify fields
         assert info.has_update is True
         assert info.current_version == "0.2.0"
-        assert info.latest_version == "v0.2.1"
+        assert info.latest_version == "0.2.1"
         assert info.is_prerelease is False
         assert info.download_url is not None
         assert info.asset_name == "anime1-macos-0.2.1.zip"

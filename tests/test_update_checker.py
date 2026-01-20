@@ -190,6 +190,18 @@ class TestPlatformDetector:
         assert PlatformDetector.match_asset("anime1-1.0.0-darwin-x86_64.dmg", "macos", "x64") is True
         assert PlatformDetector.match_asset("anime1-1.0.0-windows.exe", "macos", "x64") is False
 
+    def test_match_asset_macos_zip(self):
+        """Test matching macOS ZIP files for auto-update support."""
+        # macOS ZIP files should match like DMG files (Universal Binaries)
+        # This is important for auto-update which prefers ZIP over DMG
+        assert PlatformDetector.match_asset("anime1-macos-0.2.4.zip", "macos", "x64") is True
+        assert PlatformDetector.match_asset("anime1-macos-0.2.4.zip", "macos", "arm64") is True
+        assert PlatformDetector.match_asset("anime1-macos-0.2.4.zip", "macos", "x86") is True
+        # Verify DMG still works
+        assert PlatformDetector.match_asset("anime1-macos-0.2.4.dmg", "macos", "x64") is True
+        # Non-macos files should not match
+        assert PlatformDetector.match_asset("anime1-windows-0.2.4.zip", "macos", "x64") is False
+
     def test_match_asset_linux(self):
         """Test matching Linux asset."""
         # Asset name must contain "linux"
@@ -243,7 +255,7 @@ class TestUpdateChecker:
             assert result.has_update is False
             assert result.current_version == "0.1.0"
             # latest_version should be set even when no update is needed
-            assert result.latest_version == "v0.1.0"
+            assert result.latest_version == "0.1.0"
 
     def test_check_update_has_update_old_version(self):
         """Test that update is reported when current version is older."""
@@ -260,7 +272,7 @@ class TestUpdateChecker:
 
             assert result.has_update is True
             assert result.current_version == "0.0.9"
-            assert result.latest_version == "v0.1.0"
+            assert result.latest_version == "0.1.0"
 
     def test_check_update_has_update_multiple_versions(self):
         """Test update detection with multiple releases available."""
@@ -285,7 +297,7 @@ class TestUpdateChecker:
             result = checker.check_for_update()
 
             assert result.has_update is True
-            assert result.latest_version == "v0.1.0"
+            assert result.latest_version == "0.1.0"
 
     def test_check_update_with_v_prefix_in_tag(self):
         """Test that v prefix in tag name is handled correctly."""
@@ -299,7 +311,7 @@ class TestUpdateChecker:
             result = checker.check_for_update()
 
             assert result.has_update is True
-            assert result.latest_version == "v1.0.0"
+            assert result.latest_version == "1.0.0"
 
     def test_check_update_skip_prerelease_in_stable_channel(self):
         """Test that pre-releases are skipped in stable channel."""
@@ -341,7 +353,7 @@ class TestUpdateChecker:
 
             # Should detect alpha as update in test channel
             assert result.has_update is True
-            assert result.latest_version == "v0.2.0-alpha.1"
+            assert result.latest_version == "0.2.0-alpha.1"
             assert result.is_prerelease is True
 
     def test_check_update_with_download_asset(self):
@@ -426,7 +438,7 @@ class TestUpdateCheckerIntegration:
             # Should NOT detect update when versions match
             assert result.has_update is False
             assert result.current_version == "0.2.0"
-            assert result.latest_version == "v0.2.0"
+            assert result.latest_version == "0.2.0"
             print("[PASS] v0.2.0 correctly reports no update when latest is v0.2.0")
 
     def test_scenario_dev_version_detects_update(self):
@@ -450,7 +462,7 @@ class TestUpdateCheckerIntegration:
             # SHOULD detect update because dev < release
             assert result.has_update is True
             assert result.current_version == "0.2.0-abc123"
-            assert result.latest_version == "v0.2.0"
+            assert result.latest_version == "0.2.0"
             print("[PASS] '0.2.0-abc123' correctly detects v0.2.0 as update")
 
     def test_scenario_old_version_detects_update(self):
@@ -476,7 +488,7 @@ class TestUpdateCheckerIntegration:
 
                 assert result.has_update is True
                 assert result.current_version == "0.0.9"
-                assert result.latest_version == "v0.1.0"
+                assert result.latest_version == "0.1.0"
                 print(f"[PASS] v0.0.9 correctly detects v0.1.0 as update")
 
     def test_scenario_same_version_no_update(self):
@@ -518,7 +530,7 @@ class TestUpdateCheckerIntegration:
             result = checker.check_for_update()
 
             assert result.has_update is True
-            assert result.latest_version == "v0.1.0"
+            assert result.latest_version == "0.1.0"
             print(f"[PASS] v0.0.8 correctly finds v0.1.0 as latest update")
 
     def test_scenario_test_channel_with_prerelease(self):
@@ -547,7 +559,7 @@ class TestUpdateCheckerIntegration:
                 result = checker.check_for_update()
 
                 assert result.has_update is True
-                assert result.latest_version == "v0.2.0-rc.1"
+                assert result.latest_version == "0.2.0-rc.1"
                 assert result.is_prerelease is True
                 print(f"[PASS] Test channel correctly detects pre-release update v0.2.0-rc.1")
 
@@ -670,7 +682,7 @@ class TestMacOSArm64Matching:
                 print(f"  asset_name: {result.asset_name}")
 
                 assert result.has_update is True
-                assert result.latest_version == "v0.2.1"
+                assert result.latest_version == "0.2.1"
                 assert result.download_url is not None, "download_url should NOT be None for macOS arm64"
                 # Just verify it's a macOS DMG asset (either x64 or arm64 version)
                 assert result.asset_name in ("anime1-macos-x64.dmg", "anime1-macos-arm64.dmg"), \
@@ -865,7 +877,7 @@ class TestUpdateRouteCacheHeaders:
                 mock_info = Mock()
                 mock_info.has_update = False
                 mock_info.current_version = "0.1.0"
-                mock_info.latest_version = "v0.2.0"
+                mock_info.latest_version = "0.2.0"
                 mock_info.is_prerelease = False
                 mock_info.release_notes = None
                 mock_info.download_url = None
@@ -951,7 +963,7 @@ class TestUpdateRouteCacheHeaders:
                 mock_info = Mock()
                 mock_info.has_update = True
                 mock_info.current_version = "0.1.0"
-                mock_info.latest_version = "v0.2.4"
+                mock_info.latest_version = "0.2.4"
                 mock_info.is_prerelease = False
                 mock_info.release_notes = "Release notes"
                 mock_info.download_url = "https://example.com/download"
@@ -964,7 +976,7 @@ class TestUpdateRouteCacheHeaders:
                 data = json.loads(response.data)
 
                 assert 'latest_version' in data
-                assert data['latest_version'] == "v0.2.4"
+                assert data['latest_version'] == "0.2.4"
                 assert data['has_update'] is True
 
         # Test with no update available
@@ -974,7 +986,7 @@ class TestUpdateRouteCacheHeaders:
                 mock_info = Mock()
                 mock_info.has_update = False
                 mock_info.current_version = "0.2.4"
-                mock_info.latest_version = "v0.2.4"
+                mock_info.latest_version = "0.2.4"
                 mock_info.is_prerelease = False
                 mock_info.release_notes = None
                 mock_info.download_url = None
@@ -988,5 +1000,5 @@ class TestUpdateRouteCacheHeaders:
 
                 # latest_version should ALWAYS be present
                 assert 'latest_version' in data
-                assert data['latest_version'] == "v0.2.4"
+                assert data['latest_version'] == "0.2.4"
                 assert data['has_update'] is False

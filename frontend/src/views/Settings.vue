@@ -259,54 +259,92 @@ const handleDownloadUpdate = async () => {
     return
   }
 
+  // 显示确认对话框
+  const version = updateInfo.value.latest_version || ''
+  const assetName = updateInfo.value.asset_name || '更新文件'
+
+  const confirmed = await ElMessageBox.confirm(
+    `确定要下载并安装更新 v${version} 吗？\n\n${assetName}`,
+    '确认更新',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'info'
+    }
+  ).then(() => true).catch(() => false)
+
+  if (!confirmed) {
+    return
+  }
+
   downloadingUpdate.value = true
+  console.log('[UPDATE-FRONTEND] 开始下载更新...')
+  console.log('[UPDATE-FRONTEND] download_url:', updateInfo.value.download_url)
   try {
     // 使用自动安装模式（默认）
     const response = await settingsAPI.downloadUpdate(updateInfo.value.download_url, true)
+    console.log('[UPDATE-FRONTEND] API 返回:', response.data)
 
     if (response.data.success) {
-      if (response.data.restarting) {
+      // 检查 restarting 字段（可能在 response.data 或 response.data.data 中）
+      const isRestarting = response.data.restarting || response.data.data?.restarting
+      const updaterType = response.data.updater_type || response.data.data?.updater_type
+      const message = response.data.message || response.data.data?.message
+
+      console.log('[UPDATE-FRONTEND] success=true, isRestarting:', isRestarting, 'updaterType:', updaterType)
+      console.log('[UPDATE-FRONTEND] message:', message)
+
+      if (isRestarting) {
         // 自动安装模式，后端已完成安装准备
-        ElMessage.success(response.data.message || '更新完成，正在重启...')
+        console.log('[UPDATE-FRONTEND] 自动安装模式，调用 exitApp()...')
+        ElMessage.success(message || '更新完成，正在重启...')
 
         // 根据 updater_type 处理不同的退出逻辑
-        const updaterType = response.data.updater_type
-
         if (updaterType === 'macos_dmg') {
           // macOS DMG: 调用 exit API 关闭应用，updater 会在后台完成安装
+          console.log('[UPDATE-FRONTEND] macos_dmg 模式，调用 settingsAPI.exitApp()...')
           await settingsAPI.exitApp()
           // 应用将在后端调用 os._exit(0) 后关闭
+        } else if (updaterType === 'macos_zip') {
+          // macOS ZIP: 后端已启动重启脚本，调用 exit API 关闭当前应用
+          console.log('[UPDATE-FRONTEND] macos_zip 模式，调用 settingsAPI.exitApp()...')
+          await settingsAPI.exitApp()
         } else if (window.ipcRenderer && response.data.updater_path) {
           // Windows: 调用后端运行 updater 并退出应用
+          console.log('[UPDATE-FRONTEND] Windows 模式，调用 settingsAPI.runUpdater()...')
           await settingsAPI.runUpdater(response.data.updater_path)
         } else {
           // Web 模式：刷新页面
+          console.log('[UPDATE-FRONTEND] Web 模式，刷新页面...')
           setTimeout(() => {
             window.location.reload()
           }, 2000)
         }
       } else {
-        // 手动模式（不应该发生）
+        // 手动模式（不应该发生，因为 auto_install=true）
+        console.log('[UPDATE-FRONTEND] 警告: 进入手动模式（auto_install=true 但 restarting=false）')
+        console.log('[UPDATE-FRONTEND] response.data:', response.data)
         const confirmed = await ElMessageBox.confirm(
-          `更新已下载到: ${response.data.file_path}\n\n是否打开？`,
+          `更新已下载到: ${response.data.data?.download_path || '未知'}\n\n请手动安装`,
           '下载完成',
           {
-            confirmButtonText: '打开',
+            confirmButtonText: '安装',
             cancelButtonText: '关闭',
             type: 'success'
           }
         ).then(() => true).catch(() => false)
 
-        if (confirmed && response.data.open_path) {
-          await settingsAPI.openPath(response.data.open_path)
+        if (confirmed && response.data.data?.open_path) {
+          await settingsAPI.openPath(response.data.data.open_path)
         }
       }
     } else {
+      console.error('[UPDATE-FRONTEND] API 返回失败:', response.data.error)
       ElMessage.error('下载失败: ' + (response.data.error || '未知错误'))
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('下载更新失败:', error)
+      console.error('[UPDATE-FRONTEND] 下载更新异常:', error)
       ElMessage.warning('自动下载失败，将打开浏览器下载...')
       window.open(updateInfo.value.download_url, '_blank')
     }
