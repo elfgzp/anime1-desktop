@@ -175,6 +175,9 @@ const initPlayer = async () => {
   const savedTime = getSavedProgress()
   console.log('[VideoPlayer] 创建播放器, savedTime=', savedTime)
 
+  const isM3U8 = props.src.includes('.m3u8')
+  const videoType = isM3U8 ? 'application/x-mpegURL' : 'video/mp4'
+
   player = videojs(videoElement.value, {
     autoplay: false,
     controls: true,
@@ -185,17 +188,17 @@ const initPlayer = async () => {
     playbackRates: [0.5, 1, 1.25, 1.5, 2],
     sources: props.src ? [{
       src: props.src,
-      type: props.src.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4'
+      type: videoType
     }] : [],
-    // VHS (HTTP Streaming) 配置，用于正确处理代理的 HLS 流
-    html5: {
+    // VHS (HTTP Streaming) 配置，仅用于 m3u8，mp4 使用原生播放
+    html5: isM3U8 ? {
       vhs: {
-        withCredentials: true,  // 发送 cookies 用于认证
+        withCredentials: true,
         useDevicePixelRatio: true
       },
-      nativeAudioTracks: false,  // 禁用原生音频轨道，使用 VHS 处理
-      nativeVideoTracks: false   // 禁用原生视频轨道，使用 VHS 处理
-    },
+      nativeAudioTracks: false,
+      nativeVideoTracks: false
+    } : false,
     // 自定义控制栏
     controlBar: {
       children: [

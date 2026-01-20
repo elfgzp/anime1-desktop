@@ -399,6 +399,8 @@ def proxy_video_stream():
                 response.headers[HEADER_ACCESS_CONTROL_ALLOW_ORIGIN] = "*"
                 response.headers[HEADER_ACCESS_CONTROL_ALLOW_METHODS] = "GET, POST, OPTIONS"
                 response.headers[HEADER_ACCESS_CONTROL_ALLOW_HEADERS] = "Range, Content-Type, Accept, Origin, Referer, User-Agent"
+                # Safari needs this to read Content-Range in JavaScript
+                response.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length"
                 # Cache control for better streaming
                 response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                 response.headers["Pragma"] = "no-cache"
@@ -411,6 +413,7 @@ def proxy_video_stream():
                     HEADER_ACCESS_CONTROL_ALLOW_ORIGIN: "*",
                     HEADER_ACCESS_CONTROL_ALLOW_METHODS: "GET, POST, OPTIONS",
                     HEADER_ACCESS_CONTROL_ALLOW_HEADERS: "Range, Content-Type, Accept, Origin, Referer, User-Agent",
+                    "Access-Control-Expose-Headers": "Content-Range, Content-Length",
                 }
 
             return Response(
