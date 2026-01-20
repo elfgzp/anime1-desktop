@@ -6,10 +6,6 @@
      解决方案: 通过前端 webview 获取页面内容，发送到后端解析
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 import requests
 from bs4 import BeautifulSoup
 import re
