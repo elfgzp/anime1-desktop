@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-01-20
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Security
+
+
 ## [0.2.6] - 2026-01-20
 
 ### Added
