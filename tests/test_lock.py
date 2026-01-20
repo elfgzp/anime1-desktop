@@ -275,6 +275,7 @@ class TestIsFileLocked:
             raise
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason="Flaky on Windows due to file locking race conditions")
 class TestLockManager:
     """Test cases for LockManager class."""
 

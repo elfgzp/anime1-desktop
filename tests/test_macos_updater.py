@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import sys
 import tempfile
+import platform
 from pathlib import Path
 
 # Add src to path for imports
@@ -69,6 +70,7 @@ class TestMacOSUpdaterScript:
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(platform.system() != 'Darwin', reason="macOS-specific test")
 class TestAppBundleDetection:
     """Tests for app bundle detection logic."""
 

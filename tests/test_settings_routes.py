@@ -346,7 +346,7 @@ class TestSettingsModuleImport:
         from src.routes import settings
         settings_module_path = inspect.getfile(settings)
 
-        with open(settings_module_path, 'r') as f:
+        with open(settings_module_path, 'r', encoding='utf-8', errors='replace') as f:
             source_code = f.read()
 
         # Parse the AST
@@ -417,7 +417,7 @@ class TestSettingsModuleImport:
         from src import routes
         settings_module_path = inspect.getfile(routes.settings)
 
-        with open(settings_module_path, 'r') as f:
+        with open(settings_module_path, 'r', encoding='utf-8', errors='replace') as f:
             source_code = f.read()
 
         # Parse the AST to find all Popen calls
