@@ -127,6 +127,44 @@ const showRestoreBubbleIfNeeded = () => {
 const videoElement = ref(null)
 let player = null
 const STORAGE_KEY = 'anime1_video_progress'
+let keydownListener = null  // 键盘事件监听器
+
+// 键盘快捷键处理
+const handleKeydown = (event) => {
+  if (!player) return
+
+  // 如果焦点在输入框等元素上，不处理
+  const tagName = event.target.tagName.toLowerCase()
+  if (tagName === 'input' || tagName === 'textarea' || event.target.isContentEditable) {
+    return
+  }
+
+  const jumpTime = 10  // 跳10秒
+
+  switch (event.key) {
+    case 'ArrowLeft':
+      event.preventDefault()
+      const leftTime = Math.max(0, player.currentTime() - jumpTime)
+      player.currentTime(leftTime)
+      console.log(`[VideoPlayer] 快退: ${leftTime.toFixed(1)}s`)
+      break
+    case 'ArrowRight':
+      event.preventDefault()
+      const rightTime = Math.min(player.duration(), player.currentTime() + jumpTime)
+      player.currentTime(rightTime)
+      console.log(`[VideoPlayer] 快进: ${rightTime.toFixed(1)}s`)
+      break
+    case ' ':
+    case 'k':
+      event.preventDefault()
+      if (player.paused()) {
+        player.play()
+      } else {
+        player.pause()
+      }
+      break
+  }
+}
 
 // Safari 兼容处理：捕获全屏和画中画的 Promise rejection
 const handleUnhandledRejection = (event) => {
@@ -366,12 +404,20 @@ onMounted(() => {
   console.log('[VideoPlayer] onMounted 调用, src=', props.src ? props.src.substring(0, 80) + '...' : 'empty')
   // 添加 Safari 全屏/PiP 错误处理
   window.addEventListener('unhandledrejection', handleUnhandledRejection)
+  // 添加全局键盘事件监听
+  keydownListener = (e) => handleKeydown(e)
+  window.addEventListener('keydown', keydownListener)
   initPlayer()
 })
 
 onUnmounted(() => {
   // 移除 Safari 全屏/PiP 错误处理
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  // 移除键盘事件监听
+  if (keydownListener) {
+    window.removeEventListener('keydown', keydownListener)
+    keydownListener = null
+  }
   // 保存进度
   saveProgress()
   // 销毁播放器
