@@ -128,6 +128,15 @@ const videoElement = ref(null)
 let player = null
 const STORAGE_KEY = 'anime1_video_progress'
 
+// Safari 兼容处理：捕获全屏和画中画的 Promise rejection
+const handleUnhandledRejection = (event) => {
+  const message = event.reason?.message || ''
+  if (message.includes('InvalidStateError') || message.includes('NotSupportedError')) {
+    console.warn('[VideoPlayer] 捕获到 Safari 全屏/PiP 错误:', message)
+    event.preventDefault()
+  }
+}
+
 // 保存播放进度
 const saveProgress = () => {
   if (!player || !props.animeId) return
@@ -355,10 +364,14 @@ watch(() => props.src, async (newSrc) => {
 
 onMounted(() => {
   console.log('[VideoPlayer] onMounted 调用, src=', props.src ? props.src.substring(0, 80) + '...' : 'empty')
+  // 添加 Safari 全屏/PiP 错误处理
+  window.addEventListener('unhandledrejection', handleUnhandledRejection)
   initPlayer()
 })
 
 onUnmounted(() => {
+  // 移除 Safari 全屏/PiP 错误处理
+  window.removeEventListener('unhandledrejection', handleUnhandledRejection)
   // 保存进度
   saveProgress()
   // 销毁播放器
@@ -388,8 +401,32 @@ defineExpose({
       }
     }
   },
-  fullscreen: () => player?.requestFullscreen(),
-  pip: () => player?.requestPictureInPicture()
+  fullscreen: async () => {
+    if (!player) return
+    try {
+      await player.requestFullscreen()
+    } catch (e) {
+      console.warn('[VideoPlayer] 全屏请求失败:', e.message)
+      // Safari 兼容处理
+      try {
+        const videoEl = player.tech()?.el()
+        if (videoEl && videoEl.webkitEnterFullScreen) {
+          videoEl.webkitEnterFullScreen()
+        }
+      } catch (e2) {
+        console.warn('[VideoPlayer] Safari 全屏失败:', e2.message)
+      }
+    }
+  },
+  pip: async () => {
+    if (!player) return
+    try {
+      await player.requestPictureInPicture()
+    } catch (e) {
+      console.warn('[VideoPlayer] 画中画请求失败:', e.message)
+      // Safari 可能不支持某些视频的画中画，记录日志但不抛出错误
+    }
+  }
 })
 </script>
 
