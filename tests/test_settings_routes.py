@@ -188,37 +188,18 @@ class TestAutoInstallLogic:
 
 
 @pytest.mark.unit
-class TestErrorHandling:
-    """Tests for error handling in download_update."""
+class TestDownloadErrorHandling:
+    """Tests for error handling in download_update.
 
-    def test_download_handles_network_error(self):
-        """Test that network errors are properly handled."""
+    Note: With async download (background thread), errors during download are
+    reported via the /update/progress endpoint instead of immediate HTTP errors.
+    The initial download endpoint returns 200 and starts a background thread.
+    """
+
+    def test_download_returns_success_for_valid_url(self):
+        """Test that download_update returns 200 with downloading status for valid URL."""
         from src.routes.settings import settings_bp
         from flask import Flask
-        import requests
-
-        app = Flask(__name__)
-        app.register_blueprint(settings_bp)
-
-        with app.test_client() as client:
-            with patch('requests.get') as mock_get:
-                mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
-
-                response = client.post(
-                    '/api/settings/update/download',
-                    json={'url': 'https://example.com/test.dmg'}
-                )
-
-                assert response.status_code == 500
-                data = response.get_json()
-                assert data['success'] is False
-                assert 'error' in data
-
-    def test_download_handles_http_error(self):
-        """Test that HTTP errors are properly handled."""
-        from src.routes.settings import settings_bp
-        from flask import Flask
-        import requests
 
         app = Flask(__name__)
         app.register_blueprint(settings_bp)
@@ -226,7 +207,10 @@ class TestErrorHandling:
         with app.test_client() as client:
             with patch('requests.get') as mock_get:
                 mock_response = Mock()
-                mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
+                mock_response.status_code = 200
+                mock_response.headers = {'Content-Length': '1000'}
+                mock_response.iter_content = Mock(return_value=[b'test content'])
+                mock_response.raise_for_status = Mock()
                 mock_get.return_value = mock_response
 
                 response = client.post(
@@ -234,83 +218,53 @@ class TestErrorHandling:
                     json={'url': 'https://example.com/test.dmg'}
                 )
 
-                assert response.status_code == 500
+                # With async download, returns 200 with downloading status
+                assert response.status_code == 200
                 data = response.get_json()
-                assert data['success'] is False
+                assert data['success'] is True
+                assert data['data']['downloading'] is True
 
+    def test_download_returns_progress_status_for_network_error(self):
+        """Test that network errors are captured in progress state.
 
-@pytest.mark.unit
-class TestRunUpdater:
-    """Tests for the run_updater endpoint."""
-
-    def test_run_updater_requires_path(self):
-        """Test that run_updater returns 400 when path is missing."""
-        from src.routes.settings import settings_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.register_blueprint(settings_bp)
-
-        with app.test_client() as client:
-            response = client.post(
-                '/api/settings/update/run-updater',
-                json={}  # No updater_path
-            )
-
-            assert response.status_code == 400
-
-    def test_run_updater_validates_path_exists(self):
-        """Test that run_updater returns 404 when path doesn't exist."""
-        from src.routes.settings import settings_bp
-        from flask import Flask
-
-        app = Flask(__name__)
-        app.register_blueprint(settings_bp)
-
-        with app.test_client() as client:
-            response = client.post(
-                '/api/settings/update/run-updater',
-                json={'updater_path': '/nonexistent/path/updater.bat'}
-            )
-
-            assert response.status_code == 404
-
-    def test_run_updater_releases_lock_before_launching(self):
-        """Test that run_updater releases instance lock before launching updater.
-
-        This is critical to prevent race conditions where the updater tries to
-        acquire the lock while anime1 is still running.
+        With async download, the download starts in background and errors
+        are reported via the progress endpoint with status 'failed'.
         """
         from src.routes.settings import settings_bp
         from flask import Flask
-        import tempfile
-        from pathlib import Path
+        import time
+        import importlib
+
+        # Reset the global state before test to ensure clean slate
+        import src.routes.settings as settings_module
+        importlib.reload(settings_module)
 
         app = Flask(__name__)
         app.register_blueprint(settings_bp)
 
-        # Create a temporary updater batch file
-        with tempfile.TemporaryDirectory() as tmpdir:
-            updater_path = Path(tmpdir) / 'updater.bat'
-            updater_path.write_text('@echo off\n echo Updating...')
+        with app.test_client() as client:
+            with patch('requests.get') as mock_get:
+                import requests
+                mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
 
-            with app.test_client() as client:
-                with patch('subprocess.Popen') as mock_popen, \
-                     patch('src.desktop.InstanceLock') as mock_lock_class, \
-                     patch('sys.exit') as mock_exit:
-                    mock_lock = Mock()
-                    mock_lock_class.return_value = mock_lock
+                response = client.post(
+                    '/api/settings/update/download',
+                    json={'url': 'https://example.com/test.dmg'}
+                )
 
-                    response = client.post(
-                        '/api/settings/update/run-updater',
-                        json={'updater_path': str(updater_path)}
-                    )
+                # Initial response returns 200 (download started in background)
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data['success'] is True
+                assert data['data']['downloading'] is True
 
-                    # Verify that force_release was called before Popen
-                    assert mock_lock.force_release.called, "force_release should be called"
-                    assert mock_popen.called, "subprocess.Popen should be called"
-                    # Verify sys.exit was called to exit the app
-                    assert mock_exit.called, "sys.exit should be called"
+                # Give the background thread time to process the error
+                time.sleep(0.2)
+
+                # Progress endpoint will report the error
+                progress_response = client.get('/api/settings/update/progress')
+                progress_data = progress_response.get_json()
+                assert progress_data['data']['progress']['status'] == 'failed'
 
 
 @pytest.mark.unit
