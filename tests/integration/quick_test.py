@@ -1,10 +1,16 @@
 import os
+import sys
 import subprocess
 import time
 import requests
 import json
 import shutil
 import zipfile
+import pytest
+
+# Skip on non-Windows platforms
+if sys.platform != 'win32':
+    pytest.skip("This script is only for Windows platforms.", allow_module_level=True)
 
 API_URL = "http://127.0.0.1:5172"
 OLD_VERSION = "0.0.1"
