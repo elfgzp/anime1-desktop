@@ -1,0 +1,41 @@
+name: test-download-progress
+description: Test the download progress display feature (frontend and backend)
+instructions: |
+  This skill tests the download progress feature:
+  1. Verify backend progress API returns correct data structure
+  2. Test frontend progress polling and display logic
+  3. Verify progress bar updates during download
+
+  Test files:
+  - Backend: src/routes/settings.py (_download_progress, get_update_progress)
+  - Frontend: src/views/Settings.vue (downloadProgress, startProgressPolling)
+  - Tests: frontend/src/views/Settings.test.js
+
+  Run frontend tests:
+  cd frontend && npm test -- --run src/views/Settings.test.js
+
+  Manual testing:
+  1. Start the app: python scripts/dev.py
+  2. Open http://127.0.0.1:5172
+  3. Go to Settings -> Check for updates
+  4. If update available, click "Download new version"
+  5. Verify progress bar shows percentage and bytes
+
+  Expected behavior:
+  - Progress bar should fill from 0% to 100%
+  - Downloaded/total bytes should be displayed
+  - Status message should show "正在下载..." then "下载完成"
+
+  Key code locations:
+  - Backend progress tracking: settings.py:73-91 (global state)
+  - Progress API: settings.py:806-821 (GET /api/settings/update/progress)
+  - Download thread: settings.py:484-542 (background download)
+  - Frontend progress state: Settings.vue:172-179 (downloadProgress ref)
+  - Progress polling: Settings.vue:290-330 (startProgressPolling)
+  - Progress UI: Settings.vue:71-87 (el-progress component)
+
+  Test assertions:
+  - Progress API returns is_downloading, percent, downloaded_bytes, total_bytes
+  - Frontend polls progress every 500ms during download
+  - Progress bar displays correct percentage
+  - Downloaded/total bytes format correctly (e.g., "50.5 MB / 100 MB")

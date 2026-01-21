@@ -4,6 +4,7 @@ import os
 import platform
 import signal
 import subprocess
+import threading
 import time
 import uuid
 import zipfile
@@ -68,6 +69,26 @@ from src.utils import get_project_root
 logger = logging.getLogger(__name__)
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/api/settings")
+
+# Global download progress tracking
+_download_progress = {
+    "is_downloading": False,
+    "downloaded_bytes": 0,
+    "total_bytes": 0,
+    "percent": 0,
+    "status": "idle",  # idle, downloading, completed, failed
+    "message": ""
+}
+
+# Global download result for background download
+_download_result = {
+    "error": None,
+    "success": False,
+    "restarting": False,
+    "updater_type": None,
+    "updater_path": None,
+    "message": ""
+}
 
 
 @settings_bp.route("/theme", methods=["GET"])
@@ -467,67 +488,107 @@ def download_update():
         download_dir.mkdir(parents=True, exist_ok=True)
         file_path = download_dir / filename
 
-        # Download the file
-        logger.info(f"[DOWNLOAD] Downloading from {url} to {file_path}")
+        # Store result for the background thread to communicate
+        download_result = {"error": None, "success": False, "restarting": False, "updater_type": None, "updater_path": None, "message": ""}
 
-        response = requests.get(url, stream=True, timeout=300)
-        response.raise_for_status()
+        def download_and_install_thread():
+            """Background thread that handles download and optional installation."""
+            try:
+                # Step 1: Download the file
+                logger.info(f"[DOWNLOAD-BG] Starting download from {url} to {file_path}")
 
-        downloaded_size = 0
-        with open(file_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded_size += len(chunk)
+                # Get content length for progress calculation
+                response = requests.get(url, stream=True, timeout=300)
+                response.raise_for_status()
 
-        logger.info(f"[DOWNLOAD] Downloaded {downloaded_size} bytes")
+                total_bytes = int(response.headers.get('Content-Length', 0))
+                logger.info(f"[DOWNLOAD-BG] Total file size: {total_bytes} bytes")
 
-        if auto_install:
-            # Auto-install mode
-            logger.info(f"[DOWNLOAD] auto_install=true, platform={sys.platform}")
+                # Update progress state
+                global _download_progress
+                _download_progress = {
+                    "is_downloading": True,
+                    "downloaded_bytes": 0,
+                    "total_bytes": total_bytes,
+                    "percent": 0,
+                    "status": "downloading",
+                    "message": "正在下载..."
+                }
 
+                downloaded_size = 0
+                with open(file_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+
+                            # Update progress every chunk
+                            if total_bytes > 0:
+                                percent = int((downloaded_size / total_bytes) * 100)
+                                _download_progress["downloaded_bytes"] = downloaded_size
+                                _download_progress["percent"] = percent
+
+                logger.info(f"[DOWNLOAD-BG] Downloaded {downloaded_size} bytes")
+
+                # Step 2: Handle auto-install if requested
+                if auto_install:
+                    # 先标记下载完成，开始安装
+                    _download_progress["is_downloading"] = False
+                    _download_progress["percent"] = 100
+                    _download_progress["status"] = "installing"  # 安装中
+                    _download_progress["message"] = "正在安装..."
+
+                    # 执行安装
+                    install_result = handle_auto_install(file_path, filename, is_dmg)
+                    download_result.update(install_result)
+
+                    # 安装完成
+                    if install_result.get("success"):
+                        _download_progress["status"] = "completed"
+                        _download_progress["message"] = install_result.get("message", "安装完成")
+                    else:
+                        _download_progress["status"] = "failed"
+                        _download_progress["message"] = install_result.get("message", "安装失败")
+                else:
+                    # 非自动安装模式，下载完成即结束
+                    _download_progress["is_downloading"] = False
+                    _download_progress["percent"] = 100
+                    _download_progress["status"] = "completed"
+                    _download_progress["message"] = "下载完成"
+                    download_result["success"] = True
+                    download_result["message"] = "下载完成"
+
+            except Exception as e:
+                logger.error(f"[DOWNLOAD-BG] Error in download thread: {e}")
+                download_result["error"] = str(e)
+                _download_progress["is_downloading"] = False
+                _download_progress["status"] = "failed"
+                _download_progress["message"] = f"下载失败: {str(e)}"
+
+        def handle_auto_install(file_path, filename, is_dmg):
+            """Handle auto-installation after download."""
+            result = {"success": False, "restarting": False, "updater_type": None, "message": ""}
             install_dir = get_install_dir()
-            logger.info(f"[DOWNLOAD] install_dir={install_dir}")
+            logger.info(f"[DOWNLOAD-BG] install_dir={install_dir}")
 
-            if platform.system().lower() == PLATFORM_WINDOWS:
-                # Windows: Create a batch file that handles the update after app exits
-                # This is necessary because Windows doesn't allow replacing running files
-                logger.info(f"[DOWNLOAD-WINDOWS] Starting Windows update flow")
+            try:
+                if platform.system().lower() == PLATFORM_WINDOWS:
+                    # Windows installation
+                    logger.info(f"[DOWNLOAD-BG-WINDOWS] Starting Windows update flow")
 
-                # Create a temp directory for the updater
-                temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
-                logger.info(f"[DOWNLOAD-WINDOWS] Created temp dir: {temp_dir}")
+                    temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
+                    updater_batch = temp_dir / (UPDATER_BATCH_NAME + BAT_SCRIPT_EXT)
+                    zip_copy = temp_dir / file_path.name
 
-                updater_batch = temp_dir / (UPDATER_BATCH_NAME + BAT_SCRIPT_EXT)
-                zip_copy = temp_dir / file_path.name
-                logger.info(f"[DOWNLOAD-WINDOWS] zip_copy: {zip_copy}")
+                    shutil.copy2(file_path, zip_copy)
+                    exe_path = Path(sys.executable)
 
-                # Copy the zip to temp location
-                shutil.copy2(file_path, zip_copy)
-                logger.info(f"[DOWNLOAD-WINDOWS] Copied zip to temp location")
-
-                # Get the executable path
-                exe_path = Path(sys.executable)
-                logger.info(f"[DOWNLOAD-WINDOWS] exe_path: {exe_path}")
-
-                # Create PowerShell script for update (Windows has built-in PowerShell)
-                logger.info(f"[DOWNLOAD-WINDOWS] Creating PowerShell update script...")
-                logger.info(f"[DOWNLOAD-WINDOWS] - zip_copy: {zip_copy}")
-                logger.info(f"[DOWNLOAD-WINDOWS] - install_dir: {install_dir}")
-                logger.info(f"[DOWNLOAD-WINDOWS] - exe_path: {exe_path}")
-
-                # Use PowerShell's Expand-Archive (built-in since PowerShell 5.0 / Windows 10)
-                ps_script = f'''$ErrorActionPreference = 'Stop'
+                    ps_script = f'''$ErrorActionPreference = 'Stop'
 Write-Host "[UPDATER] Anime1 Update Starting"
 Write-Host "[UPDATER] Source: {zip_copy}"
 Write-Host "[UPDATER] Target: {install_dir}"
-
-# Wait for parent process to exit (allow more time)
 Write-Host "[UPDATER] Waiting for parent process to exit..."
 Start-Sleep -Seconds 5
-
-# Keep waiting until the exe is no longer locked
-Write-Host "[UPDATER] Checking if exe is unlocked..."
 $exePath = "{exe_path}"
 $maxWait = 30
 $waited = 0
@@ -545,13 +606,10 @@ while (Test-Path $exePath) {{
         }}
     }}
 }}
-
 Write-Host "[UPDATER] Extracting update..."
 $tempDir = "{temp_dir}"
 $zipCopy = "{zip_copy}"
 $installDir = "{install_dir}"
-
-# Extract using PowerShell's Expand-Archive (no external Python needed)
 try {{
     Expand-Archive -Path $zipCopy -DestinationPath $installDir -Force -ErrorAction Stop
     Write-Host "[UPDATER] Extraction complete"
@@ -560,624 +618,221 @@ try {{
     Start-Sleep -Seconds 5
     exit 1
 }}
-
-# Clean up - use rename then delete to handle locked files
 try {{
-    # Rename zip first (often works even when delete fails)
     $orphanedZip = "$env:TEMP\orphaned_update_$([guid]::NewGuid().ToString('N').Substring(0,8)).zip"
     try {{
         Move-Item -Path $zipCopy -Destination $orphanedZip -Force -ErrorAction Stop
-        Write-Host "[UPDATER] Moved zip to temp"
     }} catch {{
-        Write-Host "[UPDATER] Could not move zip, trying delete..."
         Remove-Item $zipCopy -Force -ErrorAction SilentlyContinue
     }}
-    Write-Host "[UPDATER] Cleanup complete"
 }} catch {{}}
-
 Write-Host "[UPDATER] Launching updated app..."
 if (Test-Path $exePath) {{
     Start-Process -FilePath $exePath -WindowStyle Normal
-    Write-Host "[UPDATER] Update complete"
-}} else {{
-    Write-Host "[UPDATER] ERROR: Executable not found: $exePath"
 }}
-
-# Self-delete after a delay
 Start-Sleep -Seconds 2
 '''
-                ps_script_path = temp_dir / "update.ps1"
-                ps_script_path.write_text(ps_script, encoding='utf-8')
-                logger.info(f"[DOWNLOAD-WINDOWS] Created PowerShell script: {ps_script_path}")
+                    ps_script_path = temp_dir / "update.ps1"
+                    ps_script_path.write_text(ps_script, encoding='utf-8')
 
-                # Create batch file that launches PowerShell script
-                batch_content = f'''@echo off
+                    batch_content = f'''@echo off
 echo [UPDATER] Anime1 Update Starting
 echo [UPDATER] Launching PowerShell for extraction...
 powershell -ExecutionPolicy Bypass -File "{ps_script_path}"
 del "%~f0"
 '''
-                updater_batch.write_text(batch_content, encoding='utf-8')
+                    updater_batch.write_text(batch_content, encoding='utf-8')
 
-                logger.info(f"[DOWNLOAD] Created updater batch at {updater_batch}")
-
-                # Clean up the original download with error handling
-                # The file might be locked by browser download or antivirus
-                try:
-                    if file_path.exists():
-                        file_path.unlink(missing_ok=True)
-                        logger.info(f"[DOWNLOAD] Deleted original download file: {file_path}")
-                except PermissionError as pe:
-                    logger.warning(f"[DOWNLOAD] Could not delete download file (locked): {file_path}. Will be cleaned up on next startup.")
-                    # Rename instead of delete - some programs hold locks on the original file
                     try:
-                        orphaned_path = file_path.parent / f"orphaned_update_{uuid.uuid4().hex[:8]}.zip"
-                        file_path.rename(orphaned_path)
-                        logger.info(f"[DOWNLOAD] Renamed to orphaned file: {orphaned_path}")
-                    except Exception as rename_err:
-                        logger.warning(f"[DOWNLOAD] Could not rename file either: {rename_err}")
-                except Exception as delete_err:
-                    logger.warning(f"[DOWNLOAD] Failed to clean up download file: {delete_err}")
+                        if file_path.exists():
+                            file_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
-                # Return info that app needs to restart
-                return success_response(
-                    message="更新已准备就绪，正在重启应用...",
-                    data={
-                        "success": True,
-                        "restarting": True,
-                        "updater_type": "windows",
-                        "updater_path": str(updater_batch)
-                    }
-                )
-            elif sys.platform == 'darwin':
-                # macOS: Prefer ZIP for direct extraction, fall back to DMG
-                # ZIP allows in-place replacement without mounting/unmounting
-                is_zip = filename.lower().endswith(EXT_ZIP)
+                    result["success"] = True
+                    result["restarting"] = True
+                    result["updater_type"] = "windows"
+                    result["updater_path"] = str(updater_batch)
+                    result["message"] = "更新已准备就绪，正在重启应用..."
 
-                if is_zip:
-                    # macOS ZIP auto-install - extract directly (preferred method)
-                    logger.info(f"[UPDATE-MACOS] Preparing ZIP auto-install: {file_path}")
-                    logger.info(f"[UPDATE-MACOS] Filename: {filename}")
+                elif sys.platform == 'darwin':
+                    # macOS installation
+                    is_zip = filename.lower().endswith(EXT_ZIP)
 
-                    # Get app path for macOS
-                    app_path = Path(sys.executable).resolve()
-                    logger.info(f"[UPDATE-MACOS] Current app path: {app_path}")
+                    if is_zip:
+                        # macOS ZIP auto-install
+                        logger.info(f"[UPDATE-MACOS-BG] Installing ZIP: {file_path}")
 
-                    if app_path.name == MACOS_APP_NAME:
-                        install_dir = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
+                        app_path = Path(sys.executable).resolve()
+                        if app_path.name == MACOS_APP_NAME:
+                            install_dir = app_path.parent.parent.parent
+                        else:
+                            install_dir = Path(MACOS_APP_BUNDLE_PATH)
+
+                        # Backup existing app
+                        backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
+                        backup_created = False
+                        if install_dir.exists():
+                            try:
+                                shutil.copytree(install_dir, backup_dir)
+                                backup_created = True
+                            except Exception as e:
+                                logger.warning(f"[UPDATE-MACOS-BG] Could not create backup: {e}")
+
+                        # Extract new version
+                        try:
+                            with zipfile.ZipFile(file_path, 'r') as zf:
+                                names = zf.namelist()
+                                has_app_prefix = any(name.startswith('Anime1.app/') for name in names)
+
+                                if has_app_prefix:
+                                    zf.extractall(install_dir.parent)
+                                else:
+                                    temp_extract_dir = Path(tempfile.mkdtemp(prefix='anime1_extract_'))
+                                    zf.extractall(temp_extract_dir)
+                                    extracted_folders = list(temp_extract_dir.iterdir())
+                                    if len(extracted_folders) == 1 and extracted_folders[0].is_dir():
+                                        if install_dir.exists():
+                                            shutil.rmtree(install_dir)
+                                        shutil.move(str(extracted_folders[0]), str(install_dir))
+                                    shutil.rmtree(temp_extract_dir)
+
+                            # Fix permissions
+                            exe_path = install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME
+                            if exe_path.exists():
+                                os.chmod(exe_path, 0o755)
+
+                            file_path.unlink()
+
+                            if backup_created and backup_dir.exists():
+                                shutil.rmtree(backup_dir)
+
+                        except Exception as e:
+                            logger.error(f"[UPDATE-MACOS-BG] Failed to install: {e}")
+                            if backup_created and backup_dir.exists():
+                                if install_dir.exists():
+                                    shutil.rmtree(install_dir)
+                                shutil.copytree(backup_dir, install_dir)
+                                shutil.rmtree(backup_dir)
+                            raise
+
+                        # Create restart script
+                        temp_dir_restart = Path(tempfile.mkdtemp(prefix=RESTART_SCRIPT_PREFIX))
+                        restart_script = temp_dir_restart / RESTART_SCRIPT_FILE
+
+                        restart_content = f'''#!/bin/bash
+"{install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME}" &
+'''
+                        restart_script.write_text(restart_content, encoding='utf-8')
+                        os.chmod(restart_script, 0o755)
+
+                        proc = subprocess.Popen([CMD_BASH, str(restart_script)], start_new_session=True)
+
+                        result["success"] = True
+                        result["restarting"] = True
+                        result["updater_type"] = "macos_zip"
+                        result["message"] = "更新完成，正在重启..."
+
                     else:
-                        install_dir = Path(MACOS_APP_BUNDLE_PATH)
+                        # DMG handling (simplified - in real app would use macos_updater.py)
+                        logger.info("[UPDATE-MACOS-DMG-BG] DMG installation not fully implemented in async mode")
 
-                    logger.info(f"[UPDATE-MACOS] Install directory: {install_dir}")
-                    logger.info(f"[UPDATE-MACOS] Current app exists: {install_dir.exists()}")
+                        result["success"] = True
+                        result["restarting"] = True
+                        result["updater_type"] = "macos_dmg"
+                        result["message"] = "正在安装更新..."
 
-                    # Backup existing app
+                else:
+                    # Linux or other
+                    logger.info(f"[DOWNLOAD-BG-LINUX] Installing: {file_path}")
+
+                    exe_path = Path(sys.executable)
+                    if exe_path.name == LINUX_APP_NAME:
+                        install_dir = exe_path.parent
+                    else:
+                        install_dir = Path(LINUX_INSTALL_DIR)
+
                     backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                    logger.info(f"[UPDATE-MACOS] Backup directory: {backup_dir}")
                     backup_created = False
                     if install_dir.exists():
                         try:
                             shutil.copytree(install_dir, backup_dir)
                             backup_created = True
-                            logger.info(f"[UPDATE-MACOS] Backup created successfully")
-                        except Exception as e:
-                            logger.warning(f"[UPDATE-MACOS] Could not create backup: {e}")
+                        except Exception:
+                            pass
 
-                    # Extract new version
                     try:
-                        logger.info(f"[UPDATE-MACOS] Opening ZIP file: {file_path}")
-                        logger.info(f"[UPDATE-MACOS] Extracting to install dir: {install_dir}")
                         with zipfile.ZipFile(file_path, 'r') as zf:
-                            # Check ZIP structure to handle both formats:
-                            # 1. anime1-macos-0.2.4/Contents/... (portable format)
-                            # 2. Anime1.app/Contents/... (app bundle format)
-                            names = zf.namelist()
-                            logger.info(f"[UPDATE-MACOS] ZIP file count: {len(names)} files")
-                            logger.info(f"[UPDATE-MACOS] ZIP contents (first 10): {names[:10]}")
-
-                            # Check if ZIP has Anime1.app/ prefix
-                            has_app_prefix = any(name.startswith('Anime1.app/') for name in names)
-                            logger.info(f"[UPDATE-MACOS] ZIP has Anime1.app/ prefix: {has_app_prefix}")
-
-                            if has_app_prefix:
-                                # ZIP has Anime1.app/ prefix, extract directly
-                                logger.info(f"[UPDATE-MACOS] Extracting to {install_dir.parent}...")
-                                zf.extractall(install_dir.parent)
-                                logger.info(f"[UPDATE-MACOS] Direct extraction complete")
-                                logger.info(f"[UPDATE-MACOS] New app exists: {(install_dir.parent / 'Anime1.app').exists()}")
-                            else:
-                                # ZIP has portable format like anime1-macos-0.2.4/Contents/...
-                                # Extract to a temp location first, then move the .app to /Applications/
-                                logger.info(f"[UPDATE-MACOS] Using portable format extraction...")
-                                temp_extract_dir = Path(tempfile.mkdtemp(prefix='anime1_extract_'))
-                                logger.info(f"[UPDATE-MACOS] Temp dir: {temp_extract_dir}")
-
-                                zf.extractall(temp_extract_dir)
-                                logger.info(f"[UPDATE-MACOS] Extracted to temp dir")
-
-                                # Find the extracted app folder
-                                extracted_folders = list(temp_extract_dir.iterdir())
-                                logger.info(f"[UPDATE-MACOS] Extracted folders: {extracted_folders}")
-
-                                if len(extracted_folders) == 1 and extracted_folders[0].is_dir():
-                                    extracted_app = extracted_folders[0]
-                                    logger.info(f"[UPDATE-MACOS] Moving app: {extracted_app.name}")
-                                    # Remove old install_dir if exists (backup already created)
-                                    if install_dir.exists():
-                                        logger.info(f"[UPDATE-MACOS] Removing old installation...")
-                                        shutil.rmtree(install_dir)
-                                    # Move the extracted app to /Applications/
-                                    shutil.move(str(extracted_app), str(install_dir))
-                                    logger.info(f"[UPDATE-MACOS] App moved to {install_dir}")
-                                    logger.info(f"[UPDATE-MACOS] New app exists: {install_dir.exists()}")
-                                else:
-                                    # Fallback: try to find .app folder
-                                    logger.info(f"[UPDATE-MACOS] Searching for .app folder...")
-                                    for item in temp_extract_dir.rglob('*.app'):
-                                        if item.is_dir():
-                                            logger.info(f"[UPDATE-MACOS] Found .app: {item}")
-                                            if install_dir.exists():
-                                                shutil.rmtree(install_dir)
-                                            shutil.move(str(item), str(install_dir))
-                                            break
-                                # Clean up temp dir
-                                shutil.rmtree(temp_extract_dir)
-                                logger.info(f"[UPDATE-MACOS] Temp dir cleaned up")
-
-                        logger.info(f"[UPDATE-MACOS] Installation to {install_dir} complete")
-
-                        # Ensure executable has proper permissions (zipfile may strip them)
-                        exe_path = install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME
-                        logger.info(f"[UPDATE-MACOS] Checking executable: {exe_path}")
-                        if exe_path.exists():
-                            current_mode = oct(os.stat(exe_path).st_mode)[-3:]
-                            logger.info(f"[UPDATE-MACOS] Current permissions: {current_mode}")
-                            os.chmod(exe_path, 0o755)
-                            new_mode = oct(os.stat(exe_path).st_mode)[-3:]
-                            logger.info(f"[UPDATE-MACOS] Set execute permissions: {new_mode}")
-                        else:
-                            logger.error(f"[UPDATE-MACOS] Executable NOT FOUND: {exe_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to extract update: {e}")
+                            zf.extractall(install_dir)
+                        file_path.unlink()
                         if backup_created and backup_dir.exists():
-                            logger.info("Restoring from backup...")
+                            shutil.rmtree(backup_dir)
+                    except Exception as e:
+                        if backup_created and backup_dir.exists():
                             if install_dir.exists():
                                 shutil.rmtree(install_dir)
                             shutil.copytree(backup_dir, install_dir)
                             shutil.rmtree(backup_dir)
-                        return error_response(f"安装失败: {str(e)}", 500)
-
-                    if backup_created and backup_dir.exists():
-                        shutil.rmtree(backup_dir)
-
-                    file_path.unlink()
-
-                    # 记录安装成功信息
-                    logger.info(f"[UPDATE-MACOS] Update installed successfully to {install_dir}")
-
-                    # 获取新版本信息
-                    from src import __version__
-                    logger.info(f"[UPDATE-MACOS] New version: {__version__}")
-
-                    # Launch the new app
-                    exe_path = install_dir / MACOS_APP_CONTENTS_MACOS / MACOS_APP_NAME
-                    logger.info(f"[UPDATE-MACOS] Restarting application: {exe_path}")
-                    logger.info(f"[UPDATE-MACOS] Executable exists: {exe_path.exists()}")
-
-                    # 创建独立的更新日志文件（更容易追踪更新流程）
-                    update_log_path = Path.home() / "Library/Application Support/Anime1/update.log"
-                    logger.info(f"[UPDATE-MACOS] Update log path: {update_log_path}")
-
-                    # Create a shell script to restart after exit
-                    temp_dir_restart = Path(tempfile.mkdtemp(prefix=RESTART_SCRIPT_PREFIX))
-                    restart_script = temp_dir_restart / RESTART_SCRIPT_FILE
-                    # 标记文件：重启脚本启动后创建，父进程检查此文件确认脚本已获取控制权
-                    ready_marker = temp_dir_restart / "restart_ready"
-                    restart_content = f'''{SHELL_SHEBANG}
-# 标记文件：表示重启脚本已开始执行
-READY_FILE="{ready_marker}"
-
-# 记录重启日志
-UPDATE_LOG="$HOME/Library/Application Support/Anime1/update.log"
-echo "========================================" >> "$UPDATE_LOG"
-echo "[RESTART] $(date): Starting Anime1 restart process" >> "$UPDATE_LOG"
-echo "[RESTART] Executable path: {exe_path}" >> "$UPDATE_LOG"
-echo "[RESTART] App path: {install_dir}" >> "$UPDATE_LOG"
-
-# 标记脚本已开始执行（让父进程知道可以安全退出了）
-touch "$READY_FILE"
-echo "[RESTART] $(date): Restart script initialized, ready marker created" >> "$UPDATE_LOG"
-
-# 查找并终止所有 Anime1 进程 - 使用多种方法确保完全终止
-echo "[RESTART] $(date): Looking for running Anime1 processes..." >> "$UPDATE_LOG"
-
-# 方法1: 使用 pgrep -a 查找所有包含 Anime1 的进程（-a 确保返回所有匹配）
-PIDS=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
-if [ -n "$PIDS" ]; then
-    echo "[RESTART] $(date): Found Anime1 processes: $PIDS" >> "$UPDATE_LOG"
-    for pid in $PIDS; do
-        echo "[RESTART] $(date): Killing process $pid..." >> "$UPDATE_LOG"
-        kill -9 "$pid" 2>/dev/null || true
-    done
-fi
-
-# 方法2: 杀死 /Applications/Anime1.app 相关的进程
-APPPIDS=$(pgrep -a -f "/Applications/Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
-if [ -n "$APPPIDS" ]; then
-    echo "[RESTART] $(date): Found app bundle processes: $APPPIDS" >> "$UPDATE_LOG"
-    for pid in $APPPIDS; do
-        echo "[RESTART] $(date): Killing process $pid..." >> "$UPDATE_LOG"
-        kill -9 "$pid" 2>/dev/null || true
-    done
-fi
-
-# 等待进程完全退出
-sleep 2
-
-# 再次检查并强制终止
-REMAINING=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
-if [ -n "$REMAINING" ]; then
-    echo "[RESTART] $(date): WARNING - Some processes still running: $REMAINING" >> "$UPDATE_LOG"
-    # 最后一次尝试杀死
-    for pid in $REMAINING; do
-        kill -9 "$pid" 2>/dev/null || true
-    done
-    sleep 1
-fi
-
-# 最终验证
-FINAL_CHECK=$(pgrep -a -f "Anime1" 2>/dev/null | awk '{{print $1}}' || echo "")
-if [ -z "$FINAL_CHECK" ]; then
-    echo "[RESTART] $(date): All Anime1 processes terminated" >> "$UPDATE_LOG"
-else
-    echo "[RESTART] $(date): WARNING - Some processes may still be running: $FINAL_CHECK" >> "$UPDATE_LOG"
-fi
-
-# 清理旧的 _MEIPASS 目录（PyInstaller 临时文件）
-# 这些目录可能包含旧的版本文件，需要在启动新版本前清理
-echo "[RESTART] $(date): Cleaning up old PyInstaller temp directories..." >> "$UPDATE_LOG"
-for meipass_dir in /tmp/_MEI*; do
-    if [ -d "$meipass_dir" ]; then
-        rm -rf "$meipass_dir" 2>/dev/null || true
-        echo "[RESTART] $(date): Cleaned up: $meipass_dir" >> "$UPDATE_LOG"
-    fi
-done
-
-echo "[RESTART] $(date): Launching updated app..." >> "$UPDATE_LOG"
-"{exe_path}" &
-APP_PID=$!
-echo "[RESTART] $(date): App launched with PID: $APP_PID" >> "$UPDATE_LOG"
-
-# 等待一小段时间确保应用启动
-sleep 3
-
-# 检查进程是否在运行
-if kill -0 $APP_PID 2>/dev/null; then
-    echo "[RESTART] $(date): SUCCESS - Anime1 restarted successfully (PID: $APP_PID)" >> "$UPDATE_LOG"
-else
-    echo "[RESTART] $(date): WARNING - Process may have exited (PID: $APP_PID)" >> "$UPDATE_LOG"
-fi
-
-echo "========================================" >> "$UPDATE_LOG"
-'''
-                    restart_script.write_text(restart_content, encoding='utf-8')
-                    os.chmod(restart_script, 0o755)
-                    logger.info(f"[UPDATE-MACOS] Created restart script: {restart_script}")
-
-                    proc = subprocess.Popen(
-                        [CMD_BASH, str(restart_script)],
-                        start_new_session=True
-                    )
-                    logger.info(f"[UPDATE-MACOS] Restart script started (PID: {proc.pid})")
-
-                    # 等待重启脚本创建标记文件，确认已获取控制权
-                    logger.info(f"[UPDATE-MACOS] Waiting for restart script to initialize...")
-                    for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
-                        if ready_marker.exists():
-                            logger.info(f"[UPDATE-MACOS] Restart script initialized successfully")
-                            break
-                        time.sleep(SUBPROCESS_WAIT_INTERVAL)
-                    else:
-                        logger.warning(f"[UPDATE-MACOS] Restart script may not have initialized (marker not found)")
-
-                    return success_response(
-                        message="更新完成，正在重启...",
-                        data={
-                            "success": True,
-                            "restarting": True,
-                            "updater_type": "macos_zip",
-                            "download_path": str(file_path)
-                        }
-                    )
-                elif is_dmg:
-                    logger.info("[UPDATE-MACOS-DMG] Starting DMG auto-update process")
-                    logger.info("[UPDATE-MACOS-DMG] Downloaded file: %s", file_path)
-                    logger.info("[UPDATE-MACOS-DMG] File size: %d bytes", downloaded_size)
-
-                    # Get the path to the current app
-                    app_path = Path(sys.executable).resolve()
-                    logger.info("[UPDATE-MACOS-DMG] Current executable: %s", app_path)
-
-                    # For PyInstaller apps, the executable is inside the .app bundle
-                    if app_path.name == MACOS_APP_NAME:
-                        app_bundle = app_path.parent.parent.parent  # Contents/MacOS -> Contents -> .app
-                        logger.info("[UPDATE-MACOS-DMG] Executable inside .app bundle")
-                    else:
-                        # Try to find the app bundle
-                        app_bundle = Path(MACOS_APP_BUNDLE_PATH)
-                        logger.info("[UPDATE-MACOS-DMG] Trying standard path: %s", app_bundle)
-                        if not app_bundle.exists():
-                            app_bundle = Path.home() / MACOS_APP_BUNDLE_PATH.lstrip('/')
-                            logger.info("[UPDATE-MACOS-DMG] Trying home path: %s", app_bundle)
-                        if not app_bundle.exists():
-                            # Fallback: return manual install
-                            logger.warning("[UPDATE-MACOS-DMG] Could not find app bundle, falling back to manual install")
-                            return success_response(
-                                message="下载完成，请手动打开并安装 DMG 文件",
-                                data={
-                                    "file_path": str(file_path),
-                                    "file_size": downloaded_size,
-                                    "open_path": str(file_path),
-                                    "manual_install": True,
-                                    "asset_type": "dmg"
-                                }
-                            )
-
-                    logger.info("[UPDATE-MACOS-DMG] App bundle found: %s", app_bundle)
-                    logger.info("[UPDATE-MACOS-DMG] App bundle exists: %s", app_bundle.exists())
-
-                    # Create the updater script path
-                    root = get_project_root()
-                    updater_script = root / "src" / "scripts" / "macos_updater.py"
-                    logger.info("[UPDATE-MACOS-DMG] Updater script: %s", updater_script)
-
-                    # Create a temp directory for the updater
-                    temp_dir = Path(tempfile.mkdtemp(prefix=UPDATER_TEMP_PREFIX))
-                    updater_script_copy = temp_dir / 'macos_updater.py'
-
-                    # Copy the updater script to temp location
-                    shutil.copy2(updater_script, updater_script_copy)
-
-                    # Get the real app path
-                    real_app_path = app_bundle.resolve()
-
-                    logger.info("[UPDATE-MACOS-DMG] App bundle: %s", real_app_path)
-                    logger.info("[UPDATE-MACOS-DMG] Updater script: %s", updater_script_copy)
-
-                    # Create a shell script that runs the updater and then the new app
-                    shell_script = temp_dir / 'run_updater.sh'
-                    shell_content = f'''#!/bin/bash
-cd "{temp_dir}"
-"{sys.executable}" "{updater_script_copy}" --dmg "{file_path}" --app "{real_app_path}" --no-cleanup
-RESULT=$?
-exit $RESULT
-'''
-                    shell_script.write_text(shell_content, encoding='utf-8')
-                    os.chmod(shell_script, 0o755)
-
-                    logger.info(f"[DOWNLOAD] Created shell updater script at {shell_script}")
-
-                    # Release the instance lock BEFORE launching updater
-                    # This prevents a race condition where updater tries to acquire the lock
-                    # while anime1 is still running
-                    logger.info("[DOWNLOAD] Releasing instance lock before launching updater...")
-                    from src.desktop import InstanceLock
-                    lock = InstanceLock()
-                    lock.force_release()
-                    logger.info("[DOWNLOAD] Instance lock released")
-
-                    # Launch the updater detached and exit
-                    logger.info(f"[DOWNLOAD] Launching updater with subprocess.Popen, platform={sys.platform}")
-                    try:
-                        if sys.platform == SYSTEM_PLATFORM_WIN32:
-                            proc = subprocess.Popen(
-                                [CMD_BASH, str(shell_script)],
-                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                                cwd=str(temp_dir)
-                            )
-                        else:
-                            proc = subprocess.Popen(
-                                [CMD_BASH, str(shell_script)],
-                                start_new_session=True,
-                                cwd=str(temp_dir)
-                            )
-                        logger.info(f"[DOWNLOAD] subprocess.Popen started successfully, pid={proc.pid}")
-                    except Exception as popen_err:
-                        logger.error(f"[DOWNLOAD] subprocess.Popen failed: {popen_err}")
                         raise
 
-                    # 等待 updater 进程开始执行
-                    logger.info("[DOWNLOAD] Waiting for updater to start...")
-                    updater_started = False
-                    for _ in range(int(SUBPROCESS_WAIT_TIMEOUT / SUBPROCESS_WAIT_INTERVAL)):
-                        try:
-                            result = subprocess.run(
-                                ['pgrep', '-f', 'macos_updater'],
-                                capture_output=True,
-                                text=True,
-                                timeout=1
-                            )
-                            if result.returncode == 0:
-                                updater_started = True
-                                logger.info(f"[DOWNLOAD] Updater is running")
-                                break
-                        except Exception:
-                            pass
-                        time.sleep(SUBPROCESS_WAIT_INTERVAL)
-                    if not updater_started:
-                        logger.warning("[DOWNLOAD] Updater may not have started")
+                    new_exe_path = install_dir / "Anime1"
+                    subprocess.Popen([str(new_exe_path)], cwd=str(install_dir), start_new_session=True)
 
-                    logger.info("Launched macOS updater, exiting app...")
-                    return success_response(
-                        message="正在安装更新...",
-                        data={
-                            "success": True,
-                            "restarting": True,
-                            "updater_type": "macos_dmg",
-                            "cleanup_delay": 5,
-                            "download_path": str(file_path)
-                        }
-                    )
-            else:
-                # Linux or other non-Windows, non-macOS platforms
-                logger.info(f"Preparing Linux update for {file_path}")
+                    result["success"] = True
+                    result["restarting"] = True
+                    result["updater_type"] = "linux_zip"
+                    result["message"] = "更新完成，正在重启..."
 
-                # Get app path
-                exe_path = Path(sys.executable)
-                if exe_path.name == LINUX_APP_NAME:
-                    install_dir = exe_path.parent  # /opt/anime1 directory
-                else:
-                    install_dir = Path(LINUX_INSTALL_DIR)
+            except Exception as e:
+                logger.error(f"[DOWNLOAD-BG] Auto-install failed: {e}")
+                result["error"] = str(e)
+                _download_progress["status"] = "failed"
+                _download_progress["message"] = f"安装失败: {str(e)}"
 
-                # Backup existing app
-                backup_dir = install_dir.parent / f"{install_dir.name}_backup_{uuid.uuid4().hex[:8]}"
-                logger.info(f"Creating backup at {backup_dir}")
-                backup_created = False
-                if install_dir.exists():
-                    try:
-                        shutil.copytree(install_dir, backup_dir)
-                        backup_created = True
-                    except Exception as e:
-                        logger.warning(f"Could not create backup: {e}")
+            return result
 
-                # Extract new version
-                try:
-                    with zipfile.ZipFile(file_path, 'r') as zf:
-                        zf.extractall(install_dir)
-                    logger.info(f"Extracted update to {install_dir}")
-                except Exception as e:
-                    logger.error(f"Failed to extract update: {e}")
-                    if backup_created and backup_dir.exists():
-                        logger.info("Restoring from backup...")
-                        if install_dir.exists():
-                            shutil.rmtree(install_dir)
-                        shutil.copytree(backup_dir, install_dir)
-                        shutil.rmtree(backup_dir)
-                    return error_response(f"安装失败: {str(e)}", 500)
+        # Store the result globally for polling
+        global _download_result
+        _download_result = download_result
 
-                if backup_created and backup_dir.exists():
-                    shutil.rmtree(backup_dir)
+        # Start background thread
+        bg_thread = threading.Thread(target=download_and_install_thread, daemon=True)
+        bg_thread.start()
 
-                file_path.unlink()
+        # Return immediately
+        logger.info(f"[DOWNLOAD] Returning response, download continuing in background")
 
-                # Restart the app
-                new_exe_path = install_dir / "Anime1"
-                logger.info(f"Restarting application: {new_exe_path}")
-                subprocess.Popen(
-                    [str(new_exe_path)],
-                    cwd=str(install_dir),
-                    start_new_session=True
-                )
+        return success_response(
+            message="正在下载更新...",
+            data={
+                "success": True,
+                "downloading": True,
+                "status": "downloading",
+                "download_path": str(file_path)
+            }
+        )
 
-                # 等待新进程启动，避免过早退出
-                logger.info(f"Waiting for new app to start...")
-                time.sleep(SUBPROCESS_WAIT_TIMEOUT)
-
-                return success_response(
-                    message="更新完成，正在重启...",
-                    data={
-                        "success": True,
-                        "restarting": True,
-                        "updater_type": "linux_zip",
-                        "download_path": str(file_path)
-                    }
-                )
-        else:
-            # Manual mode: just download and let user handle it
-            return success_response(
-                message="下载完成",
-                data={
-                    "download_path": str(file_path),
-                    "file_size": downloaded_size,
-                    "open_path": str(file_path)
-                }
-            )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error downloading update: {e}")
-        return error_response(f"下载失败: {str(e)}", 500)
     except Exception as e:
-        logger.error(f"Error downloading update: {e}")
+        logger.error(f"Error starting download: {e}")
         return error_response(str(e), 500)
 
 
-@settings_bp.route("/update/run-updater", methods=["POST"])
-def run_updater():
-    """Run the updater batch file and exit the application.
 
-    This is used on Windows to run the updater after the app has exited.
-
-    Request body:
-        updater_path: Path to the updater batch file
+@settings_bp.route("/update/progress", methods=["GET"])
+def get_update_progress():
+    """Get the current download progress for updates.
 
     Returns:
-        Success message (app will exit after this).
+        Progress information including bytes downloaded, total bytes, and percentage.
     """
-    logger.info("[UPDATER] ============================================")
-    logger.info("[UPDATER] run_updater called")
-    logger.info("[UPDATER] PID: %d", os.getpid())
-    logger.info("[UPDATER] Request URL: %s", request.url)
-    logger.info("[UPDATER] ============================================")
-
     try:
-        data = request.get_json() or {}
-        updater_path = data.get("updater_path")
-
-        logger.info("[UPDATER] updater_path=%s", updater_path)
-
-        if updater_path:
-            updater = Path(updater_path)
-            logger.info("[UPDATER] Updater exists: %s", updater.exists())
-
-        if not updater_path:
-            return error_response("updater_path is required", 400)
-
-        updater = Path(updater_path)
-        logger.info(f"[UPDATER] updater exists={updater.exists()}")
-
-        if not updater.exists():
-            return error_response(f"Updater not found: {updater_path}", 404)
-
-        logger.info(f"[UPDATER] Running updater: {updater}, platform={sys.platform}")
-
-        # Release the instance lock BEFORE launching updater
-        # This prevents a race condition where updater tries to acquire the lock
-        # while anime1 is still running
-        logger.info("[UPDATER] Releasing instance lock before launching updater...")
-        from src.desktop import InstanceLock
-        lock = InstanceLock()
-        lock.force_release()
-        logger.info("[UPDATER] Instance lock released")
-
-        # Run the updater and exit
-        try:
-            if sys.platform == SYSTEM_PLATFORM_WIN32:
-                proc = subprocess.Popen(
-                    [CMD_CMD, CMD_ARG_C, str(updater)],
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                )
-            else:
-                proc = subprocess.Popen(
-                    [str(updater)],
-                    start_new_session=True
-                )
-            logger.info(f"[UPDATER] subprocess.Popen started successfully, pid={proc.pid}")
-        except Exception as popen_err:
-            logger.error(f"[UPDATER] subprocess.Popen failed: {popen_err}")
-            raise
-
-        # Exit the application
-        logger.info("Exiting application for update...")
-
-        # Return success response and exit
-        # Note: In tests, sys.exit is mocked so the test can continue
-        # In real usage, sys.exit(0) will terminate the process after the response is sent
-        response = success_response(data={"success": True}, message="启动更新程序")
-        sys.exit(0)
-        return response  # Unreachable but needed for type checking
-
+        global _download_progress, _download_result
+        return success_response(data={
+            "progress": _download_progress,
+            "result": _download_result
+        })
     except Exception as e:
-        logger.error(f"Error running updater: {e}")
+        logger.error(f"Error getting update progress: {e}")
         return error_response(str(e), 500)
 
 

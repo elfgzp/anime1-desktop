@@ -54,6 +54,7 @@
             v-if="updateInfo.download_url"
             type="success"
             :loading="downloadingUpdate"
+            :disabled="downloadProgress.status === 'downloading'"
             @click="handleDownloadUpdate"
           >
             {{ downloadingUpdate ? '下载中...' : '下载新版本' }}
@@ -65,6 +66,23 @@
           >
             手动下载
           </el-button>
+        </div>
+      </div>
+      <!-- 下载进度条 -->
+      <div class="settings-item" v-if="downloadingUpdate && updateInfo.has_update">
+        <div class="settings-label">
+          <span>下载进度</span>
+          <div class="settings-desc">
+            {{ downloadProgress.message || '正在获取进度...' }}
+            {{ formatBytes(downloadProgress.downloaded_bytes) }} / {{ formatBytes(downloadProgress.total_bytes) }}
+          </div>
+        </div>
+        <div class="settings-control" style="width: 200px;">
+          <el-progress
+            :percentage="downloadProgress.percent"
+            :status="downloadProgress.status === 'completed' ? 'success' : ''"
+            :stroke-width="8"
+          />
         </div>
       </div>
       <div class="settings-item" v-if="updateInfo.has_update && updateInfo.release_notes">
@@ -169,6 +187,14 @@ const themeStore = useThemeStore()
 const theme = ref(THEME.SYSTEM)
 const checkingUpdate = ref(false)
 const downloadingUpdate = ref(false)
+const downloadProgress = ref({
+  percent: 0,
+  downloaded_bytes: 0,
+  total_bytes: 0,
+  status: 'idle',
+  message: ''
+})
+let progressPollingInterval = null
 const aboutInfo = ref(null)
 const openingLogs = ref(false)
 const cacheInfo = ref({})
@@ -252,6 +278,94 @@ const handleCheckUpdate = async () => {
   }
 }
 
+// 格式化字节为可读大小
+const formatBytes = (bytes) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// 发送日志到后端
+const logToBackend = (message, level = 'info') => {
+  if (window.js_api && typeof window.js_api.log === 'function') {
+    window.js_api.log(message, level)
+  }
+  console.log(`[UPDATE-FRONTEND] ${message}`)
+}
+
+// 开始轮询下载进度
+const startProgressPolling = () => {
+  logToBackend('开始轮询下载进度')
+
+  // 每 500ms 查询一次进度
+  progressPollingInterval = setInterval(async () => {
+    try {
+      const response = await settingsAPI.getUpdateProgress()
+      if (response.data && response.data.data) {
+        const data = response.data.data
+        const progress = data.progress || data
+        const result = data.result || {}
+
+        // 更新进度状态 (兼容新旧 API 格式)
+        downloadProgress.value = progress
+
+        // 发送进度到后端日志
+        logToBackend(`轮询: status=${progress.status}, percent=${progress.percent}%`)
+
+        // 如果下载完成或失败，处理结果
+        if (progress.status === 'completed' || progress.status === 'failed') {
+          stopProgressPolling()
+          logToBackend(`下载/安装完成, result=${JSON.stringify(result)}`)
+
+          if (result.success && result.restarting) {
+            // 需要重启
+            logToBackend(`执行重启, updater_type=${result.updater_type}`, 'info')
+            if (result.updater_type === 'macos_dmg') {
+              logToBackend('macOS DMG 模式，退出应用')
+              await settingsAPI.exitApp()
+            } else if (result.updater_type === 'windows' && result.updater_path) {
+              logToBackend(`Windows 模式，运行更新器: ${result.updater_path}`)
+              await settingsAPI.runUpdater(result.updater_path)
+              await settingsAPI.exitApp()
+            } else if (result.updater_type === 'linux_zip' || result.updater_type === 'macos_zip') {
+              logToBackend('ZIP 模式，先退出应用再刷新')
+              // 对于 ZIP 模式，需要先退出应用，然后刷新页面
+              await settingsAPI.exitApp()
+              // 延迟刷新页面，让退出 API 有时间执行
+              setTimeout(() => {
+                window.location.reload()
+              }, 500)
+            } else {
+              logToBackend(`未知 updater_type: ${result.updater_type}`, 'warning')
+              ElMessage.success(result.message || '下载并安装完成，请重启应用')
+            }
+          } else if (result.success) {
+            // 下载完成但不需要重启（可能是手动模式）
+            logToBackend('下载完成，无须重启')
+            ElMessage.success(result.message || '下载完成')
+          } else if (result.error || progress.status === 'failed') {
+            // 下载/安装失败
+            logToBackend(`下载/安装失败: ${result.error || progress.message}`, 'error')
+            ElMessage.error(result.message || progress.message || '操作失败')
+          }
+        }
+      }
+    } catch (error) {
+      logToBackend(`获取下载进度失败: ${error}`, 'error')
+    }
+  }, 500)
+}
+
+// 停止轮询
+const stopProgressPolling = () => {
+  if (progressPollingInterval) {
+    clearInterval(progressPollingInterval)
+    progressPollingInterval = null
+  }
+}
+
 // 下载更新
 const handleDownloadUpdate = async () => {
   if (!updateInfo.value.download_url) {
@@ -278,6 +392,16 @@ const handleDownloadUpdate = async () => {
   }
 
   downloadingUpdate.value = true
+  // 重置进度状态
+  downloadProgress.value = {
+    percent: 0,
+    downloaded_bytes: 0,
+    total_bytes: 0,
+    status: 'idle',
+    message: ''
+  }
+  // 开始轮询进度
+  startProgressPolling()
   console.log('[UPDATE-FRONTEND] 开始下载更新...')
   console.log('[UPDATE-FRONTEND] download_url:', updateInfo.value.download_url)
   try {
@@ -358,6 +482,7 @@ const handleDownloadUpdate = async () => {
       window.open(updateInfo.value.download_url, '_blank')
     }
   } finally {
+    stopProgressPolling()
     downloadingUpdate.value = false
   }
 }
