@@ -39,6 +39,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
+import { KEYBOARD_KEYS } from '@/constants/keyboard'
 
 const props = defineProps({
   src: {
@@ -142,25 +143,31 @@ const handleKeydown = (event) => {
   const jumpTime = 10  // 跳10秒
 
   switch (event.key) {
-    case 'ArrowLeft':
+    case KEYBOARD_KEYS.ARROW_LEFT:
       event.preventDefault()
       const leftTime = Math.max(0, player.currentTime() - jumpTime)
       player.currentTime(leftTime)
       console.log(`[VideoPlayer] 快退: ${leftTime.toFixed(1)}s`)
       break
-    case 'ArrowRight':
+    case KEYBOARD_KEYS.ARROW_RIGHT:
       event.preventDefault()
       const rightTime = Math.min(player.duration(), player.currentTime() + jumpTime)
       player.currentTime(rightTime)
       console.log(`[VideoPlayer] 快进: ${rightTime.toFixed(1)}s`)
       break
-    case ' ':
-    case 'k':
+    case KEYBOARD_KEYS.SPACE:
+    case KEYBOARD_KEYS.K:
       event.preventDefault()
       if (player.paused()) {
         player.play()
       } else {
         player.pause()
+      }
+      break
+    case KEYBOARD_KEYS.ESCAPE:
+      // ESC 退出全屏
+      if (document.fullscreenElement) {
+        document.exitFullscreen()
       }
       break
   }
