@@ -462,7 +462,52 @@ const currentProgress = computed(() => {
   return getEpisodeProgress(currentEpisode.value.id)
 })
 
-// 获取单集播放进度
+// 查找未看完的集数（进度 > 10% 且 < 90%）
+const findUnfinishedEpisode = (episodes) => {
+  if (!episodes || episodes.length === 0) return -1
+
+  const UNFINISHED_THRESHOLD = 0.9  // 90% 视为看完
+  const UNSTARTED_THRESHOLD = 0.1  // 10% 以下视为未开始
+
+  let lastUnfinishedIdx = -1
+  let lastUnfinishedProgress = null
+
+  for (let i = episodes.length - 1; i >= 0; i--) {
+    const ep = episodes[i]
+    const progress = episodeProgressMap.value[ep.id]
+
+    if (progress && progress.total_seconds > 0) {
+      const percent = progress.position_seconds / progress.total_seconds
+
+      // 检查是否未看完
+      if (percent > UNSTARTED_THRESHOLD && percent < UNFINISHED_THRESHOLD) {
+        console.log(`[Detail] 找到未看完集数: 第${ep.episode}集, 进度${(percent * 100).toFixed(1)}%`)
+        return i
+      }
+
+      // 记录最后一集有进度的集数（作为备选）
+      if (percent >= UNFINISHED_THRESHOLD) {
+        if (lastUnfinishedIdx === -1) {
+          lastUnfinishedIdx = i
+          lastUnfinishedProgress = percent
+        }
+      }
+    }
+  }
+
+  // 如果所有集数都看完了，但最后一集有进度，返回最后一集
+  if (lastUnfinishedIdx !== -1 && lastUnfinishedProgress >= 0.99) {
+    // 最后一集已看完 >99%，从下一集开始
+    if (lastUnfinishedIdx < episodes.length - 1) {
+      console.log(`[Detail] 上一集看完，从第${episodes[lastUnfinishedIdx + 1].episode}集开始`)
+      return lastUnfinishedIdx + 1
+    }
+  }
+
+  // 没有找到未看完的集数
+  console.log('[Detail] 没有找到未看完的集数')
+  return -1
+}
 const getEpisodeProgress = (episodeId) => {
   return episodeProgressMap.value[episodeId] || null
 }
@@ -700,17 +745,28 @@ const fetchData = async () => {
       console.error('[Detail] 后台数据加载失败:', err)
     })
 
-    // 4. 自动播放第一集或关闭骨架屏
+    // 4. 等待进度加载完成后，自动播放
+    await loadEpisodeProgress()
+
+    // 获取剧集列表
     const animeEpisodesCount = animeData.value.episodes?.length || 0
     const pwEpisodesCount = pwEpisodes.value.length
     const totalEpisodes = animeEpisodesCount || pwEpisodesCount
     console.log('[Detail] 检查剧集数据:', { animeEpisodesCount, pwEpisodesCount, totalEpisodes })
 
     if (totalEpisodes > 0) {
-      console.log('[Detail] 有剧集数据，自动播放第一集')
-      const playTimer = tracedMeasure('playFirstEpisode')
-      playEpisode(0)
-      playTimer.end({ episodeId: animeData.value.episodes?.[0]?.id })
+      const episodes = animeData.value.episodes || pwEpisodes.value
+
+      // 查找未看完的集数
+      const unfinishedIdx = findUnfinishedEpisode(episodes)
+
+      // 如果有未看完的集数，播放该集；否则播放第一集
+      const targetIdx = unfinishedIdx >= 0 ? unfinishedIdx : 0
+      console.log(`[Detail] 自动播放第${episodes[targetIdx].episode}集 (${unfinishedIdx >= 0 ? '未看完续播' : '从头开始'})`)
+
+      const playTimer = tracedMeasure('playAutoEpisode')
+      playEpisode(targetIdx)
+      playTimer.end({ episodeId: episodes[targetIdx]?.id, reason: unfinishedIdx >= 0 ? 'unfinished' : 'first' })
     } else {
       // 没有剧集数据时，直接关闭骨架屏，显示空状态
       console.log('[Detail] 没有剧集数据，直接关闭骨架屏')
