@@ -13,9 +13,13 @@
 """
 
 import pytest
+import os
 
 
 def pytest_collection_modifyitems(items):
-    """跳过所有集成测试（因为它们需要 Anime1.exe）"""
+    """跳过集成测试目录下的测试（因为它们需要 Anime1.exe）"""
+    integration_dir = os.path.dirname(os.path.abspath(__file__))
     for item in items:
-        item.add_marker(pytest.mark.skip(reason="需要运行 Anime1.exe，手动测试用"))
+        # 只跳过 tests/integration 目录下的测试
+        if os.path.dirname(item.fspath) == integration_dir:
+            item.add_marker(pytest.mark.skip(reason="需要运行 Anime1.exe，手动测试用"))
