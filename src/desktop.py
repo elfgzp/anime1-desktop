@@ -528,6 +528,23 @@ class WebviewApi:
                 break
         return str(result) if result is not None else 'null'
 
+    def log(self, message: str, level: str = "info") -> str:
+        """Log a message from JavaScript to the Python logger.
+
+        Usage from JavaScript:
+          window.js_api.log("my debug message")
+          window.js_api.log("error message", "error")
+        """
+        import webview
+        log_message = f"[JS] {message}"
+        if level == "error":
+            logger.error(log_message)
+        elif level == "warning":
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+        return '{"success": true}'
+
     def get_html(self) -> str:
         """Get the current page HTML."""
         return self.evaluate_js("document.documentElement.outerHTML")

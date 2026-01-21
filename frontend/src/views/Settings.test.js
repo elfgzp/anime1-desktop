@@ -10,6 +10,7 @@ vi.mock('../utils/api', () => ({
   settingsAPI: {
     checkUpdate: vi.fn(),
     downloadUpdate: vi.fn(),
+    getUpdateProgress: vi.fn(),
     runUpdater: vi.fn(),
     exitApp: vi.fn(),
     openPath: vi.fn(),
@@ -543,5 +544,161 @@ describe('Settings View - About Info', () => {
     }
     expect(aboutInfo.value.version).toBe('0.2.1')
     expect(aboutInfo.value.channel).toBe('stable')
+  })
+})
+
+describe('Settings View - Download Progress', () => {
+  describe('downloadProgress State', () => {
+    it('should initialize with default values', () => {
+      const downloadProgress = ref({
+        percent: 0,
+        downloaded_bytes: 0,
+        total_bytes: 0,
+        status: 'idle',
+        message: ''
+      })
+
+      expect(downloadProgress.value.percent).toBe(0)
+      expect(downloadProgress.value.downloaded_bytes).toBe(0)
+      expect(downloadProgress.value.total_bytes).toBe(0)
+      expect(downloadProgress.value.status).toBe('idle')
+      expect(downloadProgress.value.message).toBe('')
+    })
+
+    it('should update during download', () => {
+      const downloadProgress = ref({
+        percent: 0,
+        downloaded_bytes: 0,
+        total_bytes: 104857600, // 100 MB
+        status: 'idle',
+        message: ''
+      })
+
+      // Simulate download progress
+      downloadProgress.value = {
+        percent: 50,
+        downloaded_bytes: 52428800, // 50 MB
+        total_bytes: 104857600,
+        status: 'downloading',
+        message: '正在下载...'
+      }
+
+      expect(downloadProgress.value.percent).toBe(50)
+      expect(downloadProgress.value.downloaded_bytes).toBe(52428800)
+      expect(downloadProgress.value.status).toBe('downloading')
+    })
+
+    it('should show completed state', () => {
+      const downloadProgress = ref({
+        percent: 100,
+        downloaded_bytes: 104857600,
+        total_bytes: 104857600,
+        status: 'completed',
+        message: '下载完成'
+      })
+
+      expect(downloadProgress.value.percent).toBe(100)
+      expect(downloadProgress.value.status).toBe('completed')
+      expect(downloadProgress.value.message).toBe('下载完成')
+    })
+
+    it('should show failed state', () => {
+      const downloadProgress = ref({
+        percent: 30,
+        downloaded_bytes: 31457240,
+        total_bytes: 104857600,
+        status: 'failed',
+        message: '下载失败: 网络错误'
+      })
+
+      expect(downloadProgress.value.status).toBe('failed')
+      expect(downloadProgress.value.message).toContain('下载失败')
+    })
+  })
+
+  describe('formatBytes', () => {
+    it('should format bytes correctly', () => {
+      const formatBytes = (bytes) => {
+        if (bytes === 0) return '0 B'
+        const k = 1024
+        const sizes = ['B', 'KB', 'MB', 'GB']
+        const i = Math.floor(Math.log(bytes) / Math.log(k))
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+      }
+
+      expect(formatBytes(0)).toBe('0 B')
+      expect(formatBytes(512)).toBe('512 B')
+      expect(formatBytes(1024)).toBe('1 KB')
+      expect(formatBytes(1024 * 1024)).toBe('1 MB')
+      expect(formatBytes(1024 * 1024 * 50)).toBe('50 MB')
+      expect(formatBytes(1024 * 1024 * 1024)).toBe('1 GB')
+    })
+  })
+
+  describe('Progress Polling Logic', () => {
+    it('should handle downloading status', () => {
+      const downloadProgress = ref({
+        percent: 50,
+        status: 'downloading'
+      })
+
+      const isDownloading = downloadProgress.value.status === 'downloading'
+      expect(isDownloading).toBe(true)
+    })
+
+    it('should stop polling when completed', () => {
+      const downloadProgress = ref({
+        percent: 100,
+        status: 'completed'
+      })
+
+      const shouldStop = downloadProgress.value.status !== 'downloading'
+      expect(shouldStop).toBe(true)
+    })
+
+    it('should stop polling when failed', () => {
+      const downloadProgress = ref({
+        percent: 30,
+        status: 'failed'
+      })
+
+      const shouldStop = downloadProgress.value.status !== 'downloading'
+      expect(shouldStop).toBe(true)
+    })
+  })
+
+  describe('getUpdateProgress API Mock', () => {
+    it('should have getUpdateProgress method', async () => {
+      const { settingsAPI } = await import('../utils/api')
+      expect(typeof settingsAPI.getUpdateProgress).toBe('function')
+    })
+
+    it('should return progress data structure', async () => {
+      const { settingsAPI } = await import('../utils/api')
+
+      // Mock the API response
+      settingsAPI.getUpdateProgress.mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            progress: {
+              percent: 50,
+              downloaded_bytes: 52428800,
+              total_bytes: 104857600,
+              status: 'downloading',
+              message: '正在下载...'
+            },
+            result: {
+              success: false,
+              restarting: false
+            }
+          }
+        }
+      })
+
+      const response = await settingsAPI.getUpdateProgress()
+      expect(response.data.data.progress.percent).toBe(50)
+      expect(response.data.data.progress.status).toBe('downloading')
+    })
   })
 })

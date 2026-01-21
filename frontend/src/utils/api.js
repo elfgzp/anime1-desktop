@@ -156,6 +156,9 @@ export const settingsAPI = {
     auto_install: autoInstall
   }),
 
+  // 获取更新下载进度
+  getUpdateProgress: () => api.get('/settings/update/progress'),
+
   // 运行更新程序并退出应用（Windows 需要）
   runUpdater: (updaterPath) => api.post('/settings/update/run-updater', {
     updater_path: updaterPath
