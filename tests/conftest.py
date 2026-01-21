@@ -8,6 +8,12 @@ os.environ.setdefault('APP_DATA_DIR', '/tmp/anime1-test')
 from src.app import create_app
 from src.models.database import init_database, close_database
 
+# Exclude integration test scripts that have module-level code
+# These require special setup (build artifacts, running app, etc.)
+collect_ignore_glob = [
+    "integration/*",
+]
+
 
 @pytest.fixture(scope="session")
 def app():
