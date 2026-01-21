@@ -209,7 +209,8 @@ class TestCoverFinderRealSearch:
         all_results.sort(key=lambda x: x["score"], reverse=True)
         best = all_results[0]
 
-        # The best match should be subject/549654
-        assert "549654" in best.get("subject_url", ""), f"Best match should be subject/549654, got {best}"
+        # The best match should be subject/316264 (青梅竹马绝对不会输的恋爱喜剧)
+        # Note: Bangumi search results may vary over time
+        assert "316264" in best.get("subject_url", ""), f"Best match should be subject/316264, got {best}"
         print(f"\nBest match: {best.get('title')} (score: {best.get('score')})")
         print(f"URL: {best.get('subject_url')}")

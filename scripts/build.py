@@ -424,10 +424,16 @@ def fix_macos_app_icon(app_path: Path, icon_path: str):
         print(f"[WARN] ICNS file not found: {icns_src}")
 
 
-def create_macos_dmg(app_path: Path, version: str):
-    """Create macOS DMG from app bundle."""
+def create_macos_dmg(app_path: Path, version: str, arch: str = "x64"):
+    """Create macOS DMG from app bundle.
+
+    Args:
+        app_path: Path to the .app bundle
+        version: Version string
+        arch: Architecture ('x64' or 'arm64')
+    """
     root = get_project_root()
-    dmg_name = f"anime1-macos-{version}.dmg"
+    dmg_name = f"anime1-macos-{arch}-{version}.dmg"
 
     # Check if create-dmg is available
     if not shutil.which("create-dmg"):
@@ -508,14 +514,19 @@ def create_macos_zip(app_path: Path, version: str):
         return None
 
 
-def create_macos_portable(app_path: Path, version: str):
+def create_macos_portable(app_path: Path, version: str, arch: str = "x64"):
     """Create macOS portable version (directory structure for auto-update).
 
     This creates a structure that can be used for auto-update similar to Linux.
+
+    Args:
+        app_path: Path to the .app bundle
+        version: Version string
+        arch: Architecture ('x64' or 'arm64')
     """
     root = get_project_root()
-    portable_path = root / "release" / f"anime1-macos-{version}"
-    portable_zip = root / "release" / f"anime1-macos-{version}.zip"
+    portable_path = root / "release" / f"anime1-macos-{arch}-{version}"
+    portable_zip = root / "release" / f"anime1-macos-{arch}-{version}.zip"
 
     try:
         release_path = root / "release"
@@ -1156,14 +1167,24 @@ def create_platform_package(exe_path: Path, version: str):
 
     elif sys.platform == "darwin":
         # macOS: DMG + Portable ZIP for auto-update
-        print("[BUILD] Creating macOS DMG...")
+        # Detect architecture (can be overridden by ANIME1_ARCH env var)
+        arch = os.environ.get("ANIME1_ARCH", "").lower()
+        if arch not in ("x64", "arm64"):
+            import platform
+            machine = platform.machine().lower()
+            if machine in ("arm64", "aarch64"):
+                arch = "arm64"
+            else:
+                arch = "x64"
+
+        print(f"[BUILD] Creating macOS DMG for {arch}...")
         dist_path = root / "dist"
         app_path = dist_path / "Anime1.app"
         if app_path.exists():
-            create_macos_dmg(app_path, version)
+            create_macos_dmg(app_path, version, arch)
             # Also create portable ZIP for auto-update
             print("[BUILD] Creating macOS portable ZIP for auto-update...")
-            create_macos_portable(app_path, version)
+            create_macos_portable(app_path, version, arch)
         else:
             print("[WARN] App bundle not found, skipping DMG")
 

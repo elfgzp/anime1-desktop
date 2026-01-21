@@ -189,7 +189,16 @@ class CoverFinder:
             if not items:
                 return []
 
+            # Use original_title for comparison if provided, otherwise use keyword
             compare_title = original_title if original_title else keyword
+
+            # If keyword is simplified Chinese and different from original_title,
+            # also convert compare_title to simplified for better character overlap
+            if original_title and keyword != original_title:
+                compare_title_simplified = self._to_simplified_chinese(original_title)
+                if compare_title_simplified:
+                    compare_title = compare_title_simplified
+
             return self._score_all_results(compare_title, items, include_details)
         except Exception:
             return []
