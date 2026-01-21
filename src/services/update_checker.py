@@ -623,7 +623,12 @@ class UpdateChecker:
         return None
 
     def _find_macOS_asset(self, assets: List[Dict], arch: str) -> Optional[Dict]:
-        """Find macOS asset, preferring ZIP over DMG."""
+        """Find macOS asset, preferring architecture-specific ZIP over DMG.
+
+        For macOS, we prefer ZIP files that match the current architecture.
+        If no matching ZIP is found, we fall back to DMG (which is universal).
+        """
+        # First, try to find ZIP with matching architecture
         for asset in assets:
             asset_name = asset.get(API_FIELD_NAME, "")
             asset_lower = asset_name.lower()
@@ -631,7 +636,7 @@ class UpdateChecker:
                 if PlatformDetector.match_asset(asset_name, PLATFORM_MACOS, arch):
                     return asset
 
-        # Fall back to DMG
+        # Fall back to DMG (macOS DMG is universal and works on both x64 and arm64)
         for asset in assets:
             asset_name = asset.get(API_FIELD_NAME, "")
             asset_lower = asset_name.lower()
