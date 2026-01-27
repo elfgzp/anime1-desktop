@@ -17,6 +17,8 @@
       ref="videoElement"
       class="video-js vjs-big-play-centered vjs-theme-city vjs-fill"
       playsinline
+      webkit-playsinline
+      x5-playsinline
     />
     <!-- 继续观看气泡提示 -->
     <Transition name="bubble-fade">
@@ -182,6 +184,38 @@ const handleUnhandledRejection = (event) => {
   }
 }
 
+// Safari 全屏切换函数（供按钮点击和右键菜单使用）
+const toggleFullscreen = async () => {
+  const videoEl = player?.el()
+  if (!videoEl) return
+
+  // 检查当前是否处于全屏状态
+  const isFullscreen = document.fullscreenElement ||
+    (videoEl.webkitIsFullScreen !== undefined && videoEl.webkitIsFullScreen)
+
+  try {
+    if (isFullscreen) {
+      // 退出全屏
+      if (document.exitFullscreen) {
+        await document.exitFullscreen()
+      } else if (videoEl.webkitExitFullscreen) {
+        videoEl.webkitExitFullscreen()
+      }
+    } else {
+      // 进入全屏
+      if (videoEl.requestFullscreen) {
+        await videoEl.requestFullscreen()
+      } else if (videoEl.webkitRequestFullscreen) {
+        await videoEl.webkitRequestFullscreen()
+      } else if (videoEl.webkitEnterFullScreen) {
+        videoEl.webkitEnterFullScreen()
+      }
+    }
+  } catch (e) {
+    console.warn('[VideoPlayer] 全屏切换失败:', e.message)
+  }
+}
+
 // 保存播放进度
 const saveProgress = () => {
   if (!player || !props.animeId) return
@@ -232,6 +266,9 @@ const initPlayer = async () => {
   const isM3U8 = props.src.includes('.m3u8')
   const videoType = isM3U8 ? 'application/x-mpegURL' : 'video/mp4'
 
+  // 检测是否为 Safari
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || /iPad|iPhone|iPod/.test(navigator.userAgent)
+
   player = videojs(videoElement.value, {
     autoplay: false,
     controls: true,
@@ -244,14 +281,18 @@ const initPlayer = async () => {
       src: props.src,
       type: videoType
     }] : [],
-    // VHS (HTTP Streaming) 配置，仅用于 m3u8，mp4 使用原生播放
+    // VHS (HTTP Streaming) 配置
+    // Safari 原生支持 HLS，不需要 VHS，使用原生播放更流畅
     html5: isM3U8 ? {
       vhs: {
         withCredentials: true,
         useDevicePixelRatio: true
       },
-      nativeAudioTracks: false,
-      nativeVideoTracks: false
+      // Safari 强制使用原生播放器
+      ...(isSafari ? {} : {
+        nativeAudioTracks: false,
+        nativeVideoTracks: false
+      })
     } : false,
     // 自定义控制栏
     controlBar: {
@@ -267,6 +308,22 @@ const initPlayer = async () => {
       ]
     }
   })
+
+  // Safari 全屏兼容处理
+  // video.js 的全屏按钮在 Safari 上可能不工作，需要自定义处理
+  const videoEl = player.el()
+  const fullscreenBtn = videoEl?.querySelector?.('.vjs-fullscreen-control')
+
+  if (fullscreenBtn) {
+    // 移除默认点击事件并添加自定义处理
+    fullscreenBtn.removeEventListener('click', player.listenForFullscreenChange)
+    fullscreenBtn.addEventListener('click', toggleFullscreen)
+    // 同时处理右键点击
+    fullscreenBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      toggleFullscreen()
+    })
+  }
 
   // 恢复播放进度
   if (savedTime > 0) {
