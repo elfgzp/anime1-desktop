@@ -249,4 +249,33 @@ export const performanceAPI = {
   })
 }
 
+// 自动下载相关 API
+export const autoDownloadAPI = {
+  // 获取配置
+  getConfig: () => api.get(API_ENDPOINTS.AUTO_DOWNLOAD.CONFIG),
+
+  // 更新配置
+  updateConfig: (config) => api.post(API_ENDPOINTS.AUTO_DOWNLOAD.CONFIG, config),
+
+  // 获取状态
+  getStatus: () => api.get(API_ENDPOINTS.AUTO_DOWNLOAD.STATUS),
+
+  // 获取下载历史
+  getHistory: (params = {}) => api.get(API_ENDPOINTS.AUTO_DOWNLOAD.HISTORY, { params }),
+
+  // 开始下载
+  startDownload: (data) => api.post(API_ENDPOINTS.AUTO_DOWNLOAD.DOWNLOAD, data),
+
+  // 获取下载进度
+  getProgress: (episodeId) => api.get(API_ENDPOINTS.AUTO_DOWNLOAD.PROGRESS, {
+    params: episodeId ? { episode_id: episodeId } : {}
+  }),
+
+  // 预览筛选结果
+  previewFilter: (filters) => api.post(API_ENDPOINTS.AUTO_DOWNLOAD.FILTER_PREVIEW, { filters }),
+
+  // 测试下载
+  testDownload: (episodeUrl) => api.post(API_ENDPOINTS.AUTO_DOWNLOAD.TEST, { episode_url: episodeUrl })
+}
+
 export default api

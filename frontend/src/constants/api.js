@@ -66,6 +66,18 @@ export const API_ENDPOINTS = {
     EPISODE: '/playback/episode',
     LATEST: '/playback/latest',
     BATCH: '/playback/batch'
+  },
+
+  // 自动下载相关 API
+  AUTO_DOWNLOAD: {
+    BASE: '/auto-download',
+    CONFIG: '/auto-download/config',
+    STATUS: '/auto-download/status',
+    HISTORY: '/auto-download/history',
+    DOWNLOAD: '/auto-download/download',
+    PROGRESS: '/auto-download/progress',
+    FILTER_PREVIEW: '/auto-download/filter/preview',
+    TEST: '/auto-download/test'
   }
 }
 

@@ -27,6 +27,7 @@ from src.routes import (
     settings_bp,
     playback_bp,
     performance_bp,
+    auto_download_bp,
     register_page_routes
 )
 from src.parser.anime1_parser import Anime1Parser
@@ -167,6 +168,7 @@ def create_app() -> Flask:
     app.register_blueprint(settings_bp)
     app.register_blueprint(playback_bp)
     app.register_blueprint(performance_bp)
+    app.register_blueprint(auto_download_bp)
 
     # Register page routes
     register_page_routes(app)
