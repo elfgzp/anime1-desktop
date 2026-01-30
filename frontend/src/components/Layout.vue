@@ -40,6 +40,11 @@
           <template #title>设置</template>
         </el-menu-item>
 
+        <el-menu-item :index="'/auto-download'">
+          <el-icon><DownloadIcon /></el-icon>
+          <template #title>自动下载</template>
+        </el-menu-item>
+
         <!-- 开发者工具（仅开发模式显示） -->
         <el-sub-menu v-if="isDev" index="dev">
           <template #title>
@@ -104,7 +109,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { VideoPlay, Star, Clock, Setting, Expand, Fold, Monitor, CircleCheckFilled, Download } from '@element-plus/icons-vue'
+import { VideoPlay, Star, Clock, Setting, Expand, Fold, Monitor, CircleCheckFilled, Download, Download as DownloadIcon } from '@element-plus/icons-vue'
 import { updateAPI, favoriteAPI } from '../utils/api'
 import { ROUTES } from '../constants/api'
 import { ElMessage } from 'element-plus'

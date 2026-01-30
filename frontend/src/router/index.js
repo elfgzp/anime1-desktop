@@ -6,6 +6,7 @@ import Settings from '../views/Settings.vue'
 import Detail from '../views/Detail.vue'
 import PlaybackHistory from '../views/PlaybackHistory.vue'
 import Performance from '../views/Performance.vue'
+import AutoDownload from '../views/AutoDownload.vue'
 
 const routes = [
   {
@@ -42,6 +43,11 @@ const routes = [
         name: 'Performance',
         component: Performance,
         meta: { devOnly: true }
+      },
+      {
+        path: 'auto-download',
+        name: 'AutoDownload',
+        component: AutoDownload
       }
     ]
   }
