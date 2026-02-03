@@ -79,6 +79,7 @@ let countdownTimer = null
 let canceledRestore = false  // 用户是否取消了恢复提示
 const videoLoaded = ref(false)  // 视频是否已加载完成
 const isInitialLoading = ref(true)  // 初始加载状态（到 canplay 事件为止）
+const isCssFullscreen = ref(false)  // CSS 模拟全屏状态（用于 WebView）
 
 // 处理封面点击
 const handleCoverClick = () => {
@@ -131,6 +132,45 @@ const videoElement = ref(null)
 let player = null
 const STORAGE_KEY = 'anime1_video_progress'
 let keydownListener = null  // 键盘事件监听器
+let resizeListener = null  // 窗口大小变化监听器
+
+// 检测窗口是否处于全屏状态（用于 WebView）
+const isWindowFullscreen = () => {
+  // macOS 上检测窗口是否全屏
+  // 通过比较窗口大小和屏幕大小来判断
+  const isMac = /Macintosh/.test(navigator.userAgent)
+  if (!isMac) return false
+
+  // 如果窗口尺寸接近屏幕尺寸，认为是全屏
+  // 使用一定容差，因为 macOS 全屏时可能有微小差异
+  const screenWidth = window.screen.width
+  const screenHeight = window.screen.height
+  const tolerance = 100  // 像素容差
+
+  return (
+    Math.abs(window.outerWidth - screenWidth) < tolerance &&
+    Math.abs(window.outerHeight - screenHeight) < tolerance
+  )
+}
+
+// 处理窗口大小变化
+const handleWindowResize = () => {
+  const inWebView = isWebView()
+  if (!inWebView) return
+
+  // 检测窗口是否退出了全屏（通过标题栏按钮）
+  if (isCssFullscreen.value && !isWindowFullscreen()) {
+    // 窗口已退出全屏，同步 CSS 全屏状态
+    const wrapper = document.querySelector('.video-player-wrapper')
+    if (wrapper) {
+      wrapper.classList.remove('webview-fullscreen')
+    }
+    isCssFullscreen.value = false
+    // 移除全局样式
+    removeGlobalFullscreenStyles()
+    console.log('[VideoPlayer] 检测到窗口退出全屏，同步 CSS 全屏状态')
+  }
+}
 
 // 键盘快捷键处理
 const handleKeydown = (event) => {
@@ -167,9 +207,23 @@ const handleKeydown = (event) => {
       }
       break
     case KEYBOARD_KEYS.ESCAPE:
-      // ESC 退出全屏
+      // ESC 退出全屏（原生全屏）
       if (document.fullscreenElement) {
         document.exitFullscreen()
+        return
+      }
+      // 退出 CSS 全屏（WebView 模式）
+      if (isCssFullscreen.value) {
+        exitCssFullscreen()
+        // 同时退出窗口全屏
+        if (window.pywebview?.api?.toggle_fullscreen) {
+          window.pywebview.api.toggle_fullscreen()
+        }
+        return
+      }
+      // WebView 中使用 Python API 退出窗口全屏
+      if (window.pywebview?.api?.toggle_fullscreen) {
+        window.pywebview.api.toggle_fullscreen()
       }
       break
   }
@@ -184,22 +238,100 @@ const handleUnhandledRejection = (event) => {
   }
 }
 
+// 检测是否在 WebView 中（更精确的检测）
+const isWebView = () => {
+  const ua = navigator.userAgent
+  const hasMessageHandlers = !!(window.webkit?.messageHandlers)
+
+  // Chrome/Edge/Opera 浏览器不是 WebView
+  const isChrome = /Chrome/.test(ua) || /Edg/.test(ua) || /OPR/.test(ua)
+  const isSafari = /Safari/.test(ua) && !isChrome
+  const isMac = /Macintosh/.test(ua)
+  const isIOS = /iPhone|iPad|iPod/.test(ua)
+
+  // macOS WebView (pywebview): 有 messageHandlers，不是 Chrome，不是 Safari
+  const isMacWebView = isMac && hasMessageHandlers && !isChrome && !isSafari
+
+  // iOS WebView: 有 messageHandlers，不是 Safari
+  const isIOSWebView = isIOS && hasMessageHandlers && !isSafari
+
+  return isMacWebView || isIOSWebView
+}
+
 // Safari 全屏切换函数（供按钮点击和右键菜单使用）
 const toggleFullscreen = async () => {
-  const videoEl = player?.el()
-  if (!videoEl) return
+  const inWebView = isWebView()
+
+  // WebView 中使用 CSS 模拟全屏 + 窗口全屏（混合方案）
+  if (inWebView) {
+    const wrapper = document.querySelector('.video-player-wrapper')
+    if (!wrapper) {
+      console.warn('[VideoPlayer] 全屏失败：找不到视频容器')
+      return
+    }
+
+    if (isCssFullscreen.value) {
+      // 退出 CSS 全屏
+      wrapper.classList.remove('webview-fullscreen')
+      isCssFullscreen.value = false
+      console.log('[VideoPlayer] CSS 全屏已退出')
+      // 移除全局样式
+      removeGlobalFullscreenStyles()
+
+      // 同时退出窗口全屏（如果可用）
+      if (window.pywebview?.api?.toggle_fullscreen) {
+        try {
+          window.pywebview.api.toggle_fullscreen()
+        } catch (e) {
+          console.warn('[VideoPlayer] 退出窗口全屏失败:', e)
+        }
+      }
+    } else {
+      // 添加全局样式（在进入全屏前添加）
+      addGlobalFullscreenStyles()
+
+      // 进入 CSS 全屏
+      wrapper.classList.add('webview-fullscreen')
+      isCssFullscreen.value = true
+      console.log('[VideoPlayer] CSS 全屏已启用')
+
+      // 同时进入窗口全屏（如果可用）
+      if (window.pywebview?.api?.toggle_fullscreen) {
+        try {
+          window.pywebview.api.toggle_fullscreen()
+        } catch (e) {
+          console.warn('[VideoPlayer] 进入窗口全屏失败:', e)
+        }
+      }
+    }
+    return
+  }
+
+  // 浏览器中使用原生全屏 API
+  const videoEl = document.querySelector('.video-js video') || document.querySelector('video')
+
+  if (!videoEl) {
+    console.warn('[VideoPlayer] 全屏失败：video 元素不存在')
+    return
+  }
+
+  // 检查视频元素是否准备好
+  if (videoEl.readyState < 1) {
+    console.warn('[VideoPlayer] 全屏失败：视频尚未准备好')
+    return
+  }
 
   // 检查当前是否处于全屏状态
   const isFullscreen = document.fullscreenElement ||
-    (videoEl.webkitIsFullScreen !== undefined && videoEl.webkitIsFullScreen)
+    (document.webkitFullscreenElement !== undefined && document.webkitFullscreenElement)
 
   try {
     if (isFullscreen) {
       // 退出全屏
       if (document.exitFullscreen) {
         await document.exitFullscreen()
-      } else if (videoEl.webkitExitFullscreen) {
-        videoEl.webkitExitFullscreen()
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen()
       }
     } else {
       // 进入全屏
@@ -207,12 +339,133 @@ const toggleFullscreen = async () => {
         await videoEl.requestFullscreen()
       } else if (videoEl.webkitRequestFullscreen) {
         await videoEl.webkitRequestFullscreen()
-      } else if (videoEl.webkitEnterFullScreen) {
-        videoEl.webkitEnterFullScreen()
       }
     }
   } catch (e) {
     console.warn('[VideoPlayer] 全屏切换失败:', e.message)
+  }
+}
+
+// 退出 CSS 全屏（供 ESC 键使用）
+const exitCssFullscreen = () => {
+  if (isCssFullscreen.value) {
+    const wrapper = document.querySelector('.video-player-wrapper')
+    if (wrapper) {
+      wrapper.classList.remove('webview-fullscreen')
+      isCssFullscreen.value = false
+      console.log('[VideoPlayer] ESC 退出 CSS 全屏')
+    }
+    // 移除全局样式
+    removeGlobalFullscreenStyles()
+  }
+}
+
+// 添加全局全屏样式
+const addGlobalFullscreenStyles = () => {
+  const styleId = 'webview-fullscreen-global-styles'
+  if (document.getElementById(styleId)) return // 已存在
+
+  const style = document.createElement('style')
+  style.id = styleId
+  style.textContent = `
+    /* WebView 全屏模式 - 隐藏所有页面元素 */
+    body:has(.video-player-wrapper.webview-fullscreen) {
+      overflow: hidden !important;
+    }
+
+    body:has(.video-player-wrapper.webview-fullscreen) .el-aside,
+    body:has(.video-player-wrapper.webview-fullscreen) .sidebar,
+    body:has(.video-player-wrapper.webview-fullscreen) .layout-container > .el-aside {
+      display: none !important;
+    }
+
+    body:has(.video-player-wrapper.webview-fullscreen) .el-main,
+    body:has(.video-player-wrapper.webview-fullscreen) .main-content,
+    body:has(.video-player-wrapper.webview-fullscreen) .main-container {
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      background: #000 !important;
+    }
+
+    /* 隐藏 Detail 页面的特定元素 */
+    body:has(.video-player-wrapper.webview-fullscreen) .breadcrumb-nav,
+    body:has(.video-player-wrapper.webview-fullscreen) .back-with-breadcrumb,
+    body:has(.video-player-wrapper.webview-fullscreen) .back-btn,
+    body:has(.video-player-wrapper.webview-fullscreen) .episode-sidebar,
+    body:has(.video-player-wrapper.webview-fullscreen) .episodes-section,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-sidebar,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-header,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-info,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-container > .breadcrumb-nav,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-container > .back-with-breadcrumb {
+      display: none !important;
+    }
+
+    /* 隐藏视频卡片的外层边框 */
+    body:has(.video-player-wrapper.webview-fullscreen) .video-section,
+    body:has(.video-player-wrapper.webview-fullscreen) .video-section .el-card__header,
+    body:has(.video-player-wrapper.webview-fullscreen) .video-section .el-card__body,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-main .el-card,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-main .video-section {
+      border: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* 隐藏视频卡片头部（标题等） */
+    body:has(.video-player-wrapper.webview-fullscreen) .video-header,
+    body:has(.video-player-wrapper.webview-fullscreen) .video-title,
+    body:has(.video-player-wrapper.webview-fullscreen) .video-meta {
+      display: none !important;
+    }
+
+    /* 确保视频容器填满整个屏幕 */
+    body:has(.video-player-wrapper.webview-fullscreen) .video-container {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      aspect-ratio: auto !important;
+      border-radius: 0 !important;
+      z-index: 99998 !important;
+      background: #000 !important;
+    }
+
+    /* 确保 detail-main 也填满 */
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-main,
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-content {
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      background: #000 !important;
+    }
+
+    /* 隐藏 detail-container 的 padding */
+    body:has(.video-player-wrapper.webview-fullscreen) .detail-container {
+      padding: 0 !important;
+    }
+  `
+  document.head.appendChild(style)
+  console.log('[VideoPlayer] 全局全屏样式已添加')
+}
+
+// 移除全局全屏样式
+const removeGlobalFullscreenStyles = () => {
+  const styleId = 'webview-fullscreen-global-styles'
+  const style = document.getElementById(styleId)
+  if (style) {
+    style.remove()
+    console.log('[VideoPlayer] 全局全屏样式已移除')
   }
 }
 
@@ -311,18 +564,153 @@ const initPlayer = async () => {
 
   // Safari 全屏兼容处理
   // video.js 的全屏按钮在 Safari 上可能不工作，需要自定义处理
-  const videoEl = player.el()
-  const fullscreenBtn = videoEl?.querySelector?.('.vjs-fullscreen-control')
+  // 完全重写 player.requestFullscreen 方法，阻止 video.js 内部调用 webkitEnterFullScreen
+  // 重写 player.requestFullscreen 以支持 WebView CSS 全屏（混合方案）
+  player.requestFullscreen = async function() {
+    // 检测是否在 WebView 中（更精确的检测）
+    const ua = navigator.userAgent
+    const hasMessageHandlers = !!(window.webkit?.messageHandlers)
+    const isChrome = /Chrome/.test(ua) || /Edg/.test(ua) || /OPR/.test(ua)
+    const isSafari = /Safari/.test(ua) && !isChrome
+    const isMac = /Macintosh/.test(ua)
+    const isIOS = /iPhone|iPad|iPod/.test(ua)
+    const isMacWebView = isMac && hasMessageHandlers && !isChrome && !isSafari
+    const isIOSWebView = isIOS && hasMessageHandlers && !isSafari
+    const inWebView = isMacWebView || isIOSWebView
 
-  if (fullscreenBtn) {
-    // 移除默认点击事件并添加自定义处理
-    fullscreenBtn.removeEventListener('click', player.listenForFullscreenChange)
-    fullscreenBtn.addEventListener('click', toggleFullscreen)
-    // 同时处理右键点击
-    fullscreenBtn.addEventListener('contextmenu', (e) => {
-      e.preventDefault()
-      toggleFullscreen()
-    })
+    // WebView 中使用 CSS 模拟全屏 + 窗口全屏（混合方案）
+    if (inWebView) {
+      const wrapper = document.querySelector('.video-player-wrapper')
+      if (!wrapper) {
+        console.warn('[VideoPlayer] 全屏失败：找不到视频容器')
+        return
+      }
+
+      if (isCssFullscreen.value) {
+        // 退出 CSS 全屏
+        wrapper.classList.remove('webview-fullscreen')
+        isCssFullscreen.value = false
+        console.log('[VideoPlayer] CSS 全屏已退出')
+        // 移除全局样式
+        removeGlobalFullscreenStyles()
+        // 同时退出窗口全屏
+        if (window.pywebview?.api?.toggle_fullscreen) {
+          try {
+            window.pywebview.api.toggle_fullscreen()
+          } catch (e) {
+            console.warn('[VideoPlayer] 退出窗口全屏失败:', e)
+          }
+        }
+      } else {
+        // 添加全局样式
+        addGlobalFullscreenStyles()
+        // 进入 CSS 全屏
+        wrapper.classList.add('webview-fullscreen')
+        isCssFullscreen.value = true
+        console.log('[VideoPlayer] CSS 全屏已启用')
+        // 同时进入窗口全屏
+        if (window.pywebview?.api?.toggle_fullscreen) {
+          try {
+            window.pywebview.api.toggle_fullscreen()
+          } catch (e) {
+            console.warn('[VideoPlayer] 进入窗口全屏失败:', e)
+          }
+        }
+      }
+      return
+    }
+
+    // 浏览器中使用原生全屏 API
+    const videoEl = document.querySelector('.video-js video') || document.querySelector('video')
+
+    if (!videoEl) {
+      console.warn('[VideoPlayer] 全屏失败：video 元素不存在')
+      return
+    }
+
+    // 检查视频元素是否准备好
+    if (videoEl.readyState < 1) {
+      console.warn('[VideoPlayer] 全屏失败：视频尚未准备好')
+      return
+    }
+
+    // 检查当前是否处于全屏状态
+    const isFullscreen = document.fullscreenElement ||
+      (document.webkitFullscreenElement !== undefined && document.webkitFullscreenElement)
+
+    try {
+      if (isFullscreen) {
+        // 退出全屏
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen()
+        }
+      } else {
+        // 进入全屏
+        if (videoEl.requestFullscreen) {
+          await videoEl.requestFullscreen()
+        } else if (videoEl.webkitRequestFullscreen) {
+          await videoEl.webkitRequestFullscreen()
+        }
+      }
+    } catch (e) {
+      console.warn('[VideoPlayer] 全屏切换失败:', e.message)
+    }
+  }
+
+  // 重写 player.exitFullscreen 以支持 CSS 全屏退出
+  player.exitFullscreen = async function() {
+    const ua = navigator.userAgent
+    const hasMessageHandlers = !!(window.webkit?.messageHandlers)
+    const isChrome = /Chrome/.test(ua) || /Edg/.test(ua) || /OPR/.test(ua)
+    const isSafari = /Safari/.test(ua) && !isChrome
+    const isMac = /Macintosh/.test(ua)
+    const isIOS = /iPhone|iPad|iPod/.test(ua)
+    const isMacWebView = isMac && hasMessageHandlers && !isChrome && !isSafari
+    const isIOSWebView = isIOS && hasMessageHandlers && !isSafari
+    const inWebView = isMacWebView || isIOSWebView
+
+    // WebView 中使用 CSS 全屏退出
+    if (inWebView && isCssFullscreen.value) {
+      const wrapper = document.querySelector('.video-player-wrapper')
+      if (wrapper) {
+        wrapper.classList.remove('webview-fullscreen')
+      }
+      isCssFullscreen.value = false
+      // 移除全局样式
+      removeGlobalFullscreenStyles()
+      if (window.pywebview?.api?.toggle_fullscreen) {
+        window.pywebview.api.toggle_fullscreen()
+      }
+      return
+    }
+
+    // 浏览器中使用原生 API
+    if (document.exitFullscreen) {
+      await document.exitFullscreen()
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen()
+    }
+  }
+
+  // 重写 player.isFullscreen 以支持 CSS 全屏状态检测
+  player.isFullscreen = function() {
+    const ua = navigator.userAgent
+    const hasMessageHandlers = !!(window.webkit?.messageHandlers)
+    const isChrome = /Chrome/.test(ua) || /Edg/.test(ua) || /OPR/.test(ua)
+    const isSafari = /Safari/.test(ua) && !isChrome
+    const isMac = /Macintosh/.test(ua)
+    const isIOS = /iPhone|iPad|iPod/.test(ua)
+    const isMacWebView = isMac && hasMessageHandlers && !isChrome && !isSafari
+    const isIOSWebView = isIOS && hasMessageHandlers && !isSafari
+    const inWebView = isMacWebView || isIOSWebView
+
+    if (inWebView) {
+      return isCssFullscreen.value
+    }
+
+    return !!(document.fullscreenElement || document.webkitFullscreenElement)
   }
 
   // 恢复播放进度
@@ -471,6 +859,9 @@ onMounted(() => {
   // 添加全局键盘事件监听
   keydownListener = (e) => handleKeydown(e)
   window.addEventListener('keydown', keydownListener)
+  // 监听窗口大小变化，处理窗口全屏状态变化
+  resizeListener = () => handleWindowResize()
+  window.addEventListener('resize', resizeListener)
   initPlayer()
 })
 
@@ -481,6 +872,20 @@ onUnmounted(() => {
   if (keydownListener) {
     window.removeEventListener('keydown', keydownListener)
     keydownListener = null
+  }
+  // 移除窗口大小变化监听
+  if (resizeListener) {
+    window.removeEventListener('resize', resizeListener)
+    resizeListener = null
+  }
+  // 清理 CSS 全屏状态
+  if (isCssFullscreen.value) {
+    const wrapper = document.querySelector('.video-player-wrapper')
+    if (wrapper) {
+      wrapper.classList.remove('webview-fullscreen')
+    }
+    isCssFullscreen.value = false
+    removeGlobalFullscreenStyles()
   }
   // 保存进度
   saveProgress()
@@ -512,29 +917,28 @@ defineExpose({
     }
   },
   fullscreen: async () => {
-    if (!player) return
-    try {
-      await player.requestFullscreen()
-    } catch (e) {
-      console.warn('[VideoPlayer] 全屏请求失败:', e.message)
-      // Safari 兼容处理
-      try {
-        const videoEl = player.tech()?.el()
-        if (videoEl && videoEl.webkitEnterFullScreen) {
-          videoEl.webkitEnterFullScreen()
-        }
-      } catch (e2) {
-        console.warn('[VideoPlayer] Safari 全屏失败:', e2.message)
-      }
-    }
+    // 使用统一的 toggleFullscreen 函数
+    await toggleFullscreen()
   },
   pip: async () => {
-    if (!player) return
+    const videoEl = document.querySelector('.video-js video') || document.querySelector('video')
+
+    if (!videoEl) {
+      console.warn('[VideoPlayer] 画中画失败：video 元素不存在')
+      return
+    }
+
+    if (videoEl.readyState < 2) {
+      console.warn('[VideoPlayer] 画中画失败：视频尚未准备好')
+      return
+    }
+
     try {
-      await player.requestPictureInPicture()
+      if (videoEl.requestPictureInPicture) {
+        await videoEl.requestPictureInPicture()
+      }
     } catch (e) {
       console.warn('[VideoPlayer] 画中画请求失败:', e.message)
-      // Safari 可能不支持某些视频的画中画，记录日志但不抛出错误
     }
   }
 })
@@ -710,6 +1114,41 @@ defineExpose({
 /* 音量条 */
 .video-js .vjs-volume-level {
   background-color: #7c5cff;
+}
+
+/* WebView 环境下的 CSS 全屏模拟 */
+.video-player-wrapper.webview-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 99999 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: auto !important;
+  min-height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+
+/* 全局全屏样式现在通过 JS 动态添加，确保能正确应用到整个页面 */
+
+.video-player-wrapper.webview-fullscreen :deep(.video-js) {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+.video-player-wrapper.webview-fullscreen :deep(.vjs-tech) {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
 }
 
 /* 全屏按钮 */

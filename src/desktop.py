@@ -576,6 +576,14 @@ class WebviewApi:
                     window.maximize()
         return '{"success": true}'
 
+    def toggle_fullscreen(self) -> str:
+        """Toggle fullscreen mode for the window."""
+        import webview
+        for window in webview.windows:
+            if window:
+                window.toggle_fullscreen()
+        return '{"success": true}'
+
 
 def create_menus():
     """创建自定义菜单（支持 macOS）"""
@@ -973,12 +981,85 @@ def main():
             window.expose(
                 js_api.navigate,
                 js_api.evaluate_js,
+                js_api.log,
                 js_api.get_html,
                 js_api.close,
                 js_api.minimize,
-                js_api.maximize
+                js_api.maximize,
+                js_api.toggle_fullscreen
             )
             logger.info(f"[STARTUP] t5={time_module.time() - start_time:.2f}s - JS API methods exposed")
+
+            # 注入 console 捕获脚本
+            def on_loaded():
+                """页面加载完成后注入 console 捕获脚本"""
+                capture_script = """
+                (function() {
+                    if (window.__console_captured__) return;
+                    window.__console_captured__ = true;
+
+                    const originalLog = console.log;
+                    const originalWarn = console.warn;
+                    const originalError = console.error;
+                    const originalInfo = console.info;
+                    const originalDebug = console.debug;
+
+                    function sendToPython(level, args) {
+                        try {
+                            const message = Array.from(args).map(arg => {
+                                if (typeof arg === 'object') {
+                                    try {
+                                        return JSON.stringify(arg);
+                                    } catch (e) {
+                                        return String(arg);
+                                    }
+                                }
+                                return String(arg);
+                            }).join(' ');
+
+                            if (window.js_api && window.js_api.log) {
+                                window.js_api.log(message, level);
+                            }
+                        } catch (e) {
+                            // 避免循环错误
+                        }
+                    }
+
+                    console.log = function(...args) {
+                        originalLog.apply(console, args);
+                        sendToPython('info', args);
+                    };
+
+                    console.info = function(...args) {
+                        originalInfo.apply(console, args);
+                        sendToPython('info', args);
+                    };
+
+                    console.warn = function(...args) {
+                        originalWarn.apply(console, args);
+                        sendToPython('warning', args);
+                    };
+
+                    console.error = function(...args) {
+                        originalError.apply(console, args);
+                        sendToPython('error', args);
+                    };
+
+                    console.debug = function(...args) {
+                        originalDebug.apply(console, args);
+                        sendToPython('debug', args);
+                    };
+
+                    console.log('[ConsoleCapture] Console capture enabled');
+                })();
+                """
+                try:
+                    window.evaluate_js(capture_script)
+                    logger.info("[ConsoleCapture] Console capture script injected")
+                except Exception as e:
+                    logger.warning(f"[ConsoleCapture] Failed to inject console capture: {e}")
+
+            window.events.loaded += on_loaded
 
             # Start webview (blocking) - 默认开启 debug 模式
             # 注意：不要在这里设置 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，会导致 pywebview 兼容性问题
