@@ -8,7 +8,9 @@
 - 📺 在线观看高清视频
 - 🔍 快速搜索番剧
 - 💾 收藏喜欢的番剧
+- ⬇️ 自动下载番剧（支持按年份、季节过滤）
 - 🖥️ 原生桌面应用体验
+- 🐳 支持 Docker/NAS 部署（群晖、威联通等）
 - 🎨 现代化 Vue 3 前端界面
 - 🌙 支持暗黑模式
 
@@ -58,6 +60,21 @@ brew install --cask anime1
    chmod +x Anime1
    ./Anime1
    ```
+
+### Docker / NAS 部署
+
+支持在群晖、威联通等 NAS 或 Linux 服务器上通过 Docker 部署：
+
+```bash
+# 快速开始
+docker run -d \
+  --name anime1 \
+  -p 5172:5172 \
+  -v anime1_data:/app/data \
+  ghcr.io/elfgzp/anime1-desktop:latest
+```
+
+详细配置（数据持久化、自动下载、更新策略等）请参考 [Docker 部署指南](docs/DOCKER.md)。
 
 ## 使用说明
 
