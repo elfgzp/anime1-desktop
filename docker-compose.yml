@@ -13,6 +13,8 @@ services:
     volumes:
       # 数据持久化 - 存储数据库和缓存
       - anime1_data:/app/data
+      # 可选：自动下载目录（替换为你主机上的实际路径）
+      # - ./downloads:/app/data/downloads
       # 可选：自定义静态资源缓存
       # - ./cache:/app/static/vendor
     environment:

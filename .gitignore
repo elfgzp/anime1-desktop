@@ -100,3 +100,11 @@ nul
 
 # Coverage
 coverage.xml
+
+# Docker test scripts
+scripts/test-docker-local.sh
+scripts/test-docker-quick.sh
+
+# Test data
+tmp/
+*.tar.gz

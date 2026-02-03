@@ -286,15 +286,24 @@ class AutoDownloadService:
                 return False
 
     def get_download_path(self) -> Path:
-        """Get the download path from config or default."""
+        """Get the download path from config, env var, or default."""
         config = self.get_config()
         if config.download_path:
             path = Path(config.download_path)
             path.mkdir(parents=True, exist_ok=True)
             return path
-        else:
-            from src.utils.app_dir import get_download_dir
-            return get_download_dir()
+
+        # Check environment variable (for Docker deployments)
+        import os
+        env_path = os.getenv("ANIME1_DOWNLOAD_PATH")
+        if env_path:
+            path = Path(env_path)
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+
+        # Fall back to default download directory
+        from src.utils.app_dir import get_download_dir
+        return get_download_dir()
 
     def get_history(self, limit: int = 100, status: Optional[DownloadStatus] = None) -> List[DownloadRecord]:
         """Get download history.
