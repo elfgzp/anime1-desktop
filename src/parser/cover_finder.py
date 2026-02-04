@@ -269,16 +269,19 @@ class CoverFinder:
         if not results:
             return None
 
+        # Sort by score descending to get the best match first
+        sorted_results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
+
         # Find best result that meets minimum score threshold
-        for result in results:
+        for result in sorted_results:
             if result.get("score", 0) >= MIN_MATCH_SCORE:
                 return result
 
         # If no result meets threshold, return the top result but with lower confidence
         # This allows fallback to first result when no good match exists
-        if results:
-            results[0]["score"] = 0  # Mark as low confidence
-            return results[0]
+        if sorted_results:
+            sorted_results[0]["score"] = 0  # Mark as low confidence
+            return sorted_results[0]
 
         return None
 

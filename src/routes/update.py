@@ -82,6 +82,7 @@ def check_update():
             pass
         error_response = jsonify({
             "error": str(e),
+            "error_type": "update_check_failed",
             "has_update": False,
             "current_version": current_version,
             "latest_version": None,

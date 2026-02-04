@@ -241,6 +241,28 @@ const handleCheckUpdate = async () => {
     const response = await settingsAPI.checkUpdate()
     const data = response.data
     console.log('[UPDATE-FRONTEND] Update check response:', data)
+
+    // 检查是否是更新检查失败（如速率限制）
+    if (data.error_type === 'update_check_failed') {
+      console.log('[UPDATE-FRONTEND] Update check failed:', data.error)
+      updateInfo.value = {
+        has_update: false,
+        latest_version: '',
+        download_url: '',
+        asset_name: '',
+        download_size: '',
+        release_notes: '',
+        is_prerelease: false
+      }
+      // 根据错误类型显示不同的消息
+      if (data.error && data.error.includes('速率限制')) {
+        ElMessage.warning(ERROR_MESSAGES.CHECK_UPDATE_RATE_LIMIT)
+      } else {
+        ElMessage.warning(data.error || ERROR_MESSAGES.CHECK_UPDATE_FAILED)
+      }
+      return
+    }
+
     if (data[RESPONSE_FIELDS.HAS_UPDATE]) {
       // 保存更新信息，显示下载按钮
       updateInfo.value = {

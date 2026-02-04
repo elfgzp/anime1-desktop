@@ -168,5 +168,6 @@ export const ERROR_MESSAGES = {
   NETWORK_ERROR: '网络错误，请稍后重试',
   UNKNOWN_ERROR: '未知错误',
   OPERATION_FAILED: '操作失败，请稍后重试',
-  CHECK_UPDATE_FAILED: '检查更新失败'
+  CHECK_UPDATE_FAILED: '检查更新失败',
+  CHECK_UPDATE_RATE_LIMIT: 'GitHub API 速率限制已用完，请稍后再试'
 }

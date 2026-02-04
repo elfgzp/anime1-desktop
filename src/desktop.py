@@ -390,6 +390,89 @@ def setup_logging():
 LOG_FILE = setup_logging()
 logger = logging.getLogger(__name__)
 
+
+def load_environment_file():
+    """Load environment variables from shell config files.
+
+    When the app is launched from Finder/Dock/Spotlight on macOS, shell
+    config files like ~/.zshrc are not loaded. This function reads common
+    shell config files to extract environment variables.
+
+    It looks for:
+    - ~/.env (simple KEY=VALUE format)
+    - ~/.zshrc (exports in comments or inline)
+    - ~/.bashrc (exports)
+    """
+    import re
+    home_dir = Path.home()
+
+    # Pattern to match export statements: export KEY="value" or KEY=value
+    # Simpler pattern that captures everything after '=' and strips trailing whitespace
+    export_pattern = re.compile(r'^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$')
+
+    files_to_check = [
+        home_dir / '.env',
+        home_dir / '.zshrc',
+        home_dir / '.bashrc',
+        home_dir / '.bash_profile',
+    ]
+
+    loaded_count = 0
+
+    for config_file in files_to_check:
+        if not config_file.exists():
+            continue
+
+        try:
+            with open(config_file, 'r') as f:
+                for line in f:
+                    # Skip comments and empty lines
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith('#'):
+                        continue
+
+                    # Try to match export pattern
+                    match = export_pattern.match(line)
+                    if match:
+                        key = match.group(1)
+                        # Get value and strip trailing whitespace/newlines
+                        value = match.group(2).rstrip('\r\n')
+
+                        # Handle simple escape sequences in unquoted values
+                        if not value.startswith('"') and not value.startswith("'"):
+                            value = value.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+
+                        # Only set if not already present (shell takes precedence)
+                        # Focus on GitHub-related tokens and common proxy settings
+                        if key not in os.environ and (
+                            key.startswith('GITHUB_') or
+                            key.startswith('HTTP_PROXY') or
+                            key.startswith('HTTPS_PROXY') or
+                            key == 'NO_PROXY' or
+                            key == 'ANIME1_VERSION'
+                        ):
+                            os.environ[key] = value
+                            loaded_count += 1
+
+        except Exception as e:
+            logger.debug(f"Failed to read environment from {config_file}: {e}")
+
+    if loaded_count > 0:
+        logger.info(f"Loaded {loaded_count} environment variables from shell config files")
+        # Log important env vars (without exposing full values)
+        for key in ['GITHUB_TOKEN', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ANIME1_VERSION']:
+            if key in os.environ:
+                value = os.environ[key]
+                if len(value) > 8 and key != 'ANIME1_VERSION':
+                    # Mask all but last 4 characters for sensitive values
+                    value = '*' * (len(value) - 4) + value[-4:]
+                logger.info(f"  {key}: {value}")
+
+
+# Load environment variables from shell config files
+# This is needed when the app is launched from Finder/Dock/Spotlight
+load_environment_file()
+
 # Add project root to path
 if IS_FROZEN:
     # Running as frozen executable - resources are in _MEIPASS

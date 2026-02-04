@@ -214,3 +214,36 @@ class TestCoverFinderRealSearch:
         assert "316264" in best.get("subject_url", ""), f"Best match should be subject/316264, got {best}"
         print(f"\nBest match: {best.get('title')} (score: {best.get('score')})")
         print(f"URL: {best.get('subject_url')}")
+
+    def test_search轉生之後的我變成了龍蛋(self):
+        """Test real search for anime/1813.
+
+        Title: 轉生之後的我變成了龍蛋～目標是世界最強～
+        Correct match: https://bangumi.tv/subject/544106 (転生したら龍蛋になった～世界最強を目指します～)
+        Wrong match: https://bangumi.tv/subject/421174 (different similar title)
+        """
+        finder = CoverFinder()
+
+        anime = Anime(
+            id="1813",
+            title="轉生之後的我變成了龍蛋～目標是世界最強～",
+            detail_url="https://anime1.me/?cat=1813",
+            episode=1,
+        )
+
+        result = finder.find_cover_for_anime(anime)
+
+        print(f"Original title: {anime.title}")
+        print(f"Matched cover: {result.cover_url}")
+        print(f"Match score: {result.match_score}")
+        print(f"Match source: {result.match_source}")
+
+        # Core keywords extraction test
+        core_keywords = finder._extract_core_keywords(anime.title)
+        print(f"Core keywords: {core_keywords}")
+
+        # Should match subject/544106
+        assert "544106" in result.cover_url, f"Should match subject/544106, got {result.cover_url}"
+        assert result.match_score > 0, "Should have a positive match score"
+
+        finder.close()
