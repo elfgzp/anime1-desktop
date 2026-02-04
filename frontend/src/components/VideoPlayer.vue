@@ -215,14 +215,18 @@ const handleKeydown = (event) => {
       // 退出 CSS 全屏（WebView 模式）
       if (isCssFullscreen.value) {
         exitCssFullscreen()
-        // 同时退出窗口全屏
-        if (window.pywebview?.api?.toggle_fullscreen) {
+        // 同时退出窗口全屏（使用 pywebview API 和全局方法）
+        if (window.toggle_fullscreen) {
+          window.toggle_fullscreen()
+        } else if (window.pywebview?.api?.toggle_fullscreen) {
           window.pywebview.api.toggle_fullscreen()
         }
         return
       }
       // WebView 中使用 Python API 退出窗口全屏
-      if (window.pywebview?.api?.toggle_fullscreen) {
+      if (window.toggle_fullscreen) {
+        window.toggle_fullscreen()
+      } else if (window.pywebview?.api?.toggle_fullscreen) {
         window.pywebview.api.toggle_fullscreen()
       }
       break
@@ -278,8 +282,10 @@ const toggleFullscreen = async () => {
       // 移除全局样式
       removeGlobalFullscreenStyles()
 
-      // 同时退出窗口全屏（如果可用）
-      if (window.pywebview?.api?.toggle_fullscreen) {
+      // 同时退出窗口全屏（使用 pywebview API 和全局方法）
+      if (window.toggle_fullscreen) {
+        window.toggle_fullscreen()
+      } else if (window.pywebview?.api?.toggle_fullscreen) {
         try {
           window.pywebview.api.toggle_fullscreen()
         } catch (e) {
@@ -295,8 +301,10 @@ const toggleFullscreen = async () => {
       isCssFullscreen.value = true
       console.log('[VideoPlayer] CSS 全屏已启用')
 
-      // 同时进入窗口全屏（如果可用）
-      if (window.pywebview?.api?.toggle_fullscreen) {
+      // 同时进入窗口全屏（使用 pywebview API 和全局方法）
+      if (window.toggle_fullscreen) {
+        window.toggle_fullscreen()
+      } else if (window.pywebview?.api?.toggle_fullscreen) {
         try {
           window.pywebview.api.toggle_fullscreen()
         } catch (e) {
@@ -593,8 +601,10 @@ const initPlayer = async () => {
         console.log('[VideoPlayer] CSS 全屏已退出')
         // 移除全局样式
         removeGlobalFullscreenStyles()
-        // 同时退出窗口全屏
-        if (window.pywebview?.api?.toggle_fullscreen) {
+        // 同时退出窗口全屏（使用 pywebview API 和全局方法）
+        if (window.toggle_fullscreen) {
+          window.toggle_fullscreen()
+        } else if (window.pywebview?.api?.toggle_fullscreen) {
           try {
             window.pywebview.api.toggle_fullscreen()
           } catch (e) {
@@ -608,8 +618,10 @@ const initPlayer = async () => {
         wrapper.classList.add('webview-fullscreen')
         isCssFullscreen.value = true
         console.log('[VideoPlayer] CSS 全屏已启用')
-        // 同时进入窗口全屏
-        if (window.pywebview?.api?.toggle_fullscreen) {
+        // 同时进入窗口全屏（使用 pywebview API 和全局方法）
+        if (window.toggle_fullscreen) {
+          window.toggle_fullscreen()
+        } else if (window.pywebview?.api?.toggle_fullscreen) {
           try {
             window.pywebview.api.toggle_fullscreen()
           } catch (e) {
@@ -680,7 +692,10 @@ const initPlayer = async () => {
       isCssFullscreen.value = false
       // 移除全局样式
       removeGlobalFullscreenStyles()
-      if (window.pywebview?.api?.toggle_fullscreen) {
+      // 使用 pywebview API 和全局方法
+      if (window.toggle_fullscreen) {
+        window.toggle_fullscreen()
+      } else if (window.pywebview?.api?.toggle_fullscreen) {
         window.pywebview.api.toggle_fullscreen()
       }
       return
