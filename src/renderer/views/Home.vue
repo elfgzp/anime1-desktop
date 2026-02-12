@@ -1,81 +1,264 @@
 <template>
   <div class="home">
-    <h1>Anime1 Desktop (Electron重构版)</h1>
-    <p>欢迎使用 Electron + TypeScript 重构版本</p>
-    
-    <div class="status">
-      <el-card>
-        <template #header>
-          <span>开发状态</span>
-        </template>
-        <el-timeline>
-          <el-timeline-item type="success">
-            项目架构搭建
-          </el-timeline-item>
-          <el-timeline-item type="success">
-            TypeScript 配置
-          </el-timeline-item>
-          <el-timeline-item type="primary">
-            服务层开发 (进行中)
-          </el-timeline-item>
-          <el-timeline-item>
-            UI 组件迁移
-          </el-timeline-item>
-          <el-timeline-item>
-            功能测试
-          </el-timeline-item>
-        </el-timeline>
-      </el-card>
-    </div>
-    
-    <div class="actions">
-      <el-button type="primary" @click="testIPC">
-        测试 IPC 通信
-      </el-button>
-      <el-button @click="openSettings">
-        打开设置
-      </el-button>
-    </div>
+    <header class="header">
+      <h1>Anime1 Desktop</h1>
+      <div class="search">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索番剧..."
+          clearable
+          @keyup.enter="handleSearch"
+        >
+          <template #append>
+            <el-button @click="handleSearch">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </template>
+        </el-input>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- 加载状态 -->
+      <div v-if="animeStore.loading" class="loading">
+        <el-skeleton :rows="5" animated />
+      </div>
+
+      <!-- 错误状态 -->
+      <el-alert
+        v-else-if="animeStore.error"
+        :title="animeStore.error"
+        type="error"
+        show-icon
+      />
+
+      <!-- 空状态 -->
+      <el-empty
+        v-else-if="animeStore.animeList.length === 0"
+        description="暂无番剧数据"
+      />
+
+      <!-- 番剧列表 -->
+      <div v-else class="anime-grid">
+        <el-card
+          v-for="anime in animeStore.animeList"
+          :key="anime.id"
+          class="anime-card"
+          shadow="hover"
+          @click="goToDetail(anime.id)"
+        >
+          <div class="anime-cover">
+            <el-image
+              :src="anime.coverUrl || defaultCover"
+              fit="cover"
+              loading="lazy"
+            >
+              <template #error>
+                <div class="image-error">
+                  <el-icon><Picture /></el-icon>
+                </div>
+              </template>
+            </el-image>
+            <span v-if="anime.episode > 0" class="episode-badge">
+              更新至 {{ anime.episode }} 集
+            </span>
+          </div>
+          <div class="anime-info">
+            <h3 class="anime-title" :title="anime.title">{{ anime.title }}</h3>
+            <div class="anime-meta">
+              <el-tag v-if="anime.year" size="small">{{ anime.year }}</el-tag>
+              <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
+            </div>
+          </div>
+        </el-card>
+      </div>
+
+      <!-- 分页 -->
+      <div v-if="animeStore.totalPages > 1" class="pagination">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-count="animeStore.totalPages"
+          layout="prev, pager, next"
+          @change="handlePageChange"
+        />
+      </div>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Search, Picture } from '@element-plus/icons-vue'
+import { useAnimeStore, useFavoriteStore } from '../stores'
 
 const router = useRouter()
+const animeStore = useAnimeStore()
+const favoriteStore = useFavoriteStore()
 
-const testIPC = async () => {
-  try {
-    // 测试 IPC 调用
-    const result = await window.api.anime.getCacheStatus()
-    console.log('IPC Test Result:', result)
-  } catch (error) {
-    console.error('IPC Test Error:', error)
+const searchQuery = ref('')
+const currentPage = ref(1)
+
+const defaultCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="300"%3E%3Crect fill="%23f0f0f0" width="200" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy=".3em" text-anchor="middle" x="100" y="150"%3E暂无封面%3C/text%3E%3C/svg%3E'
+
+onMounted(() => {
+  // 加载番剧列表
+  animeStore.fetchAnimeList(1)
+  
+  // 加载收藏
+  favoriteStore.loadFavorites()
+})
+
+function handleSearch() {
+  if (searchQuery.value.trim()) {
+    animeStore.search(searchQuery.value.trim())
+  } else {
+    animeStore.fetchAnimeList(1)
   }
 }
 
-const openSettings = () => {
-  router.push('/settings')
+function handlePageChange(page: number) {
+  animeStore.fetchAnimeList(page)
+}
+
+function goToDetail(id: string) {
+  router.push(`/anime/${id}`)
 }
 </script>
 
 <style scoped>
 .home {
-  padding: 40px;
-  max-width: 800px;
-  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--el-bg-color);
 }
 
-h1 {
+.header {
+  padding: 20px 40px;
+  border-bottom: 1px solid var(--el-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 24px;
   color: var(--anime-primary);
-  margin-bottom: 16px;
 }
 
-.status {
-  margin: 32px 0;
+.search {
+  width: 300px;
 }
 
-.actions {
-  margin-top: 24px;
+.main {
+  padding: 20px 40px;
+}
+
+.loading {
+  padding: 40px;
+}
+
+.anime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 20px;
+}
+
+.anime-card {
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.anime-card:hover {
+  transform: translateY(-4px);
+}
+
+.anime-cover {
+  position: relative;
+  aspect-ratio: 2/3;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.anime-cover :deep(.el-image) {
+  width: 100%;
+  height: 100%;
+}
+
+.anime-cover :deep(.el-image__inner) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-size: 32px;
+}
+
+.episode-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.anime-info {
+  padding: 12px 0;
+}
+
+.anime-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  height: 40px;
+}
+
+.anime-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pagination {
+  margin-top: 40px;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    padding: 20px;
+  }
+  
+  .search {
+    width: 100%;
+  }
+  
+  .main {
+    padding: 20px;
+  }
+  
+  .anime-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
 }
 </style>
