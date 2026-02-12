@@ -5,7 +5,7 @@
  * 技术栈: better-sqlite3 (替代 Peewee)
  */
 
-import Database from 'better-sqlite3'
+import { Database } from 'libsql'
 import { app } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'

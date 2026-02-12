@@ -9,7 +9,7 @@
 import { app } from 'electron'
 import { join, dirname } from 'path'
 import { existsSync, copyFileSync } from 'fs'
-import Database from 'better-sqlite3'
+import { Database } from 'libsql'
 import log from 'electron-log'
 import type { DatabaseService } from './index'
 
