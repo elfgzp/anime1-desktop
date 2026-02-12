@@ -11,6 +11,7 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import log from 'electron-log'
 import type { FavoriteAnime, PlaybackHistory, BangumiInfo, CoverCache } from '@shared/types'
+import { migrateData, needsMigration, isMigrationCompleted, markMigrationCompleted } from './migrate'
 
 // 数据库文件路径
 const DB_FILE_NAME = 'anime1.db'
@@ -43,6 +44,21 @@ export class DatabaseService {
       
       // 运行迁移
       this.runMigrations()
+      
+      // 数据迁移（从旧版本）
+      if (needsMigration() && !isMigrationCompleted()) {
+        log.info('[Database] Legacy database detected, starting migration...')
+        const result = await migrateData(this)
+        if (result.success) {
+          markMigrationCompleted()
+          log.info('[Database] Migration completed:', result.message)
+          if (result.stats) {
+            log.info('[Database] Migration stats:', result.stats)
+          }
+        } else {
+          log.error('[Database] Migration failed:', result.message)
+        }
+      }
       
       log.info(`[Database] Connected to ${this.dbPath}`)
     } catch (error) {
