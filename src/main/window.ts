@@ -12,10 +12,12 @@ import {
   nativeImage,
   screen,
   ipcMain,
-  app
+  app,
+  globalShortcut
 } from 'electron'
 import { join } from 'path'
 import log from 'electron-log'
+import { config, WINDOW_CONFIG } from './config'
 
 // 窗口状态接口
 interface WindowState {
@@ -27,43 +29,37 @@ interface WindowState {
   fullscreen: boolean
 }
 
-// 默认窗口配置
+// 默认窗口状态
 const DEFAULT_WINDOW_STATE: WindowState = {
-  width: 1280,
-  height: 800,
+  width: WINDOW_CONFIG.DEFAULT_WIDTH,
+  height: WINDOW_CONFIG.DEFAULT_HEIGHT,
   maximized: false,
   fullscreen: false
-}
-
-// 最小窗口尺寸
-const MIN_WINDOW_SIZE = {
-  width: 900,
-  height: 600
 }
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null
   private tray: Tray | null = null
-  private windowState: WindowState = { ...DEFAULT_WINDOW_STATE }
+  private isQuitting = false
 
   /**
    * 创建主窗口
    */
   async createMainWindow(): Promise<BrowserWindow> {
     // 加载保存的窗口状态
-    this.loadWindowState()
+    const windowState = this.loadWindowState()
 
     // 创建窗口
     this.mainWindow = new BrowserWindow({
-      width: this.windowState.width,
-      height: this.windowState.height,
-      x: this.windowState.x,
-      y: this.windowState.y,
-      minWidth: MIN_WINDOW_SIZE.width,
-      minHeight: MIN_WINDOW_SIZE.height,
+      width: windowState.width,
+      height: windowState.height,
+      x: windowState.x,
+      y: windowState.y,
+      minWidth: WINDOW_CONFIG.MIN_WIDTH,
+      minHeight: WINDOW_CONFIG.MIN_HEIGHT,
       title: 'Anime1 Desktop',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      show: false, // 先不显示，等加载完成
+      show: false,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
@@ -76,20 +72,18 @@ export class WindowManager {
     })
 
     // 恢复窗口状态
-    if (this.windowState.maximized) {
+    if (windowState.maximized) {
       this.mainWindow.maximize()
     }
-    if (this.windowState.fullscreen) {
+    if (windowState.fullscreen) {
       this.mainWindow.setFullScreen(true)
     }
 
     // 加载页面
     if (process.env.VITE_DEV_SERVER_URL) {
-      // 开发模式
       await this.mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
       this.mainWindow.webContents.openDevTools()
     } else {
-      // 生产模式
       await this.mainWindow.loadFile(join(__dirname, '../../dist/index.html'))
     }
 
@@ -105,6 +99,9 @@ export class WindowManager {
     // 创建系统托盘
     this.createTray()
 
+    // 注册全局快捷键
+    this.registerGlobalShortcuts()
+
     // 注册 IPC
     this.registerWindowIPC()
 
@@ -119,35 +116,33 @@ export class WindowManager {
     if (!this.mainWindow) return
 
     // 保存窗口状态
-    this.mainWindow.on('close', () => {
+    const saveState = () => {
       this.saveWindowState()
+    }
+
+    this.mainWindow.on('resize', saveState)
+    this.mainWindow.on('move', saveState)
+    this.mainWindow.on('maximize', saveState)
+    this.mainWindow.on('unmaximize', saveState)
+    this.mainWindow.on('enter-full-screen', saveState)
+    this.mainWindow.on('leave-full-screen', saveState)
+
+    // 关闭处理
+    this.mainWindow.on('close', (event) => {
+      if (!this.isQuitting && process.platform === 'darwin') {
+        event.preventDefault()
+        this.hide()
+      } else {
+        saveState()
+      }
     })
 
     this.mainWindow.on('closed', () => {
       this.mainWindow = null
     })
 
-    // 最大化/恢复
-    this.mainWindow.on('maximize', () => {
-      this.windowState.maximized = true
-    })
-
-    this.mainWindow.on('unmaximize', () => {
-      this.windowState.maximized = false
-    })
-
-    // 全屏
-    this.mainWindow.on('enter-full-screen', () => {
-      this.windowState.fullscreen = true
-    })
-
-    this.mainWindow.on('leave-full-screen', () => {
-      this.windowState.fullscreen = false
-    })
-
     // 处理外部链接
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      // 只允许特定域名
       const allowedDomains = ['anime1.me', 'bgm.tv', 'github.com']
       const urlObj = new URL(url)
       
@@ -155,7 +150,6 @@ export class WindowManager {
         return { action: 'allow' }
       }
       
-      // 其他链接用系统浏览器打开
       const { shell } = require('electron')
       shell.openExternal(url)
       return { action: 'deny' }
@@ -166,19 +160,60 @@ export class WindowManager {
    * 创建系统托盘
    */
   private createTray(): void {
-    // TODO: 创建 tray 图标
-    // const iconPath = join(__dirname, '../../../resources/tray-icon.png')
-    // const trayIcon = nativeImage.createFromPath(iconPath)
-    // this.tray = new Tray(trayIcon)
-    
-    // const contextMenu = Menu.buildFromTemplate([
-    //   { label: '显示窗口', click: () => this.show() },
-    //   { label: '退出', click: () => app.quit() }
-    // ])
-    
-    // this.tray.setContextMenu(contextMenu)
-    // this.tray.setToolTip('Anime1 Desktop')
-    // this.tray.on('click', () => this.show())
+    try {
+      // 使用原生图标创建 tray
+      const iconPath = join(__dirname, '../../../resources/icon.png')
+      const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+      
+      this.tray = new Tray(trayIcon)
+      this.tray.setToolTip('Anime1 Desktop')
+
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: '显示窗口',
+          click: () => this.show()
+        },
+        { type: 'separator' },
+        {
+          label: '退出',
+          click: () => {
+            this.isQuitting = true
+            app.quit()
+          }
+        }
+      ])
+
+      this.tray.setContextMenu(contextMenu)
+      
+      // 点击托盘图标显示/隐藏窗口
+      this.tray.on('click', () => {
+        if (this.mainWindow?.isVisible()) {
+          this.hide()
+        } else {
+          this.show()
+        }
+      })
+
+      log.info('[Window] Tray created')
+    } catch (error) {
+      log.warn('[Window] Failed to create tray:', error)
+    }
+  }
+
+  /**
+   * 注册全局快捷键
+   */
+  private registerGlobalShortcuts(): void {
+    // Cmd/Ctrl + Shift + D: 显示/隐藏窗口
+    globalShortcut.register('CommandOrControl+Shift+D', () => {
+      if (this.mainWindow?.isVisible()) {
+        this.hide()
+      } else {
+        this.show()
+      }
+    })
+
+    log.info('[Window] Global shortcuts registered')
   }
 
   /**
@@ -199,15 +234,14 @@ export class WindowManager {
       }
     })
 
-    // 关闭窗口（最小化到托盘或退出）
+    // 关闭窗口
     ipcMain.handle('window:close', () => {
-      // 默认直接退出，后续可改为最小化到托盘
-      this.mainWindow?.close()
+      this.hide()
     })
 
     // 全屏切换
     ipcMain.handle('window:toggleFullscreen', () => {
-      this.mainWindow?.setFullScreen(!this.mainWindow.isFullScreen())
+      this.mainWindow?.setFullScreen(!this.mainWindow?.isFullScreen())
     })
 
     // 获取窗口状态
@@ -224,29 +258,30 @@ export class WindowManager {
   /**
    * 加载窗口状态
    */
-  private loadWindowState(): void {
-    // TODO: 从 electron-store 加载
-    // const store = new Store<{ windowState: WindowState }>()
-    // this.windowState = store.get('windowState', DEFAULT_WINDOW_STATE)
-    
+  private loadWindowState(): WindowState {
+    const saved = config.window
+    const state = { ...DEFAULT_WINDOW_STATE, ...saved }
+
     // 确保窗口在屏幕范围内
-    if (this.windowState.x !== undefined && this.windowState.y !== undefined) {
+    if (state.x !== undefined && state.y !== undefined) {
       const displays = screen.getAllDisplays()
       const isInBounds = displays.some(display => {
         const { x, y, width, height } = display.bounds
         return (
-          this.windowState.x! >= x &&
-          this.windowState.x! <= x + width &&
-          this.windowState.y! >= y &&
-          this.windowState.y! <= y + height
+          state.x! >= x &&
+          state.x! <= x + width &&
+          state.y! >= y &&
+          state.y! <= y + height
         )
       })
       
       if (!isInBounds) {
-        this.windowState.x = undefined
-        this.windowState.y = undefined
+        state.x = undefined
+        state.y = undefined
       }
     }
+
+    return state
   }
 
   /**
@@ -256,17 +291,16 @@ export class WindowManager {
     if (!this.mainWindow) return
 
     const bounds = this.mainWindow.getBounds()
-    this.windowState = {
-      ...this.windowState,
+    const state: WindowState = {
       width: bounds.width,
       height: bounds.height,
       x: bounds.x,
-      y: bounds.y
+      y: bounds.y,
+      maximized: this.mainWindow.isMaximized(),
+      fullscreen: this.mainWindow.isFullScreen()
     }
 
-    // TODO: 保存到 electron-store
-    // const store = new Store<{ windowState: WindowState }>()
-    // store.set('windowState', this.windowState)
+    config.window = state
   }
 
   /**
@@ -301,5 +335,12 @@ export class WindowManager {
    */
   getMainWindow(): BrowserWindow | null {
     return this.mainWindow
+  }
+
+  /**
+   * 设置退出标志
+   */
+  setQuitting(quitting: boolean): void {
+    this.isQuitting = quitting
   }
 }

@@ -134,6 +134,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   log.info('[Main] Application quitting...')
   
+  // 设置退出标志
+  windowManager?.setQuitting(true)
+  
   // 清理资源
   if (downloadService) {
     await downloadService.pauseAll()
@@ -166,9 +169,9 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    // 用户尝试打开第二个实例时，聚焦到已有窗口
+    // 用户尝试打开第二个实例时，显示并聚焦窗口
     if (windowManager) {
-      windowManager.focus()
+      windowManager.show()
     }
   })
 }
