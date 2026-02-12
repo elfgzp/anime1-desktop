@@ -133,6 +133,7 @@ let player = null
 const STORAGE_KEY = 'anime1_video_progress'
 let keydownListener = null  // 键盘事件监听器
 let resizeListener = null  // 窗口大小变化监听器
+let resizeTimeout = null  // 用于延迟检测全屏状态的定时器
 
 // 检测窗口是否处于全屏状态（用于 WebView）
 const isWindowFullscreen = () => {
@@ -158,18 +159,44 @@ const handleWindowResize = () => {
   const inWebView = isWebView()
   if (!inWebView) return
 
-  // 检测窗口是否退出了全屏（通过标题栏按钮）
-  if (isCssFullscreen.value && !isWindowFullscreen()) {
-    // 窗口已退出全屏，同步 CSS 全屏状态
-    const wrapper = document.querySelector('.video-player-wrapper')
-    if (wrapper) {
-      wrapper.classList.remove('webview-fullscreen')
-    }
-    isCssFullscreen.value = false
-    // 移除全局样式
-    removeGlobalFullscreenStyles()
-    console.log('[VideoPlayer] 检测到窗口退出全屏，同步 CSS 全屏状态')
+  // 清除之前的延迟检测定时器
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout)
+    resizeTimeout = null
   }
+
+  // 延迟 300ms 后再检测全屏状态，等待窗口尺寸稳定
+  // 这样可以避免在全屏切换过程中误判为退出全屏
+  resizeTimeout = setTimeout(() => {
+    const currentlyFullscreen = isWindowFullscreen()
+
+    // 检测窗口是否退出了全屏（通过标题栏按钮）
+    if (isCssFullscreen.value && !currentlyFullscreen) {
+      // 窗口已退出全屏，同步 CSS 全屏状态
+      const wrapper = document.querySelector('.video-player-wrapper')
+      if (wrapper) {
+        wrapper.classList.remove('webview-fullscreen')
+      }
+      isCssFullscreen.value = false
+      // 移除全局样式
+      removeGlobalFullscreenStyles()
+      console.log('[VideoPlayer] 检测到窗口退出全屏，同步 CSS 全屏状态')
+    }
+
+    // 检测窗口进入了全屏（通过标题栏按钮），同步 CSS 全屏状态
+    if (!isCssFullscreen.value && currentlyFullscreen) {
+      const wrapper = document.querySelector('.video-player-wrapper')
+      if (wrapper) {
+        wrapper.classList.add('webview-fullscreen')
+      }
+      isCssFullscreen.value = true
+      // 添加全局样式
+      addGlobalFullscreenStyles()
+      console.log('[VideoPlayer] 检测到窗口进入全屏，同步 CSS 全屏状态')
+    }
+
+    resizeTimeout = null
+  }, 300)
 }
 
 // 键盘快捷键处理
@@ -302,14 +329,19 @@ const toggleFullscreen = async () => {
       console.log('[VideoPlayer] CSS 全屏已启用')
 
       // 同时进入窗口全屏（使用 pywebview API 和全局方法）
+      console.log('[VideoPlayer] 调用窗口全屏: window.toggle_fullscreen=', typeof window.toggle_fullscreen, ', window.pywebview.api=', window.pywebview?.api?.toggle_fullscreen ? 'exists' : 'missing')
       if (window.toggle_fullscreen) {
+        console.log('[VideoPlayer] 调用 window.toggle_fullscreen()')
         window.toggle_fullscreen()
       } else if (window.pywebview?.api?.toggle_fullscreen) {
+        console.log('[VideoPlayer] 调用 window.pywebview.api.toggle_fullscreen()')
         try {
           window.pywebview.api.toggle_fullscreen()
         } catch (e) {
           console.warn('[VideoPlayer] 进入窗口全屏失败:', e)
         }
+      } else {
+        console.warn('[VideoPlayer] 没有可用的全屏 API')
       }
     }
     return

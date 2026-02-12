@@ -1073,6 +1073,63 @@ def main():
             )
             logger.info(f"[STARTUP] t5={time_module.time() - start_time:.2f}s - JS API methods exposed")
 
+            # 注入全局函数脚本（macOS Safari 内核 WebView 兼容）
+            # 在窗口创建后立即注入，不需要等待 loaded 事件
+            def inject_global_functions():
+                """注入全局函数到 WebView"""
+                inject_script = """
+                (function() {
+                    console.log('[Inject] Starting injection...');
+
+                    // 定义全局函数
+                    window.toggle_fullscreen = function() {
+                        console.log('[Inject] toggle_fullscreen called');
+
+                        // 方式1: 尝试通过 pywebview.api 调用
+                        try {
+                            if (window.pywebview && window.pywebview.api &&
+                                typeof window.pywebview.api.toggle_fullscreen === 'function') {
+                                console.log('[Inject] Using window.pywebview.api');
+                                window.pywebview.api.toggle_fullscreen();
+                                return;
+                            }
+                        } catch(e) {
+                            console.error('[Inject] pywebview.api error:', e.message);
+                        }
+
+                        // 方式2: 尝试通过 messageHandlers 调用（Safari 内核）
+                        try {
+                            if (window.webkit && window.webkit.messageHandlers &&
+                                window.webkit.messageHandlers.pywebviewHandler) {
+                                console.log('[Inject] Using webkit.messageHandlers.pywebviewHandler');
+                                // pywebview macOS 使用 pywebviewHandler 传递消息
+                                // 消息格式: { name: 'methodName', params: [...] }
+                                window.webkit.messageHandlers.pywebviewHandler.postMessage({
+                                    name: 'toggle_fullscreen',
+                                    params: []
+                                });
+                                console.log('[Inject] Called via messageHandlers');
+                                return;
+                            }
+                        } catch(e) {
+                            console.error('[Inject] messageHandlers error:', e.message);
+                        }
+
+                        console.warn('[Inject] No toggle_fullscreen API available');
+                    };
+
+                    console.log('[Inject] toggle_fullscreen defined:', typeof window.toggle_fullscreen);
+                    console.log('[Inject] Injection complete');
+                })();
+                """
+                try:
+                    result = window.evaluate_js(inject_script)
+                    logger.info(f"[INJECT] Result: {result}")
+                except Exception as e:
+                    logger.error(f"[INJECT] Failed: {e}")
+
+            inject_global_functions()
+
             # 注入 console 捕获脚本
             def on_loaded():
                 """页面加载完成后注入 console 捕获脚本"""

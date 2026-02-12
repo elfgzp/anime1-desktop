@@ -49,7 +49,7 @@
               />
             </div>
 
-            <!-- 更新提示 -->
+            <!-- 更新提示（和元信息同时显示） -->
             <div v-if="anime.has_update" class="update-badge">
               <el-tag size="small" type="danger" effect="dark">
                 <el-icon><Bell /></el-icon>
@@ -57,21 +57,15 @@
               </el-tag>
             </div>
 
-            <!-- 元信息（无进度时显示集数） -->
-            <div v-if="!anime.playback_progress" class="card-meta">
-              <el-tag size="small" type="info">第{{ anime.current_episode || anime.episode }}集</el-tag>
+            <!-- 元信息 -->
+            <div class="card-meta">
+              <el-tag v-if="!anime.playback_progress" size="small" type="info">第{{ anime.current_episode || anime.episode }}集</el-tag>
+              <el-tag v-else size="small" type="info">共{{ anime.current_episode || anime.episode }}集</el-tag>
               <el-tag v-if="anime.year" size="small" type="danger">{{ anime.year }}</el-tag>
               <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
               <el-tag v-if="anime.subtitle_group" size="small" type="warning">
                 {{ anime.subtitle_group }}
               </el-tag>
-            </div>
-
-            <!-- 无更新、无进度时显示当前集数 -->
-            <div v-else-if="!anime.has_update" class="card-meta">
-              <el-tag size="small" type="info">共{{ anime.current_episode || anime.episode }}集</el-tag>
-              <el-tag v-if="anime.year" size="small" type="danger">{{ anime.year }}</el-tag>
-              <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
             </div>
           </div>
         </router-link>
@@ -312,14 +306,23 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
-.update-badge .el-tag {
+:deep(.update-badge .el-tag) {
   font-size: 11px;
   padding: 2px 6px;
+  white-space: nowrap !important;
 }
 
-.update-badge .el-icon {
+/* 强制 el-tag 内部 content 为 flex 布局，确保 icon 和文字在同一行 */
+:deep(.update-badge .el-tag .el-tag__content) {
+  display: inline-flex !important;
+  white-space: nowrap !important;
+  align-items: center !important;
+}
+
+:deep(.update-badge .el-icon) {
   margin-right: 2px;
   font-size: 10px;
+  flex-shrink: 0;
 }
 
 .favorite-btn {
