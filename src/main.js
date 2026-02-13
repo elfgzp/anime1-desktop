@@ -545,6 +545,33 @@ ipcMain.handle('autoDownload:previewFilter', async (event, { animeList }) => {
   }
 });
 
+ipcMain.handle('autoDownload:getProgress', async (event, { episodeId }) => {
+  try {
+    const progress = autoDownloadService._videoDownloader?.getProgress(episodeId);
+    return { success: true, data: progress };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('autoDownload:getAllDownloads', async () => {
+  try {
+    const downloads = autoDownloadService._videoDownloader?.getAllDownloads() || [];
+    return { success: true, data: downloads };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('autoDownload:clearCompleted', async () => {
+  try {
+    autoDownloadService.clearCompletedDownloads();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Create window
 const createWindow = async () => {
   // Load saved window state
@@ -638,6 +665,10 @@ const createWindow = async () => {
 
   // Initialize auto updater
   initUpdater(mainWindow);
+  
+  // Set WebContents for auto download service to send events
+  const autoDownloadService = getAutoDownloadService();
+  autoDownloadService.setWebContents(mainWindow.webContents);
 
   return mainWindow;
 };

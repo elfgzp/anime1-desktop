@@ -77,6 +77,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteAutoDownload: (params) => ipcRenderer.invoke('autoDownload:deleteDownload', params),
   getAutoDownloadStatus: () => ipcRenderer.invoke('autoDownload:getStatus'),
   previewAutoDownloadFilter: (params) => ipcRenderer.invoke('autoDownload:previewFilter', params),
+  getAutoDownloadProgress: (params) => ipcRenderer.invoke('autoDownload:getProgress', params),
+  getAllAutoDownloads: () => ipcRenderer.invoke('autoDownload:getAllDownloads'),
+  clearCompletedAutoDownloads: () => ipcRenderer.invoke('autoDownload:clearCompleted'),
+  
+  // Auto Download Events
+  onAutoDownloadEvent: (callback) => {
+    const channels = [
+      'auto-download:download-started',
+      'auto-download:download-progress',
+      'auto-download:download-completed',
+      'auto-download:download-error',
+      'auto-download:download-cancelled',
+    ];
+    channels.forEach(channel => {
+      ipcRenderer.on(channel, (event, data) => callback(channel, data));
+    });
+  },
 });
 
 console.log('[Preload] electronAPI exposed successfully via contextBridge');

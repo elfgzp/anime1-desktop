@@ -3,7 +3,7 @@
  * 
  * Features:
  * - Download configuration with filters
- * - Download task management
+ * - Download task management with VideoDownloader
  * - Download history tracking
  * - Background scheduler (Node.js setInterval)
  */
@@ -11,17 +11,12 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import axios from 'axios';
 import { settingsDB } from './database.js';
+import { getVideoDownloader, DownloadStatus } from './videoDownloader.js';
+import { getVideoInfo } from './videoProxy.js';
 
-// Download status enum
-export const DownloadStatus = {
-  PENDING: 'pending',
-  DOWNLOADING: 'downloading',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled',
-};
+// Export DownloadStatus for compatibility
+export { DownloadStatus };
 
 // Default download config
 const DEFAULT_CONFIG = {
@@ -42,31 +37,22 @@ const DEFAULT_CONFIG = {
   }
 };
 
-// Download record type
-// {
-//   id: string,
-//   animeId: string,
-//   animeTitle: string,
-//   episodeId: string,
-//   episodeNum: string,
-//   status: DownloadStatus,
-//   progress: number,
-//   totalBytes: number,
-//   downloadedBytes: number,
-//   filePath: string,
-//   errorMessage: string,
-//   createdAt: string,
-//   completedAt: string,
-// }
-
 class AutoDownloadService {
   constructor() {
     this._config = null;
     this._history = [];
-    this._activeDownloads = new Map();
     this._schedulerInterval = null;
     this._isRunning = false;
     this._downloadCallbacks = [];
+    this._videoDownloader = null;
+    this._webContents = null; // For sending events to renderer
+  }
+
+  /**
+   * Set WebContents for sending events to renderer
+   */
+  setWebContents(webContents) {
+    this._webContents = webContents;
   }
 
   /**
@@ -81,9 +67,99 @@ class AutoDownloadService {
       this._config = { ...DEFAULT_CONFIG };
     }
     
+    // Initialize video downloader
+    this._initVideoDownloader();
+    
     // Start scheduler if enabled
     if (this._config.enabled) {
       this.startScheduler();
+    }
+  }
+
+  /**
+   * Initialize video downloader
+   */
+  _initVideoDownloader() {
+    const downloadPath = this.getDownloadPath();
+    const maxConcurrent = this._config?.maxConcurrentDownloads || 2;
+    
+    this._videoDownloader = getVideoDownloader(downloadPath, maxConcurrent);
+    
+    // Register event handlers
+    this._videoDownloader.on('started', (progress) => {
+      this._updateDownloadRecord(progress.episodeId, {
+        status: DownloadStatus.DOWNLOADING,
+        progress: 0,
+      });
+      this._notifyRenderer('download-started', progress);
+    });
+    
+    this._videoDownloader.on('progress', (progress) => {
+      this._updateDownloadRecord(progress.episodeId, {
+        status: DownloadStatus.DOWNLOADING,
+        progress: progress.percent,
+        totalBytes: progress.totalBytes,
+        downloadedBytes: progress.downloadedBytes,
+        speedBytesPerSec: progress.speedBytesPerSec,
+      });
+      this._notifyRenderer('download-progress', progress);
+    });
+    
+    this._videoDownloader.on('completed', (progress) => {
+      this._updateDownloadRecord(progress.episodeId, {
+        status: DownloadStatus.COMPLETED,
+        progress: 100,
+        filePath: progress.filePath,
+        completedAt: new Date().toISOString(),
+      });
+      this._notifyRenderer('download-completed', progress);
+    });
+    
+    this._videoDownloader.on('error', (progress) => {
+      this._updateDownloadRecord(progress.episodeId, {
+        status: DownloadStatus.FAILED,
+        errorMessage: progress.errorMessage,
+        completedAt: new Date().toISOString(),
+      });
+      this._notifyRenderer('download-error', progress);
+    });
+    
+    this._videoDownloader.on('cancelled', (progress) => {
+      this._updateDownloadRecord(progress.episodeId, {
+        status: DownloadStatus.CANCELLED,
+        completedAt: new Date().toISOString(),
+      });
+      this._notifyRenderer('download-cancelled', progress);
+    });
+  }
+
+  /**
+   * Notify renderer process of download events
+   */
+  _notifyRenderer(event, data) {
+    // Call registered callbacks
+    for (const callback of this._downloadCallbacks) {
+      try {
+        callback(event, data);
+      } catch (error) {
+        console.error('[AutoDownload] Callback error:', error);
+      }
+    }
+    
+    // Send to renderer via WebContents
+    if (this._webContents && !this._webContents.isDestroyed()) {
+      this._webContents.send('auto-download:' + event, data);
+    }
+  }
+
+  /**
+   * Update download record in history
+   */
+  _updateDownloadRecord(episodeId, updates) {
+    const record = this._history.find(r => r.episodeId === episodeId);
+    if (record) {
+      Object.assign(record, updates);
+      this._saveHistory();
     }
   }
 
@@ -150,7 +226,9 @@ class AutoDownloadService {
    */
   async _saveHistory() {
     try {
-      await settingsDB.set('autoDownloadHistory', this._history);
+      // Keep only last 1000 records
+      const trimmedHistory = this._history.slice(-1000);
+      await settingsDB.set('autoDownloadHistory', trimmedHistory);
     } catch (error) {
       console.error('[AutoDownload] Error saving history:', error);
     }
@@ -169,6 +247,13 @@ class AutoDownloadService {
   async updateConfig(newConfig) {
     this._config = { ...(this._config || DEFAULT_CONFIG), ...newConfig };
     await this._saveConfig();
+    
+    // Update video downloader settings
+    if (this._videoDownloader) {
+      // Recreate with new settings if max concurrent changed
+      const maxConcurrent = this._config.maxConcurrentDownloads || 2;
+      // Note: maxConcurrent is set at creation, would need to recreate to change
+    }
     
     // Restart scheduler if running state changed
     const config = this._config || DEFAULT_CONFIG;
@@ -201,7 +286,8 @@ class AutoDownloadService {
    * Get active downloads
    */
   getActiveDownloads() {
-    return Array.from(this._activeDownloads.values());
+    if (!this._videoDownloader) return [];
+    return this._videoDownloader.getActiveDownloads();
   }
 
   /**
@@ -328,28 +414,38 @@ class AutoDownloadService {
   /**
    * Start a new download
    */
-  async startDownload(anime, episode, videoUrl) {
-    const downloadId = `${anime.id}_${episode.id}`;
-    
-    // Check if already downloading
-    if (this._activeDownloads.has(downloadId)) {
-      throw new Error('Download already in progress');
-    }
+  async startDownload(anime, episode, videoUrl = null, cookies = null) {
+    const episodeId = episode.id;
     
     // Check if already downloaded
-    const existing = this._history.find(r => r.episodeId === episode.id && r.status === DownloadStatus.COMPLETED);
+    const existing = this._history.find(r => 
+      r.episodeId === episodeId && r.status === DownloadStatus.COMPLETED
+    );
     if (existing) {
       throw new Error('Episode already downloaded');
     }
+
+    // If no videoUrl provided, fetch it
+    let finalVideoUrl = videoUrl;
+    let finalCookies = cookies || {};
     
+    if (!finalVideoUrl) {
+      const videoInfo = await getVideoInfo(episode.url);
+      if (!videoInfo.success) {
+        throw new Error(videoInfo.error || 'Failed to get video info');
+      }
+      finalVideoUrl = videoInfo.url;
+      finalCookies = videoInfo.cookies || {};
+    }
+
     // Create download record
     const record = {
-      id: downloadId,
+      id: `${anime.id}_${episodeId}`,
       animeId: anime.id,
       animeTitle: anime.title,
-      episodeId: episode.id,
+      episodeId: episodeId,
       episodeNum: episode.episode || episode.title,
-      status: DownloadStatus.DOWNLOADING,
+      status: DownloadStatus.PENDING,
       progress: 0,
       totalBytes: 0,
       downloadedBytes: 0,
@@ -359,103 +455,56 @@ class AutoDownloadService {
       completedAt: null,
     };
     
-    this._activeDownloads.set(downloadId, record);
     this._history.push(record);
     await this._saveHistory();
     
-    // Start download
-    this._downloadFile(downloadId, videoUrl).catch(error => {
-      console.error('[AutoDownload] Download error:', error);
-      record.status = DownloadStatus.FAILED;
-      record.errorMessage = error.message;
-      this._activeDownloads.delete(downloadId);
-      this._saveHistory();
-    });
-    
-    return record;
-  }
-
-  /**
-   * Download file using axios stream
-   */
-  async _downloadFile(downloadId, videoUrl) {
-    const record = this._activeDownloads.get(downloadId);
-    if (!record) return;
-    
+    // Add to video downloader
     try {
-      // Determine file extension
-      const ext = videoUrl.includes('.m3u8') ? '.mp4' : path.extname(new URL(videoUrl).pathname) || '.mp4';
-      const fileName = `${record.animeTitle}_EP${record.episodeNum}_${Date.now()}${ext}`;
-      const filePath = path.join(this.getDownloadPath(), fileName);
+      const progress = await this._videoDownloader.addDownload(
+        anime,
+        episode,
+        finalVideoUrl,
+        finalCookies
+      );
       
-      record.filePath = filePath;
-      
-      // Download with axios stream
-      const response = await axios({
-        method: 'GET',
-        url: videoUrl,
-        responseType: 'stream',
-        timeout: 300000, // 5 minutes
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        onDownloadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            record.totalBytes = progressEvent.total;
-            record.downloadedBytes = progressEvent.loaded;
-            record.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-            
-            // Notify callbacks
-            this._notifyCallbacks('progress', record);
-          }
-        }
+      // Update record with initial progress
+      Object.assign(record, {
+        status: progress.status,
+        totalBytes: progress.totalBytes,
+        downloadedBytes: progress.downloadedBytes,
       });
+      await this._saveHistory();
       
-      // Write to file
-      const writer = fs.createWriteStream(filePath);
-      response.data.pipe(writer);
-      
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-      });
-      
-      // Update record
-      record.status = DownloadStatus.COMPLETED;
-      record.progress = 100;
-      record.completedAt = new Date().toISOString();
-      
-      console.log('[AutoDownload] Download completed:', filePath);
-      
-      // Notify callbacks
-      this._notifyCallbacks('completed', record);
-      
+      return record;
     } catch (error) {
+      // Update record with error
       record.status = DownloadStatus.FAILED;
       record.errorMessage = error.message;
-      this._notifyCallbacks('error', record);
-      throw error;
-    } finally {
-      this._activeDownloads.delete(downloadId);
+      record.completedAt = new Date().toISOString();
       await this._saveHistory();
+      throw error;
     }
   }
 
   /**
    * Cancel a download
    */
-  async cancelDownload(downloadId) {
-    const record = this._activeDownloads.get(downloadId);
-    if (!record) {
-      throw new Error('Download not found');
+  async cancelDownload(episodeId) {
+    if (!this._videoDownloader) {
+      throw new Error('Video downloader not initialized');
     }
     
-    record.status = DownloadStatus.CANCELLED;
-    this._activeDownloads.delete(downloadId);
-    await this._saveHistory();
+    const result = this._videoDownloader.cancelDownload(episodeId);
     
-    this._notifyCallbacks('cancelled', record);
-    return record;
+    // Update record
+    const record = this._history.find(r => r.episodeId === episodeId);
+    if (record) {
+      record.status = DownloadStatus.CANCELLED;
+      record.completedAt = new Date().toISOString();
+      await this._saveHistory();
+    }
+    
+    return result;
   }
 
   /**
@@ -471,7 +520,11 @@ class AutoDownloadService {
     
     // Delete file if exists
     if (record.filePath && fs.existsSync(record.filePath)) {
-      fs.unlinkSync(record.filePath);
+      try {
+        fs.unlinkSync(record.filePath);
+      } catch (error) {
+        console.error('[AutoDownload] Error deleting file:', error);
+      }
     }
     
     // Remove from history
@@ -505,7 +558,7 @@ class AutoDownloadService {
       downloadPath: this.getDownloadPath(),
       checkIntervalHours: config.checkIntervalHours,
       maxConcurrentDownloads: config.maxConcurrentDownloads,
-      activeDownloads: this._activeDownloads.size,
+      activeDownloads: this.getActiveDownloads().length,
       statusCounts,
       recentDownloads: this.getHistory(10),
     };
@@ -536,16 +589,26 @@ class AutoDownloadService {
   }
 
   /**
-   * Notify callbacks
+   * Clear completed downloads from memory
    */
-  _notifyCallbacks(event, record) {
-    for (const callback of this._downloadCallbacks) {
-      try {
-        callback(event, record);
-      } catch (error) {
-        console.error('[AutoDownload] Callback error:', error);
-      }
+  clearCompletedDownloads() {
+    if (this._videoDownloader) {
+      this._videoDownloader.clearCompleted();
     }
+  }
+
+  /**
+   * Destroy service
+   */
+  destroy() {
+    this.stopScheduler();
+    
+    if (this._videoDownloader) {
+      this._videoDownloader.destroy();
+      this._videoDownloader = null;
+    }
+    
+    this._downloadCallbacks = [];
   }
 }
 
@@ -559,4 +622,15 @@ export function getAutoDownloadService() {
   return autoDownloadService;
 }
 
-export default getAutoDownloadService;
+export function resetAutoDownloadService() {
+  if (autoDownloadService) {
+    autoDownloadService.destroy();
+    autoDownloadService = null;
+  }
+}
+
+export default {
+  getAutoDownloadService,
+  resetAutoDownloadService,
+  DownloadStatus,
+};

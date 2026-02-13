@@ -310,6 +310,22 @@ export const autoDownloadAPI = {
   
   // 预览筛选结果
   previewFilter: (animeList) => callElectron('previewAutoDownloadFilter', { animeList }),
+  
+  // 获取下载进度
+  getProgress: (episodeId) => callElectron('getAutoDownloadProgress', { episodeId }),
+  
+  // 获取所有下载（包括队列中的）
+  getAllDownloads: () => callElectron('getAllAutoDownloads'),
+  
+  // 清除已完成的下载
+  clearCompleted: () => callElectron('clearCompletedAutoDownloads'),
+  
+  // 注册下载事件监听
+  onDownloadEvent: (callback) => {
+    if (window.electronAPI?.onAutoDownloadEvent) {
+      window.electronAPI.onAutoDownloadEvent(callback);
+    }
+  },
 }
 
 export default {
