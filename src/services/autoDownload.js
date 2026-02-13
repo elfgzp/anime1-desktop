@@ -76,6 +76,11 @@ class AutoDownloadService {
     await this._loadConfig();
     await this._loadHistory();
     
+    // Ensure config is initialized
+    if (!this._config) {
+      this._config = { ...DEFAULT_CONFIG };
+    }
+    
     // Start scheduler if enabled
     if (this._config.enabled) {
       this.startScheduler();
@@ -86,8 +91,9 @@ class AutoDownloadService {
    * Get download directory
    */
   getDownloadPath() {
-    if (this._config?.downloadPath) {
-      const dir = this._config.downloadPath;
+    const config = this._config || DEFAULT_CONFIG;
+    if (config.downloadPath) {
+      const dir = config.downloadPath;
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -154,20 +160,21 @@ class AutoDownloadService {
    * Get current config
    */
   getConfig() {
-    return { ...this._config };
+    return { ...(this._config || DEFAULT_CONFIG) };
   }
 
   /**
    * Update config
    */
   async updateConfig(newConfig) {
-    this._config = { ...this._config, ...newConfig };
+    this._config = { ...(this._config || DEFAULT_CONFIG), ...newConfig };
     await this._saveConfig();
     
     // Restart scheduler if running state changed
-    if (this._config.enabled && !this._isRunning) {
+    const config = this._config || DEFAULT_CONFIG;
+    if (config.enabled && !this._isRunning) {
       this.startScheduler();
-    } else if (!this._config.enabled && this._isRunning) {
+    } else if (!config.enabled && this._isRunning) {
       this.stopScheduler();
     }
     
@@ -201,6 +208,9 @@ class AutoDownloadService {
    * Check if anime matches filters
    */
   matchesFilters(anime) {
+    if (!this._config || !this._config.filters) {
+      return true; // If config not loaded, allow all
+    }
     const filters = this._config.filters;
     
     // Year filter
@@ -266,7 +276,8 @@ class AutoDownloadService {
       return;
     }
     
-    if (!this._config.enabled) {
+    const config = this._config || DEFAULT_CONFIG;
+    if (!config.enabled) {
       console.log('[AutoDownload] Not starting scheduler (disabled)');
       return;
     }
@@ -278,7 +289,7 @@ class AutoDownloadService {
     this._checkAndDownload();
     
     // Schedule next check
-    const intervalMs = this._config.checkIntervalHours * 60 * 60 * 1000;
+    const intervalMs = config.checkIntervalHours * 60 * 60 * 1000;
     this._schedulerInterval = setInterval(() => {
       this._checkAndDownload();
     }, intervalMs);
@@ -486,12 +497,14 @@ class AutoDownloadService {
       statusCounts[record.status] = (statusCounts[record.status] || 0) + 1;
     }
     
+    const config = this._config || DEFAULT_CONFIG;
+    
     return {
-      enabled: this._config.enabled,
+      enabled: config.enabled,
       running: this._isRunning,
       downloadPath: this.getDownloadPath(),
-      checkIntervalHours: this._config.checkIntervalHours,
-      maxConcurrentDownloads: this._config.maxConcurrentDownloads,
+      checkIntervalHours: config.checkIntervalHours,
+      maxConcurrentDownloads: config.maxConcurrentDownloads,
       activeDownloads: this._activeDownloads.size,
       statusCounts,
       recentDownloads: this.getHistory(10),
