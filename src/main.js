@@ -11,6 +11,7 @@ import { getCoverUrl, getBangumiInfo } from './services/bangumi.js';
 import { getVideoInfo, streamVideo } from './services/videoProxy.js';
 import { initUpdater } from './services/updater.js';
 import { getAutoDownloadService } from './services/autoDownload.js';
+import { getPerformanceService } from './services/performance.js';
 
 // Enable remote debugging for MCP
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
@@ -40,6 +41,10 @@ async function initializeApp() {
   // Initialize auto download service
   const autoDownloadService = getAutoDownloadService();
   await autoDownloadService.init();
+  
+  // Initialize performance service
+  const performanceService = getPerformanceService();
+  await performanceService.init();
 }
 
 // Window state management
@@ -566,6 +571,67 @@ ipcMain.handle('autoDownload:getAllDownloads', async () => {
 ipcMain.handle('autoDownload:clearCompleted', async () => {
   try {
     autoDownloadService.clearCompletedDownloads();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handlers for Performance
+ipcMain.handle('performance:record', async (event, data) => {
+  try {
+    const service = getPerformanceService();
+    const result = await service.recordPerformance(data);
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('performance:batchRecord', async (event, items) => {
+  try {
+    const service = getPerformanceService();
+    const results = await service.batchRecordPerformance(items);
+    return { success: true, data: results };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('performance:getStats', async () => {
+  try {
+    const service = getPerformanceService();
+    const stats = service.getStats();
+    return { success: true, stats };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('performance:getRecentTraces', async (event, options) => {
+  try {
+    const service = getPerformanceService();
+    const { traces, total } = service.getRecentTraces(options);
+    return { success: true, traces, total };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('performance:getTrace', async (event, traceId) => {
+  try {
+    const service = getPerformanceService();
+    const trace = service.getTraceChain(traceId);
+    return { success: true, ...trace };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('performance:clearAll', async () => {
+  try {
+    const service = getPerformanceService();
+    await service.clearAllData();
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };

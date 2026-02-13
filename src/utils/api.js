@@ -261,25 +261,26 @@ export const appAPI = {
 }
 
 // 性能追踪相关 API（stub）
+// 性能追踪相关 API
 export const performanceAPI = {
-  getStats: async () => ({ 
-    success: true, 
-    data: { 
-      success: true,
-      stats: {} 
-    } 
-  }),
-  getRecentTraces: async (params) => ({ 
-    success: true, 
-    data: { 
-      success: true,
-      traces: [], 
-      total: 0 
-    } 
-  }),
-  getTrace: async () => ({ success: true, data: null }),
-  clearData: async () => ({ success: true }),
-  clearAllData: async () => ({ success: true }),
+  // 记录性能数据
+  record: (data) => callElectron('recordPerformance', data),
+  
+  // 批量记录性能数据
+  batchRecord: (items) => callElectron('batchRecordPerformance', items),
+  
+  // 获取统计数据
+  getStats: () => callElectron('getPerformanceStats'),
+  
+  // 获取最近追踪
+  getRecentTraces: (options = {}) => callElectron('getRecentTraces', options),
+  
+  // 获取单个追踪详情
+  getTrace: (traceId) => callElectron('getTrace', { traceId }),
+  
+  // 清除数据
+  clearData: () => callElectron('clearPerformanceData'),
+  clearAllData: () => callElectron('clearPerformanceData'),
 }
 
 // 自动下载相关 API

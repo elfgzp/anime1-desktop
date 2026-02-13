@@ -94,6 +94,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on(channel, (event, data) => callback(channel, data));
     });
   },
+  
+  // Performance API
+  recordPerformance: (data) => ipcRenderer.invoke('performance:record', data),
+  batchRecordPerformance: (items) => ipcRenderer.invoke('performance:batchRecord', items),
+  getPerformanceStats: () => ipcRenderer.invoke('performance:getStats'),
+  getRecentTraces: (options) => ipcRenderer.invoke('performance:getRecentTraces', options),
+  getTrace: (traceId) => ipcRenderer.invoke('performance:getTrace', traceId),
+  clearPerformanceData: () => ipcRenderer.invoke('performance:clearAll'),
 });
 
 console.log('[Preload] electronAPI exposed successfully via contextBridge');
