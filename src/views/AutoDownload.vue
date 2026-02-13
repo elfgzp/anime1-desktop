@@ -369,7 +369,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { autoDownloadAPI } from '../utils/api'
+import { autoDownloadAPI, animeAPI } from '../utils/api'
 import { ElMessage } from 'element-plus'
 
 // 状态
@@ -437,20 +437,58 @@ const availableYears = computed(() => {
   return years
 })
 
+// 将后端 camelCase 转换为前端 snake_case
+const backendToFrontendConfig = (backendData) => {
+  return {
+    enabled: backendData.enabled ?? false,
+    download_path: backendData.downloadPath ?? '',
+    check_interval_hours: backendData.checkIntervalHours ?? 24,
+    max_concurrent_downloads: backendData.maxConcurrentDownloads ?? 2,
+    auto_download_new: backendData.autoDownloadNew ?? false,
+    auto_download_favorites: backendData.autoDownloadFavorites ?? false,
+    filters: {
+      min_year: backendData.filters?.minYear ?? null,
+      max_year: backendData.filters?.maxYear ?? null,
+      specific_years: backendData.filters?.specificYears ?? [],
+      seasons: backendData.filters?.seasons ?? [],
+      min_episodes: backendData.filters?.minEpisodes ?? null,
+      include_patterns: backendData.filters?.includePatterns ?? [],
+      exclude_patterns: backendData.filters?.excludePatterns ?? []
+    }
+  }
+}
+
+// 将前端 snake_case 转换为后端 camelCase
+const frontendToBackendConfig = (frontendData) => {
+  return {
+    enabled: frontendData.enabled,
+    downloadPath: frontendData.download_path,
+    checkIntervalHours: frontendData.check_interval_hours,
+    maxConcurrentDownloads: frontendData.max_concurrent_downloads,
+    autoDownloadNew: frontendData.auto_download_new,
+    autoDownloadFavorites: frontendData.auto_download_favorites,
+    filters: {
+      minYear: frontendData.filters?.min_year,
+      maxYear: frontendData.filters?.max_year,
+      specificYears: frontendData.filters?.specific_years,
+      seasons: frontendData.filters?.seasons,
+      minEpisodes: frontendData.filters?.min_episodes,
+      includePatterns: frontendData.filters?.include_patterns,
+      excludePatterns: frontendData.filters?.exclude_patterns
+    }
+  }
+}
+
 // 加载配置
 const loadConfig = async () => {
   loading.value = true
   try {
     const response = await autoDownloadAPI.getConfig()
     if (response.data?.data) {
-      const data = response.data.data
+      const converted = backendToFrontendConfig(response.data.data)
       config.value = {
         ...config.value,
-        ...data,
-        filters: {
-          ...config.value.filters,
-          ...(data.filters || {})
-        }
+        ...converted
       }
     }
   } catch (error) {
@@ -466,10 +504,32 @@ const loadStatus = async () => {
   try {
     const response = await autoDownloadAPI.getStatus()
     if (response.data?.data) {
-      status.value = response.data.data
+      const data = response.data.data
+      status.value = {
+        enabled: data.enabled,
+        running: data.running,
+        download_path: data.downloadPath,
+        check_interval_hours: data.checkIntervalHours,
+        max_concurrent_downloads: data.maxConcurrentDownloads,
+        filters: data.filters,
+        recent_downloads: data.recentDownloads,
+        status_counts: data.statusCounts
+      }
     }
   } catch (error) {
     console.error('加载状态失败:', error)
+  }
+}
+
+// 将后端历史记录字段转换为前端格式
+const convertHistoryItem = (item) => {
+  return {
+    ...item,
+    created_at: item.createdAt,
+    anime_title: item.animeTitle,
+    episode_num: item.episodeNum,
+    file_path: item.filePath,
+    error_message: item.errorMessage
   }
 }
 
@@ -478,8 +538,10 @@ const loadHistory = async () => {
   historyLoading.value = true
   try {
     const response = await autoDownloadAPI.getHistory({ limit: 50 })
-    if (response.data?.data?.history) {
-      history.value = response.data.data.history
+    if (response.data?.data) {
+      const rawHistory = response.data.data
+      // 后端直接返回数组
+      history.value = Array.isArray(rawHistory) ? rawHistory.map(convertHistoryItem) : []
     }
   } catch (error) {
     console.error('加载历史失败:', error)
@@ -493,7 +555,8 @@ const loadHistory = async () => {
 const handleSaveConfig = async () => {
   saving.value = true
   try {
-    await autoDownloadAPI.updateConfig(config.value)
+    const backendConfig = frontendToBackendConfig(config.value)
+    await autoDownloadAPI.updateConfig(backendConfig)
     ElMessage.success('配置已保存')
   } catch (error) {
     console.error('保存配置失败:', error)
@@ -517,14 +580,28 @@ const handleEnabledChange = async (value) => {
 const handlePreviewFilter = async () => {
   previewLoading.value = true
   try {
-    const response = await autoDownloadAPI.previewFilter(config.value.filters)
+    // 1. 先获取番剧列表
+    const animeResponse = await animeAPI.getList(1)
+    const animeList = animeResponse.data?.anime_list || []
+    
+    if (animeList.length === 0) {
+      ElMessage.warning('暂无可预览的番剧')
+      return
+    }
+    
+    // 2. 调用预览接口
+    const response = await autoDownloadAPI.previewFilter(animeList)
     if (response.data?.data) {
-      previewResult.value = response.data.data
+      const matchedAnime = response.data.data
+      previewResult.value = {
+        matched_count: matchedAnime.length,
+        matched_anime: matchedAnime
+      }
       previewDialogVisible.value = true
     }
   } catch (error) {
     console.error('预览失败:', error)
-    ElMessage.error('预览失败')
+    ElMessage.error('预览失败: ' + (error.message || '未知错误'))
   } finally {
     previewLoading.value = false
   }
