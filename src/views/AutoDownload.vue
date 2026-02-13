@@ -461,20 +461,20 @@ const backendToFrontendConfig = (backendData) => {
 // 将前端 snake_case 转换为后端 camelCase
 const frontendToBackendConfig = (frontendData) => {
   return {
-    enabled: frontendData.enabled,
-    downloadPath: frontendData.download_path,
-    checkIntervalHours: frontendData.check_interval_hours,
-    maxConcurrentDownloads: frontendData.max_concurrent_downloads,
-    autoDownloadNew: frontendData.auto_download_new,
-    autoDownloadFavorites: frontendData.auto_download_favorites,
+    enabled: frontendData.enabled ?? false,
+    downloadPath: frontendData.download_path ?? '',
+    checkIntervalHours: frontendData.check_interval_hours ?? 24,
+    maxConcurrentDownloads: frontendData.max_concurrent_downloads ?? 2,
+    autoDownloadNew: frontendData.auto_download_new ?? false,
+    autoDownloadFavorites: frontendData.auto_download_favorites ?? false,
     filters: {
-      minYear: frontendData.filters?.min_year,
-      maxYear: frontendData.filters?.max_year,
-      specificYears: frontendData.filters?.specific_years,
-      seasons: frontendData.filters?.seasons,
-      minEpisodes: frontendData.filters?.min_episodes,
-      includePatterns: frontendData.filters?.include_patterns,
-      excludePatterns: frontendData.filters?.exclude_patterns
+      minYear: frontendData.filters?.min_year ?? null,
+      maxYear: frontendData.filters?.max_year ?? null,
+      specificYears: frontendData.filters?.specific_years ?? [],
+      seasons: frontendData.filters?.seasons ?? [],
+      minEpisodes: frontendData.filters?.min_episodes ?? null,
+      includePatterns: frontendData.filters?.include_patterns ?? [],
+      excludePatterns: frontendData.filters?.exclude_patterns ?? []
     }
   }
 }
