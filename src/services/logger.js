@@ -58,7 +58,7 @@ export function getLogFilePath() {
  * Parse log line
  * Format: "2024-01-15 10:30:45.123 [INFO] message"
  */
-function parseLogLine(line) {
+export function parseLogLine(line) {
   line = line.trim();
   if (!line) return null;
 
