@@ -119,6 +119,8 @@
       <template #header>
         <div class="section-title">缓存</div>
       </template>
+      
+      <!-- 封面缓存 -->
       <div class="settings-item">
         <div class="settings-label">
           <span>封面缓存</span>
@@ -134,10 +136,61 @@
           </el-button>
         </div>
       </div>
+      
+      <!-- 播放列表缓存 -->
+      <div class="settings-item" v-if="playlistCacheStats">
+        <div class="settings-label">
+          <span>番剧列表缓存</span>
+          <div class="settings-desc">
+            <template v-if="playlistCacheStats.animeList?.cached">
+              {{ playlistCacheStats.animeList.itemCount }} 条番剧
+              <span v-if="!playlistCacheStats.animeList?.valid" class="cache-expired">(已过期)</span>
+            </template>
+            <template v-else>未缓存</template>
+          </div>
+        </div>
+        <div class="settings-control">
+          <el-button
+            type="primary"
+            :loading="refreshingListCache"
+            @click="handleRefreshListCache"
+          >
+            {{ refreshingListCache ? '刷新中...' : '刷新列表' }}
+          </el-button>
+        </div>
+      </div>
+      
+      <div class="settings-item" v-if="playlistCacheStats">
+        <div class="settings-label">
+          <span>番剧详情缓存</span>
+          <div class="settings-desc">{{ playlistCacheStats.animeDetails?.validCount || 0 }} / {{ playlistCacheStats.animeDetails?.count || 0 }} 条有效</div>
+        </div>
+        <div class="settings-control">
+          <el-button
+            type="warning"
+            :loading="clearingPlaylistCache"
+            @click="handleClearCache('playlist')"
+          >
+            {{ clearingPlaylistCache ? '清理中...' : '清理详情缓存' }}
+          </el-button>
+        </div>
+      </div>
+      
+      <!-- 剧集缓存 -->
+      <div class="settings-item" v-if="playlistCacheStats">
+        <div class="settings-label">
+          <span>剧集缓存</span>
+          <div class="settings-desc">{{ playlistCacheStats.episodes?.validCount || 0 }} / {{ playlistCacheStats.episodes?.count || 0 }} 条有效</div>
+        </div>
+        <div class="settings-control">
+          <!-- 剧集随详情清理 -->
+        </div>
+      </div>
+      
       <div class="settings-item">
         <div class="settings-label">
           <span>清理所有数据</span>
-          <div class="settings-desc">包括封面缓存和播放记录</div>
+          <div class="settings-desc">包括封面缓存、播放列表缓存和播放记录</div>
         </div>
         <div class="settings-control">
           <el-button
@@ -200,6 +253,9 @@ const openingLogs = ref(false)
 const cacheInfo = ref({})
 const clearingCache = ref(false)
 const clearingAllCache = ref(false)
+const clearingPlaylistCache = ref(false)
+const refreshingListCache = ref(false)
+const playlistCacheStats = ref(null)
 const THEME_STORAGE_KEY = 'anime1_theme'
 
 // 当前版本和更新信息
@@ -580,9 +636,29 @@ const loadCacheInfo = async () => {
     const response = await settingsAPI.getCacheInfo()
     if (response[RESPONSE_FIELDS.SUCCESS] && response[RESPONSE_FIELDS.DATA]) {
       cacheInfo.value = response[RESPONSE_FIELDS.DATA]
+      // Load playlist cache stats
+      playlistCacheStats.value = response[RESPONSE_FIELDS.DATA].playlist_cache
     }
   } catch (error) {
     console.error('加载缓存信息失败:', error)
+  }
+}
+
+const handleRefreshListCache = async () => {
+  refreshingListCache.value = true
+  try {
+    const response = await settingsAPI.refreshPlaylistCache()
+    if (response[RESPONSE_FIELDS.SUCCESS]) {
+      ElMessage.success('番剧列表已刷新')
+      await loadCacheInfo()
+    } else {
+      ElMessage.error(response[RESPONSE_FIELDS.ERROR] || '刷新失败')
+    }
+  } catch (error) {
+    console.error('刷新列表缓存失败:', error)
+    ElMessage.error('刷新列表缓存失败')
+  } finally {
+    refreshingListCache.value = false
   }
 }
 
@@ -697,6 +773,11 @@ onMounted(() => {
 
 .theme-select {
   width: 200px;
+}
+
+.cache-expired {
+  color: var(--el-color-warning);
+  font-size: 0.75rem;
 }
 
 .about-info {

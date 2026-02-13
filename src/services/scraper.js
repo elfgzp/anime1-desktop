@@ -7,6 +7,14 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCoverUrl, getBatchCovers } from './bangumi.js';
 import { initCoverCache, getCachedCovers } from './coverCache.js';
+import { 
+  getCachedAnimeList, 
+  setCachedAnimeList,
+  getCachedAnimeDetail,
+  setCachedAnimeDetail,
+  getCachedEpisodes,
+  setCachedEpisodes,
+} from './playlistCache.js';
 
 const BASE_URL = 'https://anime1.me';
 const API_URL = 'https://anime1.me/animelist.json';
@@ -23,10 +31,10 @@ const http = axios.create({
   }
 });
 
-// Cache for anime list
-let animeCache = [];
-let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// In-memory cache for anime list (supplements persistent cache)
+let memoryAnimeCache = [];
+let memoryCacheTimestamp = 0;
+const MEMORY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Parse anime list from JSON API
@@ -241,13 +249,26 @@ function parseSingleEpisode($) {
 }
 
 /**
- * Fetch anime list with caching
+ * Fetch anime list with persistent caching
  */
-async function fetchAnimeList() {
-  const now = Date.now();
-  if (animeCache.length > 0 && (now - cacheTimestamp) < CACHE_TTL) {
-    console.log('[Scraper] Using cached anime list');
-    return animeCache;
+async function fetchAnimeList(forceRefresh = false) {
+  // Check persistent cache first (unless force refresh)
+  if (!forceRefresh) {
+    const cached = getCachedAnimeList();
+    if (cached && cached.length > 0) {
+      console.log('[Scraper] Using persistent cached anime list');
+      // Update memory cache
+      memoryAnimeCache = cached;
+      memoryCacheTimestamp = Date.now();
+      return cached;
+    }
+    
+    // Check memory cache
+    const now = Date.now();
+    if (memoryAnimeCache.length > 0 && (now - memoryCacheTimestamp) < MEMORY_CACHE_TTL) {
+      console.log('[Scraper] Using memory cached anime list');
+      return memoryAnimeCache;
+    }
   }
   
   try {
@@ -260,8 +281,10 @@ async function fetchAnimeList() {
       return getMockAnimeList();
     }
     
-    animeCache = animeList;
-    cacheTimestamp = now;
+    // Update both caches
+    memoryAnimeCache = animeList;
+    memoryCacheTimestamp = Date.now();
+    setCachedAnimeList(animeList);
     
     console.log(`[Scraper] Fetched ${animeList.length} anime from API`);
     return animeList;
@@ -388,8 +411,27 @@ export const animeScraper = {
   },
   
   // Get anime detail and episodes
-  async getDetail(id) {
-    console.log('[Scraper] Getting detail for id:', id);
+  async getDetail(id, forceRefresh = false) {
+    console.log('[Scraper] Getting detail for id:', id, 'forceRefresh:', forceRefresh);
+    
+    // Check persistent cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cachedDetail = getCachedAnimeDetail(id);
+      const cachedEpisodes = getCachedEpisodes(id);
+      
+      if (cachedDetail && cachedEpisodes) {
+        console.log('[Scraper] Using persistent cached detail and episodes for', id);
+        return {
+          success: true,
+          data: {
+            anime: cachedDetail,
+            episodes: cachedEpisodes,
+            requires_frontend_fetch: false,
+            from_cache: true,
+          }
+        };
+      }
+    }
     
     try {
       // Try to fetch real detail page
@@ -406,20 +448,29 @@ export const animeScraper = {
         console.log(`[Scraper] Failed to get cover for ${detail.title}:`, coverError.message);
       }
       
+      const animeData = {
+        id: detail.id,
+        title: detail.title,
+        description: detail.description || '暂无描述',
+        cover_url: coverUrl || detail.cover_url || '',
+        year: detail.year || '',
+        season: detail.season || '',
+        subtitle_group: detail.subtitle_group || ''
+      };
+      
+      const episodesData = episodes.length > 0 ? episodes : generateMockEpisodes(12);
+      
+      // Update persistent cache
+      setCachedAnimeDetail(id, animeData);
+      setCachedEpisodes(id, episodesData);
+      
       return {
         success: true,
         data: {
-          anime: {
-            id: detail.id,
-            title: detail.title,
-            description: detail.description || '暂无描述',
-            cover_url: coverUrl || detail.cover_url || '',
-            year: detail.year || '',
-            season: detail.season || '',
-            subtitle_group: detail.subtitle_group || ''
-          },
-          episodes: episodes.length > 0 ? episodes : generateMockEpisodes(12),
-          requires_frontend_fetch: false
+          anime: animeData,
+          episodes: episodesData,
+          requires_frontend_fetch: false,
+          from_cache: false,
         }
       };
     } catch (error) {
@@ -448,20 +499,29 @@ export const animeScraper = {
         }
       }
       
+      const animeData = {
+        id: anime.id,
+        title: anime.title,
+        description: anime.description || '暂无描述',
+        cover_url: coverUrl,
+        year: anime.year || '',
+        season: anime.season || '',
+        subtitle_group: anime.subtitle_group || ''
+      };
+      
+      const episodesData = generateMockEpisodes(anime.episode || 12);
+      
+      // Update persistent cache even for fallback
+      setCachedAnimeDetail(id, animeData);
+      setCachedEpisodes(id, episodesData);
+      
       return {
         success: true,
         data: {
-          anime: {
-            id: anime.id,
-            title: anime.title,
-            description: anime.description || '暂无描述',
-            cover_url: coverUrl,
-            year: anime.year || '',
-            season: anime.season || '',
-            subtitle_group: anime.subtitle_group || ''
-          },
-          episodes: generateMockEpisodes(anime.episode || 12),
-          requires_frontend_fetch: false
+          anime: animeData,
+          episodes: episodesData,
+          requires_frontend_fetch: false,
+          from_cache: false,
         }
       };
     }

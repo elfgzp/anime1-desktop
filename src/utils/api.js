@@ -21,13 +21,13 @@ const callElectron = async (channel, data = {}) => {
 // 番剧相关 API
 export const animeAPI = {
   // 获取番剧列表
-  getList: (page = 1) => callElectron('getAnimeList', { page }),
+  getList: (page = 1, forceRefresh = false) => callElectron('getAnimeList', { page, forceRefresh }),
 
   // 搜索番剧
   search: (keyword, page = 1) => callElectron('searchAnime', { keyword, page }),
 
   // 获取番剧详情
-  getDetail: (id) => callElectron('getAnimeDetail', { id }),
+  getDetail: (id, forceRefresh = false) => callElectron('getAnimeDetail', { id, forceRefresh }),
 
   // 获取番剧集数
   getEpisodes: (id) => callElectron('getEpisodes', { id }),
@@ -138,6 +138,11 @@ export const settingsAPI = {
   // 缓存相关
   getCacheInfo: () => callElectron('getCacheInfo'),
   clearCache: (type = 'all') => callElectron('clearCache', { type }),
+  
+  // 播放列表缓存
+  getPlaylistCacheStats: () => callElectron('getPlaylistCacheStats'),
+  refreshPlaylistCache: () => callElectron('refreshPlaylistCache'),
+  refreshAnimeDetailCache: (id) => callElectron('refreshAnimeDetailCache', { id }),
 }
 
 // 播放历史相关 API

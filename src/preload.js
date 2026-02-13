@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cache API
   getCacheInfo: () => ipcRenderer.invoke('cache:info'),
   clearCache: (params) => ipcRenderer.invoke('cache:clear', params),
+  
+  // Playlist Cache API
+  getPlaylistCacheStats: () => ipcRenderer.invoke('playlistCache:stats'),
+  refreshPlaylistCache: (params) => ipcRenderer.invoke('playlistCache:refreshList', params),
+  refreshAnimeDetailCache: (params) => ipcRenderer.invoke('playlistCache:refreshDetail', params),
 
   // Updater API
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),

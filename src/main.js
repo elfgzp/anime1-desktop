@@ -6,6 +6,15 @@ import fs from 'fs';
 
 import { initDatabase, favoritesDB, playbackDB, settingsDB, cacheDB } from './services/database.js';
 import { initCoverCache, getCachedBangumiInfo, setCachedBangumiInfo, clearAllCovers } from './services/coverCache.js';
+import { 
+  initPlaylistCache, 
+  getCacheStats as getPlaylistCacheStats,
+  clearAllCache as clearPlaylistCache,
+  invalidateAnimeList,
+  invalidateAnimeDetail,
+  getCachedAnimeList,
+  setCachedAnimeList,
+} from './services/playlistCache.js';
 import { animeScraper } from './services/scraper.js';
 import { getCoverUrl, getBangumiInfo } from './services/bangumi.js';
 import { getVideoInfo, streamVideo } from './services/videoProxy.js';
@@ -38,6 +47,9 @@ async function initializeApp() {
   
   // Initialize cover cache
   initCoverCache();
+  
+  // Initialize playlist cache
+  initPlaylistCache();
   
   // Initialize auto download service
   const autoDownloadService = getAutoDownloadService();
@@ -178,17 +190,22 @@ function createTray() {
 }
 
 // IPC Handlers for Anime
-ipcMain.handle('anime:list', async (event, { page = 1 } = {}) => {
+ipcMain.handle('anime:list', async (event, { page = 1, forceRefresh = false } = {}) => {
   try {
+    // Force refresh by invalidating cache if requested
+    if (forceRefresh) {
+      console.log('[Main] Force refreshing anime list');
+      invalidateAnimeList();
+    }
     return await animeScraper.getList(page);
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('anime:detail', async (event, { id }) => {
+ipcMain.handle('anime:detail', async (event, { id, forceRefresh = false }) => {
   try {
-    return await animeScraper.getDetail(id);
+    return await animeScraper.getDetail(id, forceRefresh);
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -384,7 +401,17 @@ ipcMain.handle('hls:proxyVideo', async (event, { url, cookies, range }) => {
 // IPC Handlers for Cache
 ipcMain.handle('cache:info', async () => {
   try {
-    const info = await cacheDB.getInfo();
+    // Get cover cache info
+    const coverInfo = await cacheDB.getInfo();
+    
+    // Get playlist cache info
+    const playlistStats = getPlaylistCacheStats();
+    
+    const info = {
+      ...coverInfo,
+      playlist_cache: playlistStats,
+    };
+    
     return { success: true, data: info };
   } catch (error) {
     return { success: false, error: error.message };
@@ -402,6 +429,19 @@ ipcMain.handle('cache:clear', async (event, { type }) => {
       messageParts.push(`${coverCount} 条封面缓存`);
     }
     
+    if (type === 'playlist' || type === 'all') {
+      const stats = clearPlaylistCache();
+      if (stats) {
+        clearedCount += stats.animeDetails + stats.episodes;
+        messageParts.push(`${stats.animeDetails} 条番剧详情, ${stats.episodes} 条剧集缓存`);
+      }
+    }
+    
+    if (type === 'animeList') {
+      invalidateAnimeList();
+      messageParts.push('番剧列表缓存');
+    }
+    
     if (type === 'all') {
       // Clear playback history
       playbackDB.clearAll();
@@ -415,6 +455,38 @@ ipcMain.handle('cache:clear', async (event, { type }) => {
       message,
       data: { cleared_count: clearedCount }
     };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handlers for Playlist Cache Management
+ipcMain.handle('playlistCache:stats', async () => {
+  try {
+    const stats = getPlaylistCacheStats();
+    return { success: true, data: stats };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playlistCache:refreshList', async () => {
+  try {
+    invalidateAnimeList();
+    // Refetch the list
+    const list = await animeScraper.getList(1);
+    return { success: true, data: list };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playlistCache:refreshDetail', async (event, { id }) => {
+  try {
+    invalidateAnimeDetail(id);
+    // Refetch the detail
+    const detail = await animeScraper.getDetail(id, true);
+    return { success: true, data: detail };
   } catch (error) {
     return { success: false, error: error.message };
   }
