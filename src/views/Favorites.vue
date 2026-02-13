@@ -1,0 +1,351 @@
+<template>
+  <div class="favorites-container">
+    <el-card shadow="never" class="page-header-card">
+      <h1 class="page-title">我的追番</h1>
+    </el-card>
+
+    <!-- 加载中 -->
+    <el-skeleton v-if="loading" :rows="10" animated />
+
+    <!-- 追番列表 -->
+    <div v-else-if="favoritesList.length > 0" class="anime-grid">
+      <el-card
+        v-for="anime in favoritesList"
+        :key="anime.id"
+        class="anime-card"
+        shadow="hover"
+        :body-style="{ padding: '0' }"
+      >
+        <router-link :to="ROUTES.ANIME_DETAIL(anime.id)" class="card-link">
+          <div class="card-cover" :class="{ 'cover-loading': !anime.cover_url && !anime._coverFailed }">
+            <el-image
+              v-if="anime.cover_url"
+              :src="anime.cover_url"
+              :alt="anime.title"
+              fit="cover"
+              loading="lazy"
+              :preview-src-list="[]"
+              @error="handleImageError(anime)"
+            />
+            <div v-else-if="anime._coverFailed" class="no-cover">📺</div>
+            <div v-else class="cover-placeholder">
+              <el-icon><Picture /></el-icon>
+            </div>
+          </div>
+          <div class="card-content">
+            <div class="card-title">{{ anime.title }}</div>
+
+            <!-- 观看进度显示 -->
+            <div v-if="anime.playback_progress" class="playback-progress">
+              <div class="progress-header">
+                <span class="progress-episode">第{{ anime.playback_progress.episode_num }}集</span>
+                <span class="progress-time">{{ anime.playback_progress.position_formatted }}</span>
+              </div>
+              <el-progress
+                :percentage="anime.playback_progress.progress_percent"
+                :stroke-width="4"
+                :show-text="false"
+                class="progress-bar"
+              />
+            </div>
+
+            <!-- 更新提示（和元信息同时显示） -->
+            <div v-if="anime.has_update" class="update-badge">
+              <el-tag size="small" type="danger" effect="dark">
+                <el-icon><Bell /></el-icon>
+                {{ anime.new_episode_count }}集更新
+              </el-tag>
+            </div>
+
+            <!-- 元信息 -->
+            <div class="card-meta">
+              <el-tag v-if="!anime.playback_progress" size="small" type="info">第{{ anime.current_episode || anime.episode }}集</el-tag>
+              <el-tag v-else size="small" type="info">共{{ anime.current_episode || anime.episode }}集</el-tag>
+              <el-tag v-if="anime.year" size="small" type="danger">{{ anime.year }}</el-tag>
+              <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
+              <el-tag v-if="anime.subtitle_group" size="small" type="warning">
+                {{ anime.subtitle_group }}
+              </el-tag>
+            </div>
+          </div>
+        </router-link>
+        <el-button
+          :icon="StarFilled"
+          circle
+          class="favorite-btn active"
+          @click.stop="removeFavorite(anime.id)"
+        />
+      </el-card>
+    </div>
+
+    <!-- 空状态 -->
+    <el-empty v-else :description="UI_TEXT.NO_FAVORITES" />
+    <el-backtop :right="20" :bottom="20" />
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { StarFilled, Picture, Bell } from '@element-plus/icons-vue'
+import { favoriteAPI, animeAPI } from '../utils/api'
+import { ROUTES, ERROR_MESSAGES, UI_TEXT } from '../constants/api'
+import DOMPurify from 'dompurify'
+import { ElMessage } from 'element-plus'
+import { onCacheCleared } from '../utils/cacheEventBus'
+
+const loading = ref(false)
+const favoritesList = ref([])
+
+// 安全转义文本 - 防止 XSS
+const escapeText = (text) => {
+  if (text == null) return ''
+  return DOMPurify.sanitize(String(text), { ALLOWED_TAGS: [], KEEP_CONTENT: true })
+}
+
+// 净化番剧数据
+const sanitizeAnimeList = (list) => {
+  return list.map(anime => ({
+    ...anime,
+    title: escapeText(anime.title),
+    year: escapeText(anime.year),
+    season: escapeText(anime.season),
+    subtitle_group: escapeText(anime.subtitle_group)
+  }))
+}
+
+const fetchFavorites = async () => {
+  loading.value = true
+  try {
+    const response = await favoriteAPI.getList()
+    if (response.success && response.data) {
+      // 净化数据防止 XSS
+      favoritesList.value = sanitizeAnimeList(response.data)
+
+      // 异步获取封面（后台加载，不阻塞显示）
+      if (favoritesList.value.length > 0) {
+        favoritesList.value.forEach(anime => {
+          animeAPI.getCover(anime.title || anime.anime_title).then(response => {
+            if (response.data && response.data.coverUrl) {
+              anime.cover_url = response.data.coverUrl
+            }
+          }).catch(() => {}) // 静默处理
+        })
+      }
+    }
+  } catch (error) {
+    console.error('获取追番列表失败:', error)
+    ElMessage.error(ERROR_MESSAGES.NETWORK_ERROR)
+  } finally {
+    loading.value = false
+  }
+}
+
+const removeFavorite = async (animeId) => {
+  try {
+    await favoriteAPI.remove(animeId)
+    ElMessage.success(UI_TEXT.FAVORITE_REMOVED)
+    favoritesList.value = favoritesList.value.filter(a => a.id !== animeId)
+  } catch (error) {
+    console.error('取消追番失败:', error)
+    ElMessage.error(ERROR_MESSAGES.OPERATION_FAILED)
+  }
+}
+
+const handleImageError = (anime) => {
+  anime._coverFailed = true
+}
+
+onMounted(() => {
+  // 监听缓存清理事件，清理后重新加载封面数据
+  onCacheCleared(() => {
+    console.log('[Favorites] 收到缓存清理事件，刷新封面数据...')
+    // 清除现有封面数据
+    favoritesList.value.forEach(anime => {
+      anime.cover_url = null
+      anime.year = null
+      anime.season = null
+      anime.subtitle_group = null
+    })
+    // 重新加载收藏数据
+    fetchFavorites()
+  })
+
+  fetchFavorites()
+})
+</script>
+
+<style scoped>
+.favorites-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header-card {
+  margin-bottom: 20px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin: 0;
+}
+
+.anime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.anime-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-bg-color);
+}
+
+.anime-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(124, 92, 255, 0.2);
+  border-color: var(--el-color-primary);
+}
+
+.card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.card-cover {
+  width: 100%;
+  aspect-ratio: 2/3;
+  overflow: hidden;
+  position: relative;
+  background: var(--el-fill-color-light);
+}
+
+.card-cover :deep(.el-image) {
+  width: 100%;
+  height: 100%;
+  transition: transform 0.3s;
+}
+
+.anime-card:hover .card-cover :deep(.el-image) {
+  transform: scale(1.05);
+}
+
+.no-cover {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  background: linear-gradient(135deg, #252542 0%, #1a1a2e 100%);
+  color: var(--el-text-color-placeholder);
+}
+
+.card-content {
+  padding: 12px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 8px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.playback-progress {
+  margin-bottom: 8px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.progress-episode {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.progress-time {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.progress-bar {
+  width: 100%;
+}
+
+.update-badge {
+  margin-bottom: 8px;
+}
+
+:deep(.update-badge .el-tag) {
+  font-size: 11px;
+  padding: 2px 6px;
+  white-space: nowrap !important;
+}
+
+/* 强制 el-tag 内部 content 为 flex 布局，确保 icon 和文字在同一行 */
+:deep(.update-badge .el-tag .el-tag__content) {
+  display: inline-flex !important;
+  white-space: nowrap !important;
+  align-items: center !important;
+}
+
+:deep(.update-badge .el-icon) {
+  margin-right: 2px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.favorite-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 107, 157, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 107, 157, 0.4);
+  transition: all 0.3s;
+}
+
+.favorite-btn:hover {
+  background: rgba(255, 107, 157, 1);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(255, 107, 157, 0.6);
+}
+
+@media (max-width: 768px) {
+  .anime-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+  }
+}
+</style>

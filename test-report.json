@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-02-13T09:19:28.900Z",
+  "modules": {
+    "Home Page": {
+      "status": "PASS"
+    },
+    "Detail Page": {
+      "status": "PASS"
+    },
+    "Sidebar Navigation": {
+      "status": "PASS"
+    },
+    "Settings Page": {
+      "status": "FAIL",
+      "error": "page.evaluate: SyntaxError: Failed to execute 'querySelector' on 'Document': 'button:contains(\"检查更新\")' is not a valid selector.\n    at eval (eval at evaluate (:290:30), <anonymous>:8:37)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
+    },
+    "Video Playback": {
+      "status": "PASS"
+    }
+  }
+}
