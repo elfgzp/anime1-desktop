@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Video Proxy API
   getVideoInfo: (params) => ipcRenderer.invoke('video:getInfo', params),
 
+  // HLS Proxy API
+  proxyHlsPlaylist: (params) => ipcRenderer.invoke('hls:proxyPlaylist', params),
+  proxyVideoStream: (params) => ipcRenderer.invoke('hls:proxyVideo', params),
+
   // Cache API
   getCacheInfo: () => ipcRenderer.invoke('cache:info'),
   clearCache: (params) => ipcRenderer.invoke('cache:clear', params),

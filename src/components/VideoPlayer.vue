@@ -533,6 +533,54 @@ const getSavedProgress = () => {
   return saved ? parseFloat(saved) : 0
 }
 
+// HLS 代理缓存
+let hlsBlobUrl = null
+
+// 清理 HLS Blob URL
+const cleanupHlsBlob = () => {
+  if (hlsBlobUrl) {
+    URL.revokeObjectURL(hlsBlobUrl)
+    hlsBlobUrl = null
+  }
+}
+
+// 通过代理获取 HLS 播放列表
+const fetchHlsViaProxy = async (hlsUrl) => {
+  try {
+    console.log('[VideoPlayer] Fetching HLS via proxy:', hlsUrl.substring(0, 80) + '...')
+    
+    // Check if we're in Electron environment
+    if (!window.electronAPI?.proxyHlsPlaylist) {
+      console.log('[VideoPlayer] HLS proxy not available, using original URL')
+      return hlsUrl
+    }
+    
+    const result = await window.electronAPI.proxyHlsPlaylist({ url: hlsUrl, cookies: {} })
+    
+    if (!result.success) {
+      console.error('[VideoPlayer] HLS proxy failed:', result.error)
+      return hlsUrl
+    }
+    
+    if (!result.isPlaylist) {
+      // Not a playlist (shouldn't happen for .m3u8 URLs)
+      console.log('[VideoPlayer] HLS proxy returned non-playlist content')
+      return hlsUrl
+    }
+    
+    // Create blob URL from rewritten playlist
+    const blob = new Blob([result.content], { type: 'application/vnd.apple.mpegurl' })
+    hlsBlobUrl = URL.createObjectURL(blob)
+    
+    console.log('[VideoPlayer] HLS playlist proxied successfully')
+    return hlsBlobUrl
+    
+  } catch (error) {
+    console.error('[VideoPlayer] Error fetching HLS via proxy:', error)
+    return hlsUrl
+  }
+}
+
 // 初始化播放器
 const initPlayer = async () => {
   console.log('[VideoPlayer] initPlayer 被调用, src=', props.src ? props.src.substring(0, 80) + '...' : 'empty')
@@ -553,12 +601,21 @@ const initPlayer = async () => {
     player.dispose()
     player = null
   }
+  
+  // 清理旧的 HLS Blob URL
+  cleanupHlsBlob()
 
   const savedTime = getSavedProgress()
   console.log('[VideoPlayer] 创建播放器, savedTime=', savedTime)
 
   const isM3U8 = props.src.includes('.m3u8')
   const videoType = isM3U8 ? 'application/x-mpegURL' : 'video/mp4'
+  
+  // 对于 HLS，通过代理获取重写的播放列表
+  let videoSrc = props.src
+  if (isM3U8 && window.electronAPI?.proxyHlsPlaylist) {
+    videoSrc = await fetchHlsViaProxy(props.src)
+  }
 
   // 检测是否为 Safari
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || /iPad|iPhone|iPod/.test(navigator.userAgent)
@@ -571,8 +628,8 @@ const initPlayer = async () => {
     poster: props.poster,
     preload: 'metadata',
     playbackRates: [0.5, 1, 1.25, 1.5, 2],
-    sources: props.src ? [{
-      src: props.src,
+    sources: videoSrc ? [{
+      src: videoSrc,
       type: videoType
     }] : [],
     // VHS (HTTP Streaming) 配置
@@ -580,7 +637,12 @@ const initPlayer = async () => {
     html5: isM3U8 ? {
       vhs: {
         withCredentials: true,
-        useDevicePixelRatio: true
+        useDevicePixelRatio: true,
+        // Enable overrideNative to use VHS instead of native HLS on Safari
+        // This allows our proxied URLs to work
+        overrideNative: !isSafari,
+        limitRenditionByPlayerDimensions: true,
+        useBandwidthFromLocalStorage: true,
       },
       // Safari 强制使用原生播放器
       ...(isSafari ? {} : {
@@ -885,12 +947,22 @@ watch(() => props.src, async (newSrc) => {
     player.pause()
   }
   saveProgress()
+  
+  // 清理旧的 HLS Blob URL
+  cleanupHlsBlob()
 
   // 获取新视频的保存进度
   const savedTime = getSavedProgress()
+  
+  // 对于 HLS，通过代理获取重写的播放列表
+  let videoSrc = newSrc
+  const isM3U8 = newSrc.includes('.m3u8')
+  if (isM3U8 && window.electronAPI?.proxyHlsPlaylist) {
+    videoSrc = await fetchHlsViaProxy(newSrc)
+  }
 
   // 更新源
-  player.src({ src: newSrc, type: newSrc.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4' })
+  player.src({ src: videoSrc, type: isM3U8 ? 'application/x-mpegURL' : 'video/mp4' })
 
   // 恢复进度
   if (savedTime > 0) {
@@ -926,6 +998,8 @@ onUnmounted(() => {
     window.removeEventListener('resize', resizeListener)
     resizeListener = null
   }
+  // 清理 HLS Blob URL
+  cleanupHlsBlob()
   // 清理 CSS 全屏状态
   if (isCssFullscreen.value) {
     const wrapper = document.querySelector('.video-player-wrapper')

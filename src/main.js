@@ -9,6 +9,7 @@ import { initCoverCache, getCachedBangumiInfo, setCachedBangumiInfo, clearAllCov
 import { animeScraper } from './services/scraper.js';
 import { getCoverUrl, getBangumiInfo } from './services/bangumi.js';
 import { getVideoInfo, streamVideo } from './services/videoProxy.js';
+import { proxyHlsPlaylist, proxyVideoStream } from './services/hlsProxy.js';
 import { initUpdater } from './services/updater.js';
 import { getAutoDownloadService } from './services/autoDownload.js';
 import { getPerformanceService } from './services/performance.js';
@@ -355,6 +356,27 @@ ipcMain.handle('video:getInfo', async (event, { url }) => {
     
     return result;
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handlers for HLS Proxy
+ipcMain.handle('hls:proxyPlaylist', async (event, { url, cookies }) => {
+  try {
+    const result = await proxyHlsPlaylist(url, cookies);
+    return result;
+  } catch (error) {
+    console.error('[Main] HLS proxy error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('hls:proxyVideo', async (event, { url, cookies, range }) => {
+  try {
+    const result = await proxyVideoStream(url, { cookies, range });
+    return result;
+  } catch (error) {
+    console.error('[Main] Video stream proxy error:', error);
     return { success: false, error: error.message };
   }
 });
