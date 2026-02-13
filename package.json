@@ -2,9 +2,13 @@
   "name": "anime1-desktop-electron-forge",
   "productName": "anime1-desktop-electron-forge",
   "version": "0.1.0",
-  "description": "My Electron application description",
+  "description": "Anime1 Desktop - Watch anime from anime1.me",
   "main": ".webpack/main/index.js",
   "private": true,
+  "type": "module",
+  "bin": {
+    "anime1": "./src/cli/index.js"
+  },
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
@@ -17,7 +21,10 @@
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "cli": "node src/cli/index.js",
+    "cli:status": "node src/cli/index.js status",
+    "cli:help": "node src/cli/index.js --help"
   },
   "keywords": [],
   "author": "gzp",
@@ -58,7 +65,10 @@
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.13.5",
     "better-sqlite3": "^12.6.2",
+    "chalk": "^5.6.2",
     "cheerio": "^1.2.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.3",
     "date-fns": "^4.1.0",
     "dompurify": "^3.3.1",
     "echarts": "^6.0.0",
@@ -67,6 +77,7 @@
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
     "element-plus": "^2.13.2",
+    "inquirer": "^13.2.2",
     "libsql": "^0.5.22",
     "m3u8-parser": "^7.2.0",
     "opencc-js": "^1.0.5",

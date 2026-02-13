@@ -102,6 +102,10 @@ export const settingsDB = {
     settings[key] = value;
     store.set('settings', settings);
     return { success: true };
+  },
+  
+  async getAll() {
+    return store.get('settings') || {};
   }
 };
 

@@ -281,6 +281,13 @@ class AutoDownloadService {
     
     return history.slice(0, limit);
   }
+  
+  /**
+   * Get all downloads
+   */
+  getAllDownloads() {
+    return [...this._history];
+  }
 
   /**
    * Get active downloads
