@@ -102,6 +102,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRecentTraces: (options) => ipcRenderer.invoke('performance:getRecentTraces', options),
   getTrace: (traceId) => ipcRenderer.invoke('performance:getTrace', traceId),
   clearPerformanceData: () => ipcRenderer.invoke('performance:clearAll'),
+  
+  // Logs API
+  getLogs: (options) => ipcRenderer.invoke('logs:get', options),
+  getLogStats: () => ipcRenderer.invoke('logs:getStats'),
+  clearLogs: () => ipcRenderer.invoke('logs:clear'),
+  exportLogs: (exportPath) => ipcRenderer.invoke('logs:export', exportPath),
+  getLogFileInfo: () => ipcRenderer.invoke('logs:getFileInfo'),
 });
 
 console.log('[Preload] electronAPI exposed successfully via contextBridge');

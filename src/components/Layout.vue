@@ -54,6 +54,9 @@
           <el-menu-item index="/dev/performance">
             <template #title>性能分析</template>
           </el-menu-item>
+          <el-menu-item index="/dev/logs">
+            <template #title>日志查看</template>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
 

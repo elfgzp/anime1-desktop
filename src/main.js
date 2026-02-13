@@ -427,6 +427,54 @@ ipcMain.handle('shell:openLogsFolder', async () => {
   }
 });
 
+// IPC Handlers for Logs
+import { getLogs, getLogStats, clearLogs, exportLogs, getLogFileInfo } from './services/logger.js';
+
+ipcMain.handle('logs:get', async (event, options) => {
+  try {
+    const result = getLogs(options);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('logs:getStats', async () => {
+  try {
+    const stats = getLogStats();
+    return { success: true, stats };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('logs:clear', async () => {
+  try {
+    const result = clearLogs();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('logs:export', async (event, exportPath) => {
+  try {
+    const result = exportLogs(exportPath);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('logs:getFileInfo', async () => {
+  try {
+    const info = getLogFileInfo();
+    return { success: true, info };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // IPC Handlers for Window state
 ipcMain.handle('window:getState', async () => {
   return { success: true, data: windowState };

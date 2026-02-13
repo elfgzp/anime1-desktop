@@ -329,6 +329,24 @@ export const autoDownloadAPI = {
   },
 }
 
+// 日志相关 API
+export const logsAPI = {
+  // 获取日志
+  getLogs: (options = {}) => callElectron('getLogs', options),
+  
+  // 获取日志统计
+  getLogStats: () => callElectron('getLogStats'),
+  
+  // 清除日志
+  clearLogs: () => callElectron('clearLogs'),
+  
+  // 导出日志
+  exportLogs: (exportPath) => callElectron('exportLogs', { exportPath }),
+  
+  // 获取日志文件信息
+  getLogFileInfo: () => callElectron('getLogFileInfo'),
+}
+
 export default {
   anime: animeAPI,
   favorite: favoriteAPI,
@@ -337,6 +355,7 @@ export default {
   update: updateAPI,
   performance: performanceAPI,
   autoDownload: autoDownloadAPI,
+  logs: logsAPI,
   shell: shellAPI,
   window: windowAPI,
   app: appAPI,
