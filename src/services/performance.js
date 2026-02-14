@@ -165,7 +165,7 @@ export class PerformanceTrace {
 /**
  * Performance Service
  */
-class PerformanceService {
+export class PerformanceService {
   constructor() {
     this._traces = [];
     this._activeTraces = new Map();
