@@ -252,8 +252,7 @@ export default {
   hooks: {
     packageAfterPrune: async (forgeConfig, buildPath, electronVersion, platform, arch) => {
       // Additional cleanup after pruning
-      const fs = require('fs');
-      const path = require('path');
+      // fs and path are already imported at the top of the file
       
       // Files/directories to remove from node_modules
       const toRemove = [
