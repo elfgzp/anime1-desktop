@@ -61,7 +61,7 @@ const windowsSigningConfig = (() => {
   };
 })();
 
-module.exports = {
+export default {
   packagerConfig: {
     asar: true,
     name: 'Anime1Desktop',
