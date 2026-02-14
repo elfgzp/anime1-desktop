@@ -159,13 +159,13 @@ describe('Video Downloader', () => {
       // Add active downloads
       const progress1 = new DownloadProgress('ep-1')
       progress1.status = DownloadStatus.DOWNLOADING
-      dl._activeDownloads.set('ep-1', progress1)
+      dl.activeDownloads.set('ep-1', progress1)
       
       expect(dl._canStartDownload()).toBe(true)
       
       const progress2 = new DownloadProgress('ep-2')
       progress2.status = DownloadStatus.DOWNLOADING
-      dl._activeDownloads.set('ep-2', progress2)
+      dl.activeDownloads.set('ep-2', progress2)
       
       expect(dl._canStartDownload()).toBe(false)
       

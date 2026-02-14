@@ -2,6 +2,7 @@ import Store from 'electron-store';
 
 const store = new Store({
   name: 'anime1-data',
+  projectName: 'anime1-desktop',
   defaults: {
     favorites: [],
     playbackHistory: [],
@@ -14,6 +15,7 @@ const store = new Store({
 // Cover cache store (separate from main store)
 const coverStore = new Store({
   name: 'cover-cache',
+  projectName: 'anime1-desktop',
   defaults: {
     covers: {}
   }
