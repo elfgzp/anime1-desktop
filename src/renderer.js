@@ -5,8 +5,8 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import App from './App.vue'
-import router from './router'
-import { useThemeStore } from './composables/useTheme'
+import router from './router/index.js'
+import { useThemeStore } from './composables/useTheme.js'
 
 // Wait for electronAPI to be available
 const waitForElectronAPI = () => {

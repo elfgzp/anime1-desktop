@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import { settingsAPI } from '../utils/api'
-import { THEME, RESPONSE_FIELDS, REQUEST_PARAMS } from '../constants/api'
+import { settingsAPI } from '../utils/api.js'
+import { THEME, RESPONSE_FIELDS, REQUEST_PARAMS } from '../constants/api.js'
 
 // 使用单例模式避免重复创建
 let currentTheme = ref(THEME.SYSTEM)
