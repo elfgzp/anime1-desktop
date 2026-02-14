@@ -1,12 +1,8 @@
 /**
- * Vitest Default Configuration
+ * Vitest Configuration - Unit Tests Only
  * 
- * 默认只运行单元测试，排除 E2E 和集成测试
- * 
- * 可用配置:
- * - vitest.unit.config.js         # 单元测试
- * - vitest.integration.config.js  # 集成测试
- * - vitest.e2e.config.js          # E2E 测试 (Playwright)
+ * 运行: npm run test:unit
+ * 或: npx vitest --config vitest.unit.config.js
  */
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
@@ -15,18 +11,11 @@ import path from 'path'
 export default defineConfig({
   plugins: [vue()],
   test: {
-    name: 'default',
+    name: 'unit',  // 测试套件名称
     environment: 'jsdom',
     globals: true,
-    // 默认只包含单元测试
     include: ['tests/unit/**/*.{test,spec}.{js,ts}'],
-    exclude: [
-      'node_modules',
-      '.webpack',
-      'dist',
-      'tests/e2e/**',         // 排除 E2E 测试
-      'tests/integration/**', // 排除集成测试
-    ],
+    exclude: ['node_modules', '.webpack', 'dist'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
