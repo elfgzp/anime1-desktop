@@ -3,7 +3,7 @@
   "productName": "anime1-desktop-electron-forge",
   "version": "0.1.0",
   "description": "Anime1 Desktop - Watch anime from anime1.me",
-  "main": ".webpack/main/index.js",
+  "main": ".webpack/main",
   "private": true,
   "type": "module",
   "bin": {
