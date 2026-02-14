@@ -125,8 +125,8 @@ export default {
       name: '@electron-forge/maker-squirrel',
       config: {
         name: 'Anime1Desktop',
-        exe: 'Anime1Desktop.exe',
-        setupExe: `Anime1Desktop-${packageJson.version}-Setup.exe`,
+        exe: 'anime1-desktop-electron-forge.exe',
+        setupExe: `anime1-desktop-electron-forge-${packageJson.version}-Setup.exe`,
         ...(iconExists('./assets/icon.ico') && { 
           setupIcon: './assets/icon.ico',
           iconUrl: 'https://raw.githubusercontent.com/gzp/anime1-desktop/main/assets/icon.ico',
