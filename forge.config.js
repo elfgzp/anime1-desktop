@@ -65,7 +65,7 @@ export default {
   packagerConfig: {
     asar: true,
     name: 'Anime1Desktop',
-    executableName: 'anime1-desktop',
+    executableName: 'anime1-desktop-electron-forge',
     appBundleId: 'com.gzp.anime1-desktop',
     appCategoryType: 'public.app-category.entertainment',
     icon: iconExists('./assets/icon.png') ? './assets/icon' : undefined,
