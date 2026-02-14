@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Network access -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+    
+    <!-- File access -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- File bookmarks -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.document-scope</key>
+    <true/>
+    
+    <!-- Audio/Video -->
+    <key>com.apple.security.device.audio-video-browsing</key>
+    <true/>
+    
+    <!-- Media library (for video playback) -->
+    <key>com.apple.security.personal-information.media-library</key>
+    <true/>
+    
+    <!-- Allow execution of JIT-compiled code (for some media codecs) -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <!-- Allow unsigned executable memory -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Disable library validation (for native node modules) -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- Debugging (for development, remove for production) -->
+    <key>com.apple.security.get-task-allow</key>
+    <false/>
+    
+    <!-- App sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    
+    <!-- Inherit entitlements (for child processes) -->
+    <key>com.apple.security.inherit</key>
+    <true/>
+  </dict>
+</plist>

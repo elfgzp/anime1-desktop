@@ -29,6 +29,14 @@
   "keywords": [],
   "author": "gzp",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gzp/anime1-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gzp/anime1-desktop/issues"
+  },
+  "homepage": "https://github.com/gzp/anime1-desktop#readme",
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.0",
@@ -37,6 +45,7 @@
     "@electron-forge/maker-rpm": "^7.11.1",
     "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",
+    "@electron-forge/publisher-github": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",

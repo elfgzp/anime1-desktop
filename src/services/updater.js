@@ -6,11 +6,28 @@
  * - Download updates with progress tracking
  * - Silent background download
  * - Auto-install on app quit
+ * 
+ * Mock Testing:
+ * - Set MOCK_UPDATER=true to enable mock mode
+ * - Use MOCK_UPDATER_SCENARIO to set test scenario
+ * - Available scenarios: no-update, has-update, check-error, download-error, downloaded
  */
 
 import { autoUpdater } from 'electron-updater';
 import { app, ipcMain, BrowserWindow } from 'electron';
 import logger from 'electron-log';
+
+// Check if mock mode is enabled
+const isMockMode = process.env.MOCK_UPDATER === 'true';
+
+// Import mock implementation if in mock mode
+let mockUpdater = null;
+if (isMockMode) {
+  // Dynamic import to avoid loading mock code in production
+  const { initMockUpdater } = await import('./updater.mock.js');
+  mockUpdater = { initMockUpdater };
+  logger.info('[Updater] Mock mode enabled');
+}
 
 // Configure logging
 autoUpdater.logger = logger;
@@ -89,6 +106,11 @@ function resetState() {
  */
 export function initUpdater(win) {
   mainWindow = win;
+  
+  // If in mock mode, delegate to mock implementation
+  if (isMockMode && mockUpdater) {
+    return mockUpdater.initMockUpdater(win);
+  }
 
   // Configure auto updater
   autoUpdater.autoDownload = UPDATE_CONFIG.autoDownload;
@@ -329,6 +351,13 @@ export function setFeedURL(url) {
   autoUpdater.setFeedURL(url);
 }
 
+/**
+ * Check if running in mock mode
+ */
+export function isMockUpdater() {
+  return isMockMode;
+}
+
 export default {
   initUpdater,
   checkForUpdates,
@@ -336,4 +365,5 @@ export default {
   quitAndInstall,
   getUpdateState,
   setFeedURL,
+  isMockUpdater,
 };
