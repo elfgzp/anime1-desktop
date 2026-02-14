@@ -1,7 +1,11 @@
-const path = require('path');
-const { VueLoaderPlugin } = require('vue-loader');
+import path from 'path';
+import { VueLoaderPlugin } from 'vue-loader';
+import { fileURLToPath } from 'url';
 
-module.exports = {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default {
   module: {
     rules: [
       {

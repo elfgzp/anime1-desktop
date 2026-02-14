@@ -1,4 +1,4 @@
-module.exports = [
+export default [
   {
     test: /\.ts$/,
     exclude: /node_modules/,
