@@ -59,6 +59,16 @@ export class CrawlerService {
   }
 
   /**
+   * 提取视频 URL
+   */
+  async extractVideoUrl(episodeUrl: string): Promise<{
+    url: string
+    cookies?: Record<string, string>
+  }> {
+    return this.anime1.extractVideoUrl(episodeUrl)
+  }
+
+  /**
    * 关闭所有爬虫
    */
   close(): void {

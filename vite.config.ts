@@ -5,37 +5,66 @@ import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ['libsql', 'better-sqlite3']
+  },
   plugins: [
     vue(),
     electron([
       {
         // Main process entry
-        entry: 'src/main/index.ts',
+        entry: resolve(__dirname, 'src/main/index.ts'),
         onstart({ startup }) {
           startup()
         },
         vite: {
+          resolve: {
+            alias: {
+              '@': resolve(__dirname, 'src'),
+              '@main': resolve(__dirname, 'src/main'),
+              '@preload': resolve(__dirname, 'src/preload'),
+              '@renderer': resolve(__dirname, 'src/renderer'),
+              '@shared': resolve(__dirname, 'src/shared')
+            }
+          },
           build: {
             sourcemap: true,
             minify: process.env.NODE_ENV === 'production',
-            outDir: 'dist-electron/main',
+            outDir: resolve(__dirname, 'dist-electron/main'),
             rollupOptions: {
-              external: ['better-sqlite3']
+              external: ['better-sqlite3', 'libsql', /^libsql-.*/, 'node:sqlite', 'undici']
             }
           }
         }
       },
       {
         // Preload script entry
-        entry: 'src/preload/index.ts',
+        entry: resolve(__dirname, 'src/preload/index.ts'),
         onstart({ reload }) {
           reload()
         },
         vite: {
+          resolve: {
+            alias: {
+              '@': resolve(__dirname, 'src'),
+              '@main': resolve(__dirname, 'src/main'),
+              '@preload': resolve(__dirname, 'src/preload'),
+              '@renderer': resolve(__dirname, 'src/renderer'),
+              '@shared': resolve(__dirname, 'src/shared')
+            }
+          },
           build: {
             sourcemap: true,
             minify: process.env.NODE_ENV === 'production',
-            outDir: 'dist-electron/preload'
+            outDir: resolve(__dirname, 'dist-electron/preload'),
+            lib: {
+              entry: resolve(__dirname, 'src/preload/index.ts'),
+              formats: ['cjs'],
+              fileName: () => 'index.cjs'
+            },
+            rollupOptions: {
+              external: ['electron']
+            }
           }
         }
       }

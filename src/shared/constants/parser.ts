@@ -86,3 +86,25 @@ export const SELECTORS = {
   ANIME1_ITEM: 'li.item a.subjectCover',
   PAGE_LINK: 'a[href*="category/"]'
 } as const
+
+// ==========================================
+// 视频 API 配置
+// ==========================================
+
+export const VIDEO_API = {
+  URL: 'https://d1zquzjgwo9yb.cloudfront.net/',
+  PARAM_C: 'c',
+  PARAM_E: 'e',
+  PARAM_T: 't',
+  PARAM_P: 'p',
+  PARAM_S: 's'
+} as const
+
+// ==========================================
+// 域名配置
+// ==========================================
+
+export const DOMAINS = {
+  ANIME1_ME: 'anime1.me',
+  ANIME1_PW: 'anime1.pw'
+} as const

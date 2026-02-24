@@ -83,9 +83,8 @@ export class BangumiCrawler {
           id,
           title,
           titleCn: titleCn || undefined,
-          coverUrl,
-          score,
-          coverUrl: coverUrl ? `https:${coverUrl}` : undefined
+          coverUrl: coverUrl ? `https:${coverUrl}` : undefined,
+          score
         })
       })
       

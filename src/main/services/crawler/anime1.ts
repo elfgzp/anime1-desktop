@@ -7,7 +7,7 @@
 import * as cheerio from 'cheerio'
 import log from 'electron-log'
 import type { Anime, Episode } from '@shared/types'
-import { URLS, PATTERNS } from '@shared/constants'
+import { URLS, PATTERNS, VIDEO_API, DOMAINS } from '@shared/constants'
 import { HttpClient, createAnime1HttpClient } from './http-client'
 
 export class Anime1Crawler {
@@ -24,8 +24,9 @@ export class Anime1Crawler {
   async fetchAnimeList(): Promise<Anime[]> {
     log.info('[Anime1] Fetching anime list...')
     
-    const html = await this.httpClient.get<string>(URLS.ANIME1_API)
-    const animeList = this.parseAnimeList(html)
+    // axios 会自动解析 JSON，所以直接获取 any 类型
+    const data = await this.httpClient.get<any[]>(URLS.ANIME1_API)
+    const animeList = this.parseAnimeData(data)
     
     log.info(`[Anime1] Fetched ${animeList.length} anime`)
     return animeList
@@ -34,13 +35,15 @@ export class Anime1Crawler {
   /**
    * 解析番剧列表
    */
-  private parseAnimeList(html: string): Anime[] {
+  private parseAnimeData(data: any[]): Anime[] {
     const animeList: Anime[] = []
     const seenIds = new Set<string>()
 
     try {
-      // Anime1 API 返回的是 JSON 数据
-      const data = JSON.parse(html) as any[]
+      if (!Array.isArray(data)) {
+        log.warn('[Anime1] Response is not an array')
+        return animeList
+      }
       
       for (const item of data) {
         if (!Array.isArray(item) || item.length < 2) continue
@@ -93,8 +96,6 @@ export class Anime1Crawler {
       }
     } catch (error) {
       log.error('[Anime1] Failed to parse anime list:', error)
-      // 如果 JSON 解析失败，尝试从 HTML 解析
-      return this.parseAnimeListFromHtml(html)
     }
 
     return animeList
@@ -436,6 +437,114 @@ export class Anime1Crawler {
     } else {
       return `${detailUrl}?page=${page}`
     }
+  }
+
+  /**
+   * 提取视频 URL
+   * 对应原项目: src/routes/proxy.py - proxy_episode_api / proxy_video_url
+   */
+  async extractVideoUrl(episodeUrl: string): Promise<{
+    url: string
+    cookies?: Record<string, string>
+  }> {
+    log.info(`[Anime1] Extracting video URL: ${episodeUrl}`)
+    
+    const isPwDomain = episodeUrl.includes(DOMAINS.ANIME1_PW)
+    
+    // 获取剧集页面
+    const html = await this.httpClient.get<string>(episodeUrl)
+    const $ = cheerio.load(html)
+    
+    // 对于 anime1.pw: 直接从 video 标签提取
+    if (isPwDomain) {
+      const videoElem = $('video[src]')
+      const src = videoElem.attr('src')
+      
+      if (!src) {
+        throw new Error('未找到视频源')
+      }
+      
+      const url = src.startsWith('//') ? `https:${src}` : src
+      log.info(`[Anime1] Extracted video URL (pw): ${url.substring(0, 50)}...`)
+      
+      return { url }
+    }
+    
+    // 对于 anime1.me: 提取 API 参数并调用 API
+    const videoElem = $('video[data-apireq]')
+    const dataApireq = videoElem.attr('data-apireq')
+    
+    if (!dataApireq) {
+      throw new Error('未找到 video[data-apireq] 元素')
+    }
+    
+    // 解码并解析 API 参数
+    let apiParams: Record<string, string | number>
+    try {
+      const decoded = decodeURIComponent(dataApireq)
+      apiParams = JSON.parse(decoded)
+    } catch (error) {
+      log.error('[Anime1] Failed to parse API params:', error)
+      throw new Error('解析 API 参数失败')
+    }
+    
+    const { c, e, t, p, s } = apiParams
+    
+    if (!c || !e || !t || !s) {
+      throw new Error('API 参数不完整')
+    }
+    
+    // 调用视频 API
+    const postData = {
+      d: JSON.stringify({
+        [VIDEO_API.PARAM_C]: c,
+        [VIDEO_API.PARAM_E]: e,
+        [VIDEO_API.PARAM_T]: t,
+        [VIDEO_API.PARAM_P]: p || 0,
+        [VIDEO_API.PARAM_S]: s
+      })
+    }
+    
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': URLS.ANIME1_BASE,
+      'Origin': URLS.ANIME1_BASE
+    }
+    
+    log.info('[Anime1] Calling video API...')
+    const apiResponse = await this.httpClient.post<string>(VIDEO_API.URL, postData, headers)
+    
+    let data: any
+    try {
+      data = JSON.parse(apiResponse)
+    } catch (error) {
+      log.error('[Anime1] Failed to parse API response:', error)
+      throw new Error('解析视频 API 响应失败')
+    }
+    
+    // 从响应中提取视频 URL
+    // 新格式: {"s": [{"src": "//host/path/file.mp4", "type": "video/mp4"}]}
+    const sources = data.s
+    if (Array.isArray(sources) && sources.length > 0) {
+      const src = sources[0].src
+      if (src) {
+        const url = src.startsWith('//') ? `https:${src}` : src
+        log.info(`[Anime1] Extracted video URL (api): ${url.substring(0, 50)}...`)
+        
+        // 解析 cookies
+        // 注意: httpClient 目前不返回 headers，这里简化处理
+        return { url, cookies: {} }
+      }
+    }
+    
+    // 旧格式回退
+    if (data.l || data.file) {
+      const url = data.l || data.file
+      log.info(`[Anime1] Extracted video URL (legacy): ${url.substring(0, 50)}...`)
+      return { url, cookies: {} }
+    }
+    
+    throw new Error('未能从 API 响应中提取视频 URL')
   }
 
   /**

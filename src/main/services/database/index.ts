@@ -5,7 +5,7 @@
  * 技术栈: better-sqlite3 (替代 Peewee)
  */
 
-import { Database } from 'libsql'
+import type { Database as DatabaseType } from 'libsql'
 import { app } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
@@ -16,8 +16,11 @@ import { migrateData, needsMigration, isMigrationCompleted, markMigrationComplet
 // 数据库文件路径
 const DB_FILE_NAME = 'anime1.db'
 
+// 动态导入 libsql 避免打包问题
+let Database: typeof DatabaseType.Database
+
 export class DatabaseService {
-  private db: Database.Database | null = null
+  private db: DatabaseType | null = null
   private dbPath: string
 
   constructor() {
@@ -28,12 +31,21 @@ export class DatabaseService {
     mkdirSync(userDataPath, { recursive: true })
   }
 
+  private async loadDatabase(): Promise<typeof DatabaseType> {
+    if (!Database) {
+      // libsql 默认导出 Database 类
+      Database = await import('libsql').then(m => m.default || m)
+    }
+    return Database
+  }
+
   /**
    * 连接数据库
    */
   async connect(): Promise<void> {
     try {
-      this.db = new Database(this.dbPath)
+      const DatabaseClass = await this.loadDatabase()
+      this.db = new DatabaseClass(this.dbPath)
       
       // 启用 WAL 模式，提高并发性能
       this.db.pragma('journal_mode = WAL')

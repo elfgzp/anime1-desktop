@@ -1,7 +1,8 @@
 <template>
   <div class="home">
-    <header class="header">
-      <h1>Anime1 Desktop</h1>
+    <!-- 页面头部 -->
+    <header class="page-header">
+      <h1>最新番剧</h1>
       <div class="search">
         <el-input
           v-model="searchQuery"
@@ -30,6 +31,7 @@
         :title="animeStore.error"
         type="error"
         show-icon
+        closable
       />
 
       <!-- 空状态 -->
@@ -68,6 +70,7 @@
             <div class="anime-meta">
               <el-tag v-if="anime.year" size="small">{{ anime.year }}</el-tag>
               <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
+              <el-tag v-if="anime.subtitleGroup" size="small" type="info">{{ anime.subtitleGroup }}</el-tag>
             </div>
           </div>
         </el-card>
@@ -90,11 +93,11 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Picture } from '@element-plus/icons-vue'
-import { useAnimeStore, useFavoriteStore } from '../stores'
+import { useAnimeStore, useFavoritesStore } from '../stores'
 
 const router = useRouter()
 const animeStore = useAnimeStore()
-const favoriteStore = useFavoriteStore()
+const favoritesStore = useFavoritesStore()
 
 const searchQuery = ref('')
 const currentPage = ref(1)
@@ -106,7 +109,7 @@ onMounted(() => {
   animeStore.fetchAnimeList(1)
   
   // 加载收藏
-  favoriteStore.loadFavorites()
+  favoritesStore.loadFavorites()
 })
 
 function handleSearch() {
@@ -119,6 +122,8 @@ function handleSearch() {
 
 function handlePageChange(page: number) {
   animeStore.fetchAnimeList(page)
+  // 滚动到顶部
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function goToDetail(id: string) {
@@ -128,23 +133,24 @@ function goToDetail(id: string) {
 
 <style scoped>
 .home {
-  min-height: 100vh;
-  background: var(--el-bg-color);
+  min-height: 100%;
+  background: var(--el-bg-color-page);
 }
 
-.header {
+.page-header {
   padding: 20px 40px;
   border-bottom: 1px solid var(--el-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 20px;
+  background: var(--el-bg-color);
 }
 
-.header h1 {
+.page-header h1 {
   margin: 0;
   font-size: 24px;
-  color: var(--anime-primary);
+  color: var(--el-text-color-primary);
 }
 
 .search {
@@ -167,11 +173,12 @@ function goToDetail(id: string) {
 
 .anime-card {
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .anime-card:hover {
   transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .anime-cover {
@@ -240,10 +247,11 @@ function goToDetail(id: string) {
   margin-top: 40px;
   display: flex;
   justify-content: center;
+  padding-bottom: 40px;
 }
 
 @media (max-width: 768px) {
-  .header {
+  .page-header {
     flex-direction: column;
     padding: 20px;
   }

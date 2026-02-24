@@ -21,6 +21,7 @@ const validChannels = [
   'anime:episodes',
   'anime:search',
   'anime:bangumi',
+  'anime:video',
   'anime:cache:status',
   'anime:cache:refresh',
   
@@ -29,6 +30,12 @@ const validChannels = [
   'favorite:add',
   'favorite:remove',
   'favorite:check',
+  
+  // 播放历史
+  'history:list',
+  'history:save',
+  'history:progress',
+  'history:clear',
   
   // 设置
   'settings:get',
@@ -70,6 +77,7 @@ export interface ElectronAPI {
     getEpisodes: (params: { id: string }) => Promise<any>
     search: (params: { keyword: string; page?: number }) => Promise<any>
     getBangumiInfo: (params: { id: string }) => Promise<any>
+    extractVideo: (params: { episodeUrl: string }) => Promise<any>
     getCacheStatus: () => Promise<any>
     refreshCache: () => Promise<any>
   }
@@ -80,6 +88,22 @@ export interface ElectronAPI {
     add: (params: { animeId: string; title: string; coverUrl?: string; detailUrl: string }) => Promise<any>
     remove: (params: { animeId: string }) => Promise<any>
     check: (params: { animeId: string }) => Promise<any>
+  }
+  
+  // 播放历史
+  history: {
+    getList: (params?: { limit?: number }) => Promise<any>
+    save: (params: {
+      animeId: string
+      animeTitle: string
+      episodeId: string
+      episodeNum: number
+      positionSeconds: number
+      totalSeconds: number
+      coverUrl?: string
+    }) => Promise<any>
+    getProgress: (params: { animeId: string; episodeId: string }) => Promise<any>
+    clear: () => Promise<any>
   }
   
   // 设置
@@ -147,6 +171,7 @@ const api: ElectronAPI = {
     getEpisodes: (params) => invoke('anime:episodes', params),
     search: (params) => invoke('anime:search', params),
     getBangumiInfo: (params) => invoke('anime:bangumi', params),
+    extractVideo: (params) => invoke('anime:video', params),
     getCacheStatus: () => invoke('anime:cache:status'),
     refreshCache: () => invoke('anime:cache:refresh')
   },
@@ -156,6 +181,13 @@ const api: ElectronAPI = {
     add: (params) => invoke('favorite:add', params),
     remove: (params) => invoke('favorite:remove', params),
     check: (params) => invoke('favorite:check', params)
+  },
+  
+  history: {
+    getList: (params) => invoke('history:list', params),
+    save: (params) => invoke('history:save', params),
+    getProgress: (params) => invoke('history:progress', params),
+    clear: () => invoke('history:clear')
   },
   
   settings: {
@@ -189,7 +221,13 @@ const api: ElectronAPI = {
 }
 
 // 暴露到 window.api
-contextBridge.exposeInMainWorld('api', api)
+console.log('[Preload] Starting to expose API...')
+try {
+  contextBridge.exposeInMainWorld('api', api)
+  console.log('[Preload] API exposed successfully')
+} catch (error) {
+  console.error('[Preload] Failed to expose API:', error)
+}
 
 // 类型声明
 declare global {

@@ -13,11 +13,18 @@ import {
   screen,
   ipcMain,
   app,
-  globalShortcut
+  globalShortcut,
+  shell
 } from 'electron'
-import { join } from 'path'
+import { join, dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
 import log from 'electron-log'
 import { config, WINDOW_CONFIG } from './config'
+
+// ES 模块中的 __dirname polyfill - 使用绝对路径
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // 窗口状态接口
 interface WindowState {
@@ -49,6 +56,22 @@ export class WindowManager {
     // 加载保存的窗口状态
     const windowState = this.loadWindowState()
 
+    // 计算 preload 路径 - 使用绝对路径
+    const preloadPath = join(__dirname, '../preload/index.cjs')
+    const absolutePreloadPath = resolve(preloadPath)
+    console.log(`[Window] Preload path: ${preloadPath}`)
+    console.log(`[Window] Preload absolute path: ${absolutePreloadPath}`)
+    console.log(`[Window] Preload exists: ${existsSync(preloadPath)}`)
+    
+    // 验证 preload 文件可读
+    try {
+      const { readFileSync } = await import('fs')
+      const content = readFileSync(preloadPath, 'utf8')
+      console.log(`[Window] Preload file size: ${content.length} bytes`)
+    } catch (e: any) {
+      console.error(`[Window] Preload file read error: ${e.message}`)
+    }
+    
     // 创建窗口
     this.mainWindow = new BrowserWindow({
       width: windowState.width,
@@ -61,12 +84,10 @@ export class WindowManager {
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       show: false,
       webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
+        preload: preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true,
-        allowRunningInsecureContent: false,
-        webSecurity: true
+        sandbox: false
       },
       icon: join(__dirname, '../../../resources/icon.png')
     })
@@ -81,11 +102,16 @@ export class WindowManager {
 
     // 加载页面
     if (process.env.VITE_DEV_SERVER_URL) {
+      // 开发模式：使用 Vite dev server
+      log.info(`[Window] Loading dev server: ${process.env.VITE_DEV_SERVER_URL}`)
       await this.mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-      this.mainWindow.webContents.openDevTools()
     } else {
-      await this.mainWindow.loadFile(join(__dirname, '../../dist/index.html'))
+      // 生产模式：使用构建后的文件
+      const indexPath = join(__dirname, '../../dist/index.html')
+      log.info(`[Window] Loading production build: ${indexPath}`)
+      await this.mainWindow.loadFile(indexPath)
     }
+    this.mainWindow.webContents.openDevTools()
 
     // 显示窗口
     this.mainWindow.once('ready-to-show', () => {
@@ -150,7 +176,6 @@ export class WindowManager {
         return { action: 'allow' }
       }
       
-      const { shell } = require('electron')
       shell.openExternal(url)
       return { action: 'deny' }
     })

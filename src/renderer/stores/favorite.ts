@@ -10,6 +10,7 @@ export const useFavoriteStore = defineStore('favorite', () => {
   // State
   const favorites = ref<FavoriteAnime[]>([])
   const loading = ref(false)
+  const hasUpdates = ref(false)
 
   // Getters
   const favoriteIds = computed(() => new Set(favorites.value.map(f => f.animeId)))
@@ -82,6 +83,7 @@ export const useFavoriteStore = defineStore('favorite', () => {
   return {
     favorites,
     loading,
+    hasUpdates,
     isFavorite,
     loadFavorites,
     addFavorite,

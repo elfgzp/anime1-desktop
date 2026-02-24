@@ -9,8 +9,8 @@ import Store from 'electron-store'
 import { app } from 'electron'
 import { join } from 'path'
 import type { AppSettings } from '@shared/types'
+import { DEFAULT_APP_SETTINGS } from '@shared/types'
 import { 
-  DEFAULT_APP_SETTINGS,
   WINDOW_CONFIG,
   PAGINATION,
   HTTP_CONFIG,

@@ -9,9 +9,15 @@
 import { app } from 'electron'
 import { join, dirname } from 'path'
 import { existsSync, copyFileSync } from 'fs'
-import { Database } from 'libsql'
+import type { Database as DatabaseType } from 'libsql'
 import log from 'electron-log'
 import type { DatabaseService } from './index'
+
+// 动态导入 libsql
+async function loadDatabase(): Promise<typeof DatabaseType> {
+  // libsql 默认导出 Database 类
+  return await import('libsql').then(m => m.default || m)
+}
 
 /**
  * 获取原项目数据库路径
@@ -77,6 +83,7 @@ export async function migrateData(databaseService: DatabaseService): Promise<{ s
   
   try {
     // 连接旧数据库
+    const Database = await loadDatabase()
     const legacyDb = new Database(legacyPath, { readonly: true })
     
     const stats: MigrationStats = {

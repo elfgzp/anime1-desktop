@@ -81,6 +81,16 @@ export function registerIPCHandlers(services: Services): void {
     }
   })
 
+  // 提取视频 URL
+  ipcMain.handle('anime:video', async (_, params: { episodeUrl: string }) => {
+    try {
+      const result = await crawlerService.extractVideoUrl(params.episodeUrl)
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
   // 获取缓存状态
   ipcMain.handle('anime:cache:status', async () => {
     try {
@@ -174,6 +184,61 @@ export function registerIPCHandlers(services: Services): void {
     try {
       const result = await databaseService.getAllSettings()
       return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // ==========================================
+  // 播放历史相关 IPC
+  // ==========================================
+  
+  // 获取播放历史
+  ipcMain.handle('history:list', async (_, params: { limit?: number }) => {
+    try {
+      const result = databaseService.getPlaybackHistory(params?.limit || 100)
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 保存播放进度
+  ipcMain.handle('history:save', async (_, params: {
+    animeId: string
+    animeTitle: string
+    episodeId: string
+    episodeNum: number
+    positionSeconds: number
+    totalSeconds: number
+    coverUrl?: string
+  }) => {
+    try {
+      databaseService.addPlaybackHistory({
+        ...params,
+        lastWatchedAt: Date.now()
+      })
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 获取播放进度
+  ipcMain.handle('history:progress', async (_, params: { animeId: string; episodeId: string }) => {
+    try {
+      const result = databaseService.getPlaybackProgress(params.animeId, params.episodeId)
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 清空播放历史
+  ipcMain.handle('history:clear', async () => {
+    try {
+      databaseService.clearPlaybackHistory()
+      return { success: true }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }

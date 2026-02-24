@@ -160,18 +160,20 @@ app.on('web-contents-created', (_, contents) => {
 })
 
 /**
- * 单实例锁
+ * 单实例锁（测试模式下禁用）
  */
-const gotTheLock = app.requestSingleInstanceLock()
+if (!process.env.E2E_TEST) {
+  const gotTheLock = app.requestSingleInstanceLock()
 
-if (!gotTheLock) {
-  log.warn('[Main] Another instance is already running')
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    // 用户尝试打开第二个实例时，显示并聚焦窗口
-    if (windowManager) {
-      windowManager.show()
-    }
-  })
+  if (!gotTheLock) {
+    log.warn('[Main] Another instance is already running')
+    app.quit()
+  } else {
+    app.on('second-instance', () => {
+      // 用户尝试打开第二个实例时，显示并聚焦窗口
+      if (windowManager) {
+        windowManager.show()
+      }
+    })
+  }
 }
