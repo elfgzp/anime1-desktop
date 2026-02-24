@@ -74,7 +74,7 @@ export function registerIPCHandlers(services: Services): void {
   // 获取 Bangumi 信息
   ipcMain.handle('anime:bangumi', async (_, params: { id: string }) => {
     try {
-      const result = await animeService.getBangumiInfo(params.id)
+      const result = databaseService.getBangumiInfo(params.id)
       return { success: true, data: result }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
