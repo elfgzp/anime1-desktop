@@ -38,10 +38,27 @@ let downloadService: DownloadService | null = null
 let updateService: UpdateService | null = null
 
 // 日志配置
+// 处理 EPIPE 错误：当 npm run dev 的管道关闭时，忽略写入错误
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    // 忽略 EPIPE 错误，这是 npm run dev 的正常行为
+    return
+  }
+  console.error('stdout error:', err)
+})
+
+process.stderr.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    // 忽略 EPIPE 错误
+    return
+  }
+  console.error('stderr error:', err)
+})
+
 log.initialize({ preload: false })
 log.transports.file.level = 'info'
-// 禁用 console 传输以避免 EPIPE 错误
-log.transports.console.level = false
+// 开发模式下 console 日志级别设为 info，避免过多调试日志
+log.transports.console.level = process.env.NODE_ENV === 'development' ? 'info' : 'debug'
 console.log('[Main] Log initialized')
 
 /**

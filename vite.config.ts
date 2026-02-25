@@ -6,7 +6,15 @@ import { resolve } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 
 // 修复 preload 文件：将 ES Module 语法转换为 CommonJS
+let fixPreloadExecuted = false
+
 function fixPreloadFile() {
+  // 防止重复执行
+  if (fixPreloadExecuted) {
+    return
+  }
+  fixPreloadExecuted = true
+  
   const preloadPath = resolve(__dirname, 'dist-electron/preload/index.cjs')
   if (!existsSync(preloadPath)) {
     console.log('[fixPreload] File not found:', preloadPath)
@@ -15,6 +23,12 @@ function fixPreloadFile() {
   
   try {
     let content = readFileSync(preloadPath, 'utf8')
+    
+    // 检查是否已经修复过（避免重复追加）
+    if (content.includes('module.exports = require_index()')) {
+      console.log('[fixPreload] Already fixed (module.exports found)')
+      return
+    }
     
     // 检查是否需要修复
     if (!content.includes('export default require_index()')) {
