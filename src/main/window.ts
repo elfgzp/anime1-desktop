@@ -114,11 +114,22 @@ export class WindowManager {
     }
     this.mainWindow.webContents.openDevTools()
 
-    // 显示窗口
-    this.mainWindow.once('ready-to-show', () => {
-      this.mainWindow?.show()
-      log.info('[Window] Main window shown')
-    })
+    // 显示窗口 - 使用 setTimeout 确保即使 ready-to-show 不触发也能显示
+    const showWindow = () => {
+      if (this.mainWindow && !this.mainWindow.isVisible()) {
+        this.mainWindow.show()
+        log.info('[Window] Main window shown')
+      }
+    }
+    
+    // 方法1: ready-to-show 事件
+    this.mainWindow.once('ready-to-show', showWindow)
+    
+    // 方法2: 3秒后强制显示（防止 ready-to-show 不触发）
+    setTimeout(showWindow, 3000)
+    
+    // 方法3: did-finish-load 事件
+    this.mainWindow.webContents.once('did-finish-load', showWindow)
 
     // 窗口事件监听
     this.setupWindowEvents()

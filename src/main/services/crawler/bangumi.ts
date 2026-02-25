@@ -1,12 +1,11 @@
 /**
- * Bangumi 爬虫
+ * Bangumi 爬虫 - 完整对应 Python 版本实现
  * 
- * 对应原项目: src/parser/cover_finder.py
- * 核心改进:
- * - 支持简繁体转换搜索
- * - 核心关键词提取
- * - 完善的匹配评分算法（年份、排名、评分）
- * - 封面URL自动修复
+ * Python 参考: src/parser/cover_finder.py
+ * 主要改动:
+ * - 使用 HTML 页面搜索（而非 API）作为主要方式
+ * - 封面 URL 直接来自列表页
+ * - 保留 API 作为 fallback
  */
 
 import * as cheerio from 'cheerio'
@@ -16,26 +15,23 @@ import type { BangumiInfo, BangumiSearchResult } from '@shared/types'
 import { URLS, BANGUMI_CONFIG } from '@shared/constants'
 import { HttpClient, createDefaultHttpClient } from './http-client'
 
-// 匹配配置（与Python版本保持一致）
+// 匹配配置（与 Python 完全一致）
 const MATCH_CONFIG = {
-  MIN_MATCH_SCORE: 30,     // Python版本是30，不是60
+  MIN_MATCH_SCORE: 30,
   YEAR_MATCH_BONUS: 15,
   YEAR_MISMATCH_PENALTY: 10,
-  RANK_TOP100_BONUS: 10,
-  RANK_TOP500_BONUS: 5,
-  RANK_TOP1000_BONUS: 3,
-  RATING_HIGH_BONUS: 5,    // >= 8.0
-  RATING_GOOD_BONUS: 3,    // >= 7.0
 }
+
+// Bangumi 封面质量（Python: BANGUMI_COVER_QUALITY = "common"）
+const COVER_QUALITY = 'common'
 
 export class BangumiCrawler {
   private httpClient: HttpClient
-  private t2sConverter: any // 繁体转简体
-  private s2tConverter: any // 简体转繁体
+  private t2sConverter: any
+  private s2tConverter: any
 
   constructor(httpClient?: HttpClient) {
     this.httpClient = httpClient ?? createDefaultHttpClient()
-    // 初始化转换器
     try {
       this.t2sConverter = OpenCC.Converter({ from: 'tw', to: 'cn' })
       this.s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' })
@@ -44,9 +40,6 @@ export class BangumiCrawler {
     }
   }
 
-  /**
-   * 繁体转简体
-   */
   private toSimplified(text: string): string {
     if (!this.t2sConverter) return text
     try {
@@ -56,9 +49,6 @@ export class BangumiCrawler {
     }
   }
 
-  /**
-   * 简体转繁体
-   */
   private toTraditional(text: string): string {
     if (!this.s2tConverter) return text
     try {
@@ -69,19 +59,16 @@ export class BangumiCrawler {
   }
 
   /**
-   * 获取标题的各种变体（简体、繁体）
-   * 对应: _get_title_variants
+   * 获取标题的各种变体（与 Python: _get_search_variants 一致）
    */
   private getTitleVariants(title: string): string[] {
     const variants = new Set<string>([title])
     
-    // 添加繁体版本
     const traditional = this.toTraditional(title)
     if (traditional !== title) {
       variants.add(traditional)
     }
     
-    // 添加简体版本
     const simplified = this.toSimplified(title)
     if (simplified !== title) {
       variants.add(simplified)
@@ -91,67 +78,65 @@ export class BangumiCrawler {
   }
 
   /**
-   * 提取核心关键词
-   * 对应: _extract_core_keyword
-   * 例如: "鬼灭之刃 第二季" -> "鬼灭之刃"
+   * 提取核心关键词（与 Python: _extract_core_keywords 一致）
    */
   private extractCoreKeyword(title: string): string {
-    let result = title
+    if (!title) return ""
     
-    // 移除季数信息
-    const patterns = [
-      /\s*第[一二三四五六七八九十\d]+季/g,
-      /\s*Season\s*\d+/gi,
-      /\s*\d+期/g,
-      /\s*\(\d{4}\)/g,
-    ]
+    // 移除括号内容（但保留季节信息）
+    let core = title.replace(/[【】\(\)（）\[\]～~].*?$/, "")
+    core = core.trim()
     
-    for (const pattern of patterns) {
-      result = result.replace(pattern, '')
-    }
-    
-    // 移除冒号后的副标题
-    if (result.includes(':')) {
-      result = result.split(':')[0]
-    }
-    if (result.includes('：')) {
-      result = result.split('：')[0]
-    }
-    
-    return result.trim()
+    return core || title
   }
 
   /**
-   * 标准化标题用于比较
-   * 对应: _normalize_title
+   * 截断关键词（与 Python: _truncate_keywords 一致）
    */
-  private normalizeTitle(title: string): string {
-    // 转小写
-    title = title.toLowerCase()
-    // 移除特殊字符，保留中文和英文单词字符
-    title = title.replace(/[^\w\u4e00-\u9fa5]/g, '')
-    return title
+  private truncateKeywords(keywords: string): string {
+    const MAX_KEYWORD_LENGTH = 15
+    
+    if (!keywords) return ""
+    
+    // 移除特殊字符
+    const cleaned = keywords.replace(/[【】\(\)（）\[\]～~!！\?]/g, "").trim()
+    
+    if (cleaned.length <= MAX_KEYWORD_LENGTH) {
+      return cleaned
+    }
+    
+    // 截断到最大长度
+    const truncated = cleaned.substring(0, MAX_KEYWORD_LENGTH * 2)
+    
+    // 找到最后一个完整词边界
+    const parts = truncated.split(/[\s,，、]/)
+    if (parts.length > 1) {
+      const result = parts.slice(0, -1).join(" ")
+      if (result) return result.trim()
+    }
+    
+    return cleaned.substring(0, MAX_KEYWORD_LENGTH)
   }
 
   /**
-   * 搜索 Bangumi
-   * 支持简体/繁体双重搜索
-   * 对应: search_bangumi
+   * 主搜索方法（与 Python: search_bangumi / _search_with_keyword_multi 一致）
+   * 使用 HTML 页面搜索
    */
   async searchByTitle(title: string): Promise<BangumiSearchResult[]> {
-    log.info(`[Bangumi] Searching: ${title}`)
+    log.info(`[Bangumi] Searching HTML: ${title}`)
     
-    const searchTerms = this.getTitleVariants(title)
     const allResults: BangumiSearchResult[] = []
     const seenIds = new Set<number>()
     
-    // 搜索所有变体
-    for (const term of searchTerms) {
-      if (!term.trim()) continue
+    // 获取所有搜索变体
+    const variants = this.getTitleVariants(title)
+    
+    for (const variant of variants) {
+      if (!variant.trim()) continue
       
       try {
-        const results = await this.searchByApi(term)
-        // 合并结果（去重）
+        const results = await this.searchHtml(variant)
+        
         for (const result of results) {
           if (!seenIds.has(result.id)) {
             seenIds.add(result.id)
@@ -159,7 +144,7 @@ export class BangumiCrawler {
           }
         }
       } catch (error) {
-        log.warn(`[Bangumi] Search failed for "${term}":`, error)
+        log.warn(`[Bangumi] HTML search failed for "${variant}":`, error)
       }
     }
     
@@ -167,254 +152,265 @@ export class BangumiCrawler {
   }
 
   /**
-   * 使用 API 搜索
+   * HTML 页面搜索（与 Python: _search_with_keyword_multi 一致）
    */
-  private async searchByApi(title: string): Promise<BangumiSearchResult[]> {
+  private async searchHtml(keyword: string): Promise<BangumiSearchResult[]> {
     try {
-      const encodedTitle = encodeURIComponent(title)
-      const searchUrl = `${URLS.BANGUMI_API}/search/subject/${encodedTitle}?type=2&responseGroup=small&max_results=${BANGUMI_CONFIG.RESULT_LIMIT}`
+      // URL 编码关键词
+      const encodedKeyword = encodeURIComponent(keyword)
+      const searchUrl = `${URLS.BANGUMI_BASE}/subject_search/${encodedKeyword}?cat=2`
       
-      const data = await this.httpClient.get<any>(searchUrl)
-      
-      if (!data.list || !Array.isArray(data.list)) {
-        return []
-      }
-      
-      return data.list.map((item: any) => ({
-        id: item.id,
-        title: item.name,
-        titleCn: item.name_cn,
-        // 优先使用 large 尺寸封面，回退到 common/medium/small
-        coverUrl: item.images?.large || item.images?.common || item.images?.medium || item.images?.small,
-        type: item.type,
-        score: item.rating?.score,
-        rank: item.rank,
-        date: item.air_date
-      }))
-    } catch (error) {
-      log.warn('[Bangumi] API search failed, falling back to HTML:', error)
-      return this.searchByHtml(title)
-    }
-  }
-
-  /**
-   * 通过 HTML 页面搜索（备用方法）
-   */
-  private async searchByHtml(title: string): Promise<BangumiSearchResult[]> {
-    try {
-      const encodedTitle = encodeURIComponent(title)
-      const searchUrl = `${URLS.BANGUMI_BASE}/subject_search/${encodedTitle}?cat=2`
-      
+      log.info(`[Bangumi] GET ${searchUrl}`)
       const html = await this.httpClient.get<string>(searchUrl)
       const $ = cheerio.load(html)
       
       const results: BangumiSearchResult[] = []
       
+      // 解析列表项（与 Python: soup.select("li.item") 一致）
       $('#browserItemList li.item').each((_, elem) => {
         const $elem = $(elem)
         
-        const $link = $elem.find('a.subjectCover')
+        // 提取链接和 ID
+        const $link = $elem.find('h3 a')
         const href = $link.attr('href') || ''
         const idMatch = href.match(/\/subject\/(\d+)/)
         if (!idMatch) return
         
         const id = parseInt(idMatch[1], 10)
-        const title = $elem.find('.subjectTitle a').text().trim()
+        
+        // 提取标题（与 Python: name_elem.get_text(strip=True) 一致）
+        const resultTitle = $link.text().trim()
+        
+        // 提取中文标题
         const titleCn = $elem.find('.subjectTitle .tip').text().trim()
-        const coverUrl = $link.find('img').attr('src')
+        
+        // 提取封面（与 Python: _extract_cover_from_item 一致）
+        const coverUrl = this.extractCoverFromItem($elem)
+        
+        // 提取评分
         const scoreText = $elem.find('.rateInfo .smallStars').parent().text().trim()
         const score = scoreText ? parseFloat(scoreText) : undefined
         
+        // 提取排名
+        const rankText = $elem.find('.rank').text().trim()
+        const rank = rankText ? parseInt(rankText.replace('#', '')) : undefined
+        
         results.push({
           id,
-          title,
+          title: resultTitle,
           titleCn: titleCn || undefined,
-          coverUrl: coverUrl ? `https:${coverUrl}` : undefined,
-          score
+          coverUrl,
+          score,
+          rank
         })
       })
       
-      return results.slice(0, BANGUMI_CONFIG.RESULT_LIMIT)
+      return results
     } catch (error) {
-      log.error('[Bangumi] HTML search failed:', error)
+      log.error('[Bangumi] HTML search error:', error)
       return []
     }
   }
 
   /**
-   * 计算匹配分数
-   * 对应: _calculate_match_score
-   * 关键改进: 匹配时也考虑简繁体变体
+   * 从列表项提取封面（与 Python: _extract_cover_from_item 完全一致）
    */
-  private calculateMatchScore(
-    queryTitle: string,
-    result: BangumiSearchResult,
-    year?: string
-  ): number {
-    let score = 0
+  private extractCoverFromItem($elem: cheerio.Cheerio): string | undefined {
+    const coverLink = $elem.find('a.subjectCover')
+    if (!coverLink.length) return undefined
     
-    // 获取查询标题的所有变体（简体、繁体）
-    const queryVariants = this.getTitleVariants(queryTitle)
+    const img = coverLink.find('img.cover')
+    if (!img.length) return undefined
     
-    // 获取结果的所有标题
-    const resultTitles = [result.title, result.titleCn].filter(Boolean) as string[]
+    const imgSrc = img.attr('src') || ''
+    if (!imgSrc) return undefined
     
-    // 计算最佳匹配分数（考虑所有查询变体）
-    let bestTitleScore = 0
-    
-    for (const queryVariant of queryVariants) {
-      const queryNormalized = this.normalizeTitle(queryVariant)
-      
-      for (const resultTitle of resultTitles) {
-        if (!resultTitle) continue
-        
-        const resultNormalized = this.normalizeTitle(resultTitle)
-        
-        // 完全匹配
-        if (queryNormalized === resultNormalized) {
-          bestTitleScore = 100
-          break
-        }
-        
-        // 包含匹配
-        if (queryNormalized.includes(resultNormalized) || resultNormalized.includes(queryNormalized)) {
-          bestTitleScore = Math.max(bestTitleScore, 80)
-        }
-        
-        // 字符级别相似度
-        const queryChars = new Set(queryNormalized)
-        const resultChars = new Set(resultNormalized)
-        if (queryChars.size > 0 && resultChars.size > 0) {
-          const common = new Set([...queryChars].filter(c => resultChars.has(c)))
-          const similarity = common.size / Math.max(queryChars.size, resultChars.size)
-          const keywordScore = similarity * 60
-          bestTitleScore = Math.max(bestTitleScore, keywordScore)
-        }
-      }
-      
-      // 如果已经满分，提前退出
-      if (bestTitleScore === 100) break
-    }
-    
-    score += bestTitleScore
-    
-    // 年份匹配
-    if (year && result.date) {
-      const resultYear = result.date.substring(0, 4)
-      if (resultYear === year) {
-        score += MATCH_CONFIG.YEAR_MATCH_BONUS
-      } else if (Math.abs(parseInt(resultYear) - parseInt(year)) <= 1) {
-        score += MATCH_CONFIG.YEAR_MATCH_BONUS / 2
-      } else {
-        score -= MATCH_CONFIG.YEAR_MISMATCH_PENALTY
-      }
-    }
-    
-    // Bangumi排名加分
-    const rank = result.rank
-    if (rank && typeof rank === 'number' && rank > 0) {
-      if (rank <= 100) {
-        score += MATCH_CONFIG.RANK_TOP100_BONUS
-      } else if (rank <= 500) {
-        score += MATCH_CONFIG.RANK_TOP500_BONUS
-      } else if (rank <= 1000) {
-        score += MATCH_CONFIG.RANK_TOP1000_BONUS
-      }
-    }
-    
-    // 评分加分
-    const rating = result.score
-    if (rating && typeof rating === 'number') {
-      if (rating >= 8) {
-        score += MATCH_CONFIG.RATING_HIGH_BONUS
-      } else if (rating >= 7) {
-        score += MATCH_CONFIG.RATING_GOOD_BONUS
-      }
-    }
-    
-    return Math.min(score, 100)
+    return this.normalizeCoverUrl(imgSrc)
   }
 
   /**
-   * 检查是否已经有好的匹配
+   * 标准化封面 URL（与 Python: _normalize_cover_url 一致）
+   * 去掉 /r/xxx/ 缩略图限制，获取原图
    */
-  private hasGoodMatch(
-    results: BangumiSearchResult[],
-    title: string,
-    year?: string
-  ): boolean {
-    for (const result of results) {
-      const score = this.calculateMatchScore(title, result, year)
-      if (score >= MATCH_CONFIG.MIN_MATCH_SCORE) {
-        return true
-      }
+  private normalizeCoverUrl(url: string): string {
+    if (!url) return ''
+    
+    // 添加协议
+    if (url.startsWith('//')) {
+      url = 'https:' + url
+    } else if (url.startsWith('/')) {
+      url = 'https://bangumi.tv' + url
     }
-    return false
+    
+    // 去掉 Bangumi 缩略图限制 /r/xxx/，获取原图
+    // 例如: https://lain.bgm.tv/r/400/pic/cover/l/xxx.jpg
+    // 改为: https://lain.bgm.tv/pic/cover/l/xxx.jpg
+    url = url.replace(/\/r\/\d+\//, '/')
+    
+    return url
   }
 
   /**
-   * 查找最佳匹配的 Bangumi 信息
-   * 对应: find_cover
+   * 计算标题相似度（与 Python: _calculate_title_similarity / _calculate_match_score 一致）
+   */
+  private calculateMatchScore(queryTitle: string, result: BangumiSearchResult): number {
+    const titles = [result.title, result.titleCn].filter(Boolean) as string[]
+    let bestScore = 0
+    
+    for (const resultTitle of titles) {
+      if (!resultTitle) continue
+      
+      const score = this.calculateTitleSimilarity(queryTitle, resultTitle)
+      bestScore = Math.max(bestScore, score)
+    }
+    
+    return bestScore
+  }
+
+  /**
+   * 计算标题相似度（与 Python: _calculate_title_similarity 一致）
+   */
+  private calculateTitleSimilarity(query: string, result: string): number {
+    const SCORE_EXACT = 100
+    const SCORE_CONTAINS = 90
+    const SCORE_SUBSTRING = 85
+    const SCORE_WORD_OVERLAP = 50
+    const SCORE_CHINESE_OVERLAP = 40
+    
+    if (!query || !result) return 0
+    
+    // 清理标题
+    const cleanQuery = query.replace(/[【】\(\)（）\[\]!!！\s～~]/g, "").trim()
+    const cleanResult = result.replace(/[【】\(\)（）\[\]!!！\s～~]/g, "").trim()
+    
+    // 完全匹配
+    if (cleanQuery === cleanResult) {
+      return SCORE_EXACT
+    }
+    
+    // 包含匹配
+    if (cleanQuery.includes(cleanResult) || cleanResult.includes(cleanQuery)) {
+      return SCORE_SUBSTRING
+    }
+    
+    // 核心匹配
+    const queryCore = this.extractCoreKeyword(cleanQuery)
+    const resultCore = this.extractCoreKeyword(cleanResult)
+    
+    if (queryCore && resultCore && queryCore === resultCore) {
+      return SCORE_CONTAINS
+    }
+    
+    if (queryCore && resultCore) {
+      if (queryCore.includes(resultCore) || resultCore.includes(queryCore)) {
+        return SCORE_SUBSTRING - 5
+      }
+    }
+    
+    // 中文字符重叠
+    const queryChars = new Set(cleanQuery.split('').filter(c => /[\u4e00-\u9fff]/.test(c)))
+    const resultChars = new Set(cleanResult.split('').filter(c => /[\u4e00-\u9fff]/.test(c)))
+    
+    if (queryChars.size >= 2 && resultChars.size >= 2) {
+      const overlap = new Set([...queryChars].filter(c => resultChars.has(c)))
+      const total = new Set([...queryChars, ...resultChars])
+      
+      if (total.size > 0) {
+        const ratio = overlap.size / total.size
+        if (ratio >= 0.5) {
+          return Math.floor(ratio * SCORE_EXACT)
+        } else if (ratio >= 0.3) {
+          return Math.floor(ratio * SCORE_CONTAINS)
+        } else if (ratio >= 0.2 && overlap.size >= 3) {
+          return SCORE_CHINESE_OVERLAP
+        }
+      }
+    }
+    
+    // 字符重叠
+    const querySet = new Set(cleanQuery)
+    const resultSet = new Set(cleanResult)
+    const common = new Set([...querySet].filter(c => resultSet.has(c)))
+    
+    if (common.size > 0) {
+      const total = new Set([...querySet, ...resultSet])
+      const ratio = common.size / total.size
+      if (ratio >= 0.3) {
+        return Math.floor(ratio * SCORE_WORD_OVERLAP)
+      }
+    }
+    
+    return 0
+  }
+
+  /**
+   * 查找最佳匹配（与 Python: find_cover / _search_bangumi 一致）
    */
   async findBestMatch(
     title: string,
     year?: string,
     season?: string
   ): Promise<{ info: BangumiInfo; score: number } | null> {
-    log.info(`[Bangumi] Finding best match for: ${title}, year=${year}, season=${season}`)
+    log.info(`[Bangumi] Finding best match for: ${title}`)
     
-    // 1. 首先用完整标题搜索
-    let searchResults = await this.searchByTitle(title)
+    // 1. 完整标题搜索
+    const searchVariants = this.getTitleVariants(title)
+    let allResults: BangumiSearchResult[] = []
     
-    // 2. 如果没有好的匹配，尝试核心关键词搜索
-    if (searchResults.length === 0 || !this.hasGoodMatch(searchResults, title, year)) {
+    for (const variant of searchVariants) {
+      const results = await this.searchByTitle(variant)
+      for (const result of results) {
+        if (!allResults.find(r => r.id === result.id)) {
+          allResults.push(result)
+        }
+      }
+    }
+    
+    // 2. 核心关键词搜索（如果没有好的匹配）
+    const hasGoodMatch = allResults.some(r => this.calculateMatchScore(title, r) >= MATCH_CONFIG.MIN_MATCH_SCORE)
+    
+    if (!hasGoodMatch) {
       const coreKeyword = this.extractCoreKeyword(title)
       if (coreKeyword && coreKeyword !== title && coreKeyword.length >= 2) {
         log.info(`[Bangumi] Trying core keyword: ${coreKeyword}`)
-        const keywordResults = await this.searchByTitle(coreKeyword)
-        // 合并结果（去重）
-        const seenIds = new Set(searchResults.map(r => r.id))
-        for (const result of keywordResults) {
-          if (!seenIds.has(result.id)) {
-            searchResults.push(result)
+        const coreVariants = this.getTitleVariants(coreKeyword)
+        for (const variant of coreVariants) {
+          const results = await this.searchByTitle(variant)
+          for (const result of results) {
+            if (!allResults.find(r => r.id === result.id)) {
+              allResults.push(result)
+            }
           }
         }
       }
     }
     
-    if (searchResults.length === 0) {
+    if (allResults.length === 0) {
       log.info('[Bangumi] No search results')
-      
-      // 3. 尝试 Wikipedia fallback
-      const wikiResult = await this.searchWikipedia(title)
-      if (wikiResult) {
-        return { info: wikiResult, score: 0 }
-      }
-      
       return null
     }
     
-    // 4. 计算匹配分数并排序
-    const scoredResults = searchResults.map(result => ({
+    // 3. 计算分数并排序
+    const scoredResults = allResults.map(result => ({
       result,
-      score: this.calculateMatchScore(title, result, year)
+      score: this.calculateMatchScore(title, result)
     }))
     
     scoredResults.sort((a, b) => b.score - a.score)
     
-    // 5. 选择最佳匹配
+    // 4. 选择最佳匹配
     const bestMatch = scoredResults[0]
-    log.info(`[Bangumi] Best match: ${bestMatch.result.title} (score: ${bestMatch.score.toFixed(1)})`)
+    log.info(`[Bangumi] Best match: ${bestMatch.result.title} (score: ${bestMatch.score})`)
     
-    // 6. 获取详细信息
-    const info = await this.getSubjectInfo(bestMatch.result.id)
+    // 5. 获取详细信息（使用 API）
+    const info = await this.getSubjectInfo(bestMatch.result.id, bestMatch.result.coverUrl)
     if (!info) {
       return null
     }
     
-    // 如果没有达到分数阈值，仍然返回但标记为低置信度（与Python版本一致）
+    // 低置信度匹配
     if (bestMatch.score < MATCH_CONFIG.MIN_MATCH_SCORE) {
-      log.info(`[Bangumi] Low confidence match (score: ${bestMatch.score.toFixed(1)} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`)
+      log.info(`[Bangumi] Low confidence match (score: ${bestMatch.score} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`)
       return { info, score: 0 }
     }
     
@@ -422,138 +418,30 @@ export class BangumiCrawler {
   }
 
   /**
-   * 搜索 Wikipedia 作为 fallback
-   * 对应: _search_wikipedia
+   * 获取 Bangumi 详细信息（使用 API）
+   * 封面 URL 优先使用传入的（来自 HTML 搜索）
    */
-  private async searchWikipedia(title: string): Promise<BangumiInfo | null> {
-    log.info(`[Wikipedia] Searching fallback for: ${title}`)
-    
-    try {
-      const encodedTitle = encodeURIComponent(title)
-      const searchUrl = URLS.WIKIPEDIA_SEARCH.replace('{keyword}', encodedTitle)
-      
-      const html = await this.httpClient.get<string>(searchUrl)
-      const $ = cheerio.load(html)
-      
-      // 查找第一个结果链接
-      const resultLink = $('div.mw-search-result-heading a').first()
-      if (!resultLink.length) {
-        log.info('[Wikipedia] No search results')
-        return null
-      }
-      
-      const resultTitle = resultLink.text().trim()
-      const resultHref = resultLink.attr('href') || ''
-      const articleUrl = URLS.WIKIPEDIA_BASE + resultHref
-      
-      log.info(`[Wikipedia] Found article: ${resultTitle}`)
-      
-      // 获取文章页面以获取封面图片
-      const articleHtml = await this.httpClient.get<string>(articleUrl)
-      const $article = cheerio.load(articleHtml)
-      
-      // 尝试在 infobox 中找图片
-      let coverUrl: string | undefined
-      const infobox = $article('table.infobox').first()
-      
-      if (infobox.length) {
-        const firstImg = infobox.find('img').first()
-        if (firstImg.length) {
-          const src = firstImg.attr('src') || ''
-          if (src) {
-            coverUrl = this.fixWikipediaUrl(src)
-          }
-        }
-      }
-      
-      // 如果没有在 infobox 找到，尝试查找 File 链接
-      if (!coverUrl) {
-        const fileLink = $article('a.image[href*="File:"]').first()
-        if (fileLink.length) {
-          const fileHref = fileLink.attr('href') || ''
-          const fileUrl = URLS.WIKIPEDIA_BASE + fileHref
-          const fileHtml = await this.httpClient.get<string>(fileUrl)
-          const $file = cheerio.load(fileHtml)
-          
-          const img = $file('img[typeof="mw:File"]').first() || $file('div#file img').first()
-          if (img.length) {
-            const src = img.attr('src') || img.attr('data-src') || ''
-            if (src) {
-              coverUrl = this.fixWikipediaUrl(src)
-            }
-          }
-        }
-      }
-      
-      if (!coverUrl) {
-        log.info('[Wikipedia] No cover image found')
-        return null
-      }
-      
-      log.info(`[Wikipedia] Found cover: ${coverUrl.substring(0, 60)}...`)
-      
-      return {
-        title: resultTitle,
-        subjectUrl: articleUrl,
-        coverUrl,
-        rating: undefined,
-        rank: undefined,
-        type: 'unknown',
-        date: undefined,
-        summary: undefined,
-        genres: [],
-        staff: [],
-        cast: []
-      }
-    } catch (error) {
-      log.warn('[Wikipedia] Search failed:', error)
-      return null
-    }
-  }
-
-  /**
-   * 修复 Wikipedia 图片 URL
-   */
-  private fixWikipediaUrl(url: string): string {
-    if (!url) return ''
-    
-    // 添加协议
-    if (url.startsWith('//')) {
-      url = 'https:' + url
-    }
-    
-    // 尝试获取更大的图片版本
-    // Wikipedia URL 格式: //upload.wikimedia.org/wikipedia/commons/thumb/xxx/yyy/zzz.jpg/320px-zzz.jpg
-    if (url.includes('/thumb/')) {
-      // 移除缩略图尺寸前缀，获取原图
-      url = url.replace(/\/\d+px-[^/]+$/, '')
-    }
-    
-    return url
-  }
-
-  /**
-   * 获取 Bangumi 详细信息
-   */
-  async getSubjectInfo(subjectId: number): Promise<BangumiInfo | null> {
+  async getSubjectInfo(subjectId: number, coverUrlFromSearch?: string): Promise<BangumiInfo | null> {
     log.info(`[Bangumi] Getting subject info: ${subjectId}`)
     
     try {
       const url = `${URLS.BANGUMI_API}/subject/${subjectId}?responseGroup=large`
       const data = await this.httpClient.get<any>(url)
       
-      if (!data || data.type !== 2) { // type 2 = anime
+      if (!data || data.type !== 2) {
         return null
       }
       
-      // 构建封面URL（处理各种格式）
-      let coverUrl: string | undefined
-      const images = data.images || {}
-      // 优先使用 large 尺寸封面
-      const rawCoverUrl = images.large || images.common || images.medium || images.small
+      // 优先使用搜索得到的封面 URL
+      let coverUrl = coverUrlFromSearch
       
-      if (rawCoverUrl) {
-        coverUrl = this.fixCoverUrl(rawCoverUrl)
+      // 如果没有，从 API 获取
+      if (!coverUrl) {
+        const images = data.images || {}
+        const rawUrl = images[COVER_QUALITY] || images.common || images.large
+        if (rawUrl) {
+          coverUrl = this.normalizeCoverUrl(rawUrl)
+        }
       }
       
       const info: BangumiInfo = {
@@ -562,7 +450,7 @@ export class BangumiCrawler {
         coverUrl,
         rating: data.rating?.score,
         rank: data.rank,
-        type: this.mapType(data.type),
+        type: 'anime',
         date: data.air_date,
         summary: data.summary,
         genres: data.tags?.map((t: any) => t.name).slice(0, 10) || [],
@@ -578,17 +466,6 @@ export class BangumiCrawler {
         }))
       }
       
-      // 提取 cast
-      if (data.crt) {
-        info.cast = data.crt
-          .filter((c: any) => c.actors && c.actors.length > 0)
-          .slice(0, 10)
-          .map((c: any) => ({
-            name: c.actors[0].name,
-            character: c.name
-          }))
-      }
-      
       return info
     } catch (error) {
       log.error('[Bangumi] Failed to get subject info:', error)
@@ -596,54 +473,6 @@ export class BangumiCrawler {
     }
   }
 
-  /**
-   * 修复封面URL格式
-   * 处理 //xxx, https:http:// 等各种格式问题
-   */
-  private fixCoverUrl(url: string): string {
-    if (!url) return ''
-    
-    // 移除首尾空白
-    url = url.trim()
-    
-    // 处理 // 开头的协议相对URL
-    if (url.startsWith('//')) {
-      return 'https:' + url
-    }
-    
-    // 处理 https:http:// 这种格式错误
-    if (url.startsWith('https:http')) {
-      url = url.replace('https:http', 'http')
-    }
-    if (url.startsWith('http:https')) {
-      url = url.replace('http:https', 'https')
-    }
-    
-    // 如果没有协议，添加 https://
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url
-    }
-    
-    return url
-  }
-
-  /**
-   * 映射类型
-   */
-  private mapType(type: number): string {
-    const typeMap: Record<number, string> = {
-      1: 'book',
-      2: 'anime',
-      3: 'music',
-      4: 'game',
-      6: 'real'
-    }
-    return typeMap[type] || 'unknown'
-  }
-
-  /**
-   * 关闭爬虫
-   */
   close(): void {
     this.httpClient.close()
     log.info('[Bangumi] Crawler closed')

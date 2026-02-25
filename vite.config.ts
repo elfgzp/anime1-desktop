@@ -6,39 +6,47 @@ import { resolve } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 
 // 修复 preload 文件：将 ES Module 语法转换为 CommonJS
-let fixPreloadExecuted = false
+import { writeFileSync as writeFile, existsSync as exists, readFileSync as readFile } from 'fs'
 
 function fixPreloadFile() {
-  // 防止重复执行
-  if (fixPreloadExecuted) {
-    return
-  }
-  fixPreloadExecuted = true
-  
   const preloadPath = resolve(__dirname, 'dist-electron/preload/index.cjs')
-  if (!existsSync(preloadPath)) {
+  const lockPath = resolve(__dirname, 'dist-electron/preload/.fixed')
+  
+  if (!exists(preloadPath)) {
     console.log('[fixPreload] File not found:', preloadPath)
     return
   }
   
+  // 使用文件锁防止重复处理
+  if (exists(lockPath)) {
+    console.log('[fixPreload] Already fixed (lock file exists)')
+    return
+  }
+  
   try {
-    let content = readFileSync(preloadPath, 'utf8')
+    let content = readFile(preloadPath, 'utf8')
     
     // 检查是否已经修复过（避免重复追加）
     if (content.includes('module.exports = require_index()')) {
       console.log('[fixPreload] Already fixed (module.exports found)')
+      // 创建锁文件
+      writeFile(lockPath, 'fixed', 'utf8')
       return
     }
     
     // 检查是否需要修复
     if (!content.includes('export default require_index()')) {
       console.log('[fixPreload] No fix needed (already CommonJS or different format)')
+      // 创建锁文件
+      writeFile(lockPath, 'fixed', 'utf8')
       return
     }
     
     // 替换 export default 为 module.exports
     content = content.replace(/export\s+default\s+require_index\(\);/, 'module.exports = require_index();')
-    writeFileSync(preloadPath, content, 'utf8')
+    writeFile(preloadPath, content, 'utf8')
+    // 创建锁文件
+    writeFile(lockPath, 'fixed', 'utf8')
     console.log('[fixPreload] Fixed preload file:', preloadPath)
   } catch (e: any) {
     console.error('[fixPreload] Error:', e.message)
