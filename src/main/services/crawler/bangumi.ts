@@ -243,6 +243,7 @@ export class BangumiCrawler {
   /**
    * 计算匹配分数
    * 对应: _calculate_match_score
+   * 关键改进: 匹配时也考虑简繁体变体
    */
   private calculateMatchScore(
     queryTitle: string,
@@ -251,38 +252,47 @@ export class BangumiCrawler {
   ): number {
     let score = 0
     
+    // 获取查询标题的所有变体（简体、繁体）
+    const queryVariants = this.getTitleVariants(queryTitle)
+    
     // 获取结果的所有标题
     const resultTitles = [result.title, result.titleCn].filter(Boolean) as string[]
     
-    // 计算最佳标题匹配分数
-    const queryNormalized = this.normalizeTitle(queryTitle)
+    // 计算最佳匹配分数（考虑所有查询变体）
     let bestTitleScore = 0
     
-    for (const resultTitle of resultTitles) {
-      if (!resultTitle) continue
+    for (const queryVariant of queryVariants) {
+      const queryNormalized = this.normalizeTitle(queryVariant)
       
-      const resultNormalized = this.normalizeTitle(resultTitle)
-      
-      // 完全匹配
-      if (queryNormalized === resultNormalized) {
-        bestTitleScore = 100
-        break
+      for (const resultTitle of resultTitles) {
+        if (!resultTitle) continue
+        
+        const resultNormalized = this.normalizeTitle(resultTitle)
+        
+        // 完全匹配
+        if (queryNormalized === resultNormalized) {
+          bestTitleScore = 100
+          break
+        }
+        
+        // 包含匹配
+        if (queryNormalized.includes(resultNormalized) || resultNormalized.includes(queryNormalized)) {
+          bestTitleScore = Math.max(bestTitleScore, 80)
+        }
+        
+        // 字符级别相似度
+        const queryChars = new Set(queryNormalized)
+        const resultChars = new Set(resultNormalized)
+        if (queryChars.size > 0 && resultChars.size > 0) {
+          const common = new Set([...queryChars].filter(c => resultChars.has(c)))
+          const similarity = common.size / Math.max(queryChars.size, resultChars.size)
+          const keywordScore = similarity * 60
+          bestTitleScore = Math.max(bestTitleScore, keywordScore)
+        }
       }
       
-      // 包含匹配
-      if (queryNormalized.includes(resultNormalized) || resultNormalized.includes(queryNormalized)) {
-        bestTitleScore = Math.max(bestTitleScore, 80)
-      }
-      
-      // 字符级别相似度
-      const queryChars = new Set(queryNormalized)
-      const resultChars = new Set(resultNormalized)
-      if (queryChars.size > 0 && resultChars.size > 0) {
-        const common = new Set([...queryChars].filter(c => resultChars.has(c)))
-        const similarity = common.size / Math.max(queryChars.size, resultChars.size)
-        const keywordScore = similarity * 60
-        bestTitleScore = Math.max(bestTitleScore, keywordScore)
-      }
+      // 如果已经满分，提前退出
+      if (bestTitleScore === 100) break
     }
     
     score += bestTitleScore
