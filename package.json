@@ -46,6 +46,7 @@
     "element-plus": "^2.13.2",
     "libsql": "^0.5.3",
     "lodash-es": "^4.17.21",
+    "opencc-js": "^1.0.5",
     "pinia": "^2.1.7",
     "vue": "^3.4.19",
     "vue-router": "^4.3.0"
