@@ -18,7 +18,7 @@ import { HttpClient, createDefaultHttpClient } from './http-client'
 
 // 匹配配置（与Python版本保持一致）
 const MATCH_CONFIG = {
-  MIN_MATCH_SCORE: 60,
+  MIN_MATCH_SCORE: 30,     // Python版本是30，不是60
   YEAR_MATCH_BONUS: 15,
   YEAR_MISMATCH_PENALTY: 10,
   RANK_TOP100_BONUS: 10,
@@ -383,10 +383,17 @@ export class BangumiCrawler {
     
     if (searchResults.length === 0) {
       log.info('[Bangumi] No search results')
+      
+      // 3. 尝试 Wikipedia fallback
+      const wikiResult = await this.searchWikipedia(title)
+      if (wikiResult) {
+        return { info: wikiResult, score: 0 }
+      }
+      
       return null
     }
     
-    // 3. 计算匹配分数并排序
+    // 4. 计算匹配分数并排序
     const scoredResults = searchResults.map(result => ({
       result,
       score: this.calculateMatchScore(title, result, year)
@@ -394,22 +401,134 @@ export class BangumiCrawler {
     
     scoredResults.sort((a, b) => b.score - a.score)
     
-    // 4. 选择最佳匹配
+    // 5. 选择最佳匹配
     const bestMatch = scoredResults[0]
     log.info(`[Bangumi] Best match: ${bestMatch.result.title} (score: ${bestMatch.score.toFixed(1)})`)
     
-    if (bestMatch.score < MATCH_CONFIG.MIN_MATCH_SCORE) {
-      log.info(`[Bangumi] No good match found (best score: ${bestMatch.score.toFixed(1)} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`)
-      return null
-    }
-    
-    // 5. 获取详细信息
+    // 6. 获取详细信息
     const info = await this.getSubjectInfo(bestMatch.result.id)
     if (!info) {
       return null
     }
     
+    // 如果没有达到分数阈值，仍然返回但标记为低置信度（与Python版本一致）
+    if (bestMatch.score < MATCH_CONFIG.MIN_MATCH_SCORE) {
+      log.info(`[Bangumi] Low confidence match (score: ${bestMatch.score.toFixed(1)} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`)
+      return { info, score: 0 }
+    }
+    
     return { info, score: bestMatch.score }
+  }
+
+  /**
+   * 搜索 Wikipedia 作为 fallback
+   * 对应: _search_wikipedia
+   */
+  private async searchWikipedia(title: string): Promise<BangumiInfo | null> {
+    log.info(`[Wikipedia] Searching fallback for: ${title}`)
+    
+    try {
+      const encodedTitle = encodeURIComponent(title)
+      const searchUrl = URLS.WIKIPEDIA_SEARCH.replace('{keyword}', encodedTitle)
+      
+      const html = await this.httpClient.get<string>(searchUrl)
+      const $ = cheerio.load(html)
+      
+      // 查找第一个结果链接
+      const resultLink = $('div.mw-search-result-heading a').first()
+      if (!resultLink.length) {
+        log.info('[Wikipedia] No search results')
+        return null
+      }
+      
+      const resultTitle = resultLink.text().trim()
+      const resultHref = resultLink.attr('href') || ''
+      const articleUrl = URLS.WIKIPEDIA_BASE + resultHref
+      
+      log.info(`[Wikipedia] Found article: ${resultTitle}`)
+      
+      // 获取文章页面以获取封面图片
+      const articleHtml = await this.httpClient.get<string>(articleUrl)
+      const $article = cheerio.load(articleHtml)
+      
+      // 尝试在 infobox 中找图片
+      let coverUrl: string | undefined
+      const infobox = $article('table.infobox').first()
+      
+      if (infobox.length) {
+        const firstImg = infobox.find('img').first()
+        if (firstImg.length) {
+          const src = firstImg.attr('src') || ''
+          if (src) {
+            coverUrl = this.fixWikipediaUrl(src)
+          }
+        }
+      }
+      
+      // 如果没有在 infobox 找到，尝试查找 File 链接
+      if (!coverUrl) {
+        const fileLink = $article('a.image[href*="File:"]').first()
+        if (fileLink.length) {
+          const fileHref = fileLink.attr('href') || ''
+          const fileUrl = URLS.WIKIPEDIA_BASE + fileHref
+          const fileHtml = await this.httpClient.get<string>(fileUrl)
+          const $file = cheerio.load(fileHtml)
+          
+          const img = $file('img[typeof="mw:File"]').first() || $file('div#file img').first()
+          if (img.length) {
+            const src = img.attr('src') || img.attr('data-src') || ''
+            if (src) {
+              coverUrl = this.fixWikipediaUrl(src)
+            }
+          }
+        }
+      }
+      
+      if (!coverUrl) {
+        log.info('[Wikipedia] No cover image found')
+        return null
+      }
+      
+      log.info(`[Wikipedia] Found cover: ${coverUrl.substring(0, 60)}...`)
+      
+      return {
+        title: resultTitle,
+        subjectUrl: articleUrl,
+        coverUrl,
+        rating: undefined,
+        rank: undefined,
+        type: 'unknown',
+        date: undefined,
+        summary: undefined,
+        genres: [],
+        staff: [],
+        cast: []
+      }
+    } catch (error) {
+      log.warn('[Wikipedia] Search failed:', error)
+      return null
+    }
+  }
+
+  /**
+   * 修复 Wikipedia 图片 URL
+   */
+  private fixWikipediaUrl(url: string): string {
+    if (!url) return ''
+    
+    // 添加协议
+    if (url.startsWith('//')) {
+      url = 'https:' + url
+    }
+    
+    // 尝试获取更大的图片版本
+    // Wikipedia URL 格式: //upload.wikimedia.org/wikipedia/commons/thumb/xxx/yyy/zzz.jpg/320px-zzz.jpg
+    if (url.includes('/thumb/')) {
+      // 移除缩略图尺寸前缀，获取原图
+      url = url.replace(/\/\d+px-[^/]+$/, '')
+    }
+    
+    return url
   }
 
   /**

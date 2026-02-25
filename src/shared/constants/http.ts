@@ -18,7 +18,8 @@ export const URLS = {
   BANGUMI_API: 'https://api.bgm.tv',
   
   // Wikipedia
-  WIKIPEDIA_BASE: 'https://zh.wikipedia.org'
+  WIKIPEDIA_BASE: 'https://zh.wikipedia.org',
+  WIKIPEDIA_SEARCH: 'https://zh.wikipedia.org/w/index.php?search={keyword}&title=Special:Search&ns0=1'
 } as const
 
 // ==========================================

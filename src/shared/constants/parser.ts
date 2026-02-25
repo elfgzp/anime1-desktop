@@ -60,7 +60,7 @@ export const PATTERNS = {
 
 export const BANGUMI_CONFIG = {
   RESULT_LIMIT: 10,        // 与Python版本一致
-  MIN_MATCH_SCORE: 60,     // 与Python版本一致
+  MIN_MATCH_SCORE: 30,     // 与Python版本一致（原来是30不是60）
   MIN_TITLE_LENGTH: 4,
   MIN_ENGLISH_LENGTH: 5,
   MIN_CHINESE_CHARS: 2
