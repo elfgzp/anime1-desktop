@@ -14993,7 +14993,8 @@ const URLS = {
   BANGUMI_BASE: "https://bangumi.tv",
   BANGUMI_API: "https://api.bgm.tv",
   // Wikipedia
-  WIKIPEDIA_BASE: "https://zh.wikipedia.org"
+  WIKIPEDIA_BASE: "https://zh.wikipedia.org",
+  WIKIPEDIA_SEARCH: "https://zh.wikipedia.org/w/index.php?search={keyword}&title=Special:Search&ns0=1"
 };
 const HTTP_CONFIG = {
   DEFAULT_TIMEOUT: 3e4,
@@ -15036,8 +15037,8 @@ const PATTERNS = {
 const BANGUMI_CONFIG = {
   RESULT_LIMIT: 10,
   // 与Python版本一致
-  MIN_MATCH_SCORE: 60,
-  // 与Python版本一致
+  MIN_MATCH_SCORE: 30,
+  // 与Python版本一致（原来是30不是60）
   MIN_TITLE_LENGTH: 4,
   MIN_ENGLISH_LENGTH: 5,
   MIN_CHINESE_CHARS: 2
@@ -59610,7 +59611,8 @@ var Locale = /* @__PURE__ */ Object.freeze({
 });
 const Converter = ConverterBuilder(Locale);
 const MATCH_CONFIG = {
-  MIN_MATCH_SCORE: 60,
+  MIN_MATCH_SCORE: 30,
+  // Python版本是30，不是60
   YEAR_MATCH_BONUS: 15,
   YEAR_MISMATCH_PENALTY: 10,
   RANK_TOP100_BONUS: 10,
@@ -59896,6 +59898,10 @@ class BangumiCrawler {
     }
     if (searchResults.length === 0) {
       log.info("[Bangumi] No search results");
+      const wikiResult = await this.searchWikipedia(title2);
+      if (wikiResult) {
+        return { info: wikiResult, score: 0 };
+      }
       return null;
     }
     const scoredResults = searchResults.map((result) => ({
@@ -59905,15 +59911,100 @@ class BangumiCrawler {
     scoredResults.sort((a, b) => b.score - a.score);
     const bestMatch = scoredResults[0];
     log.info(`[Bangumi] Best match: ${bestMatch.result.title} (score: ${bestMatch.score.toFixed(1)})`);
-    if (bestMatch.score < MATCH_CONFIG.MIN_MATCH_SCORE) {
-      log.info(`[Bangumi] No good match found (best score: ${bestMatch.score.toFixed(1)} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`);
-      return null;
-    }
     const info = await this.getSubjectInfo(bestMatch.result.id);
     if (!info) {
       return null;
     }
+    if (bestMatch.score < MATCH_CONFIG.MIN_MATCH_SCORE) {
+      log.info(`[Bangumi] Low confidence match (score: ${bestMatch.score.toFixed(1)} < ${MATCH_CONFIG.MIN_MATCH_SCORE})`);
+      return { info, score: 0 };
+    }
     return { info, score: bestMatch.score };
+  }
+  /**
+   * 搜索 Wikipedia 作为 fallback
+   * 对应: _search_wikipedia
+   */
+  async searchWikipedia(title2) {
+    log.info(`[Wikipedia] Searching fallback for: ${title2}`);
+    try {
+      const encodedTitle = encodeURIComponent(title2);
+      const searchUrl = URLS.WIKIPEDIA_SEARCH.replace("{keyword}", encodedTitle);
+      const html2 = await this.httpClient.get(searchUrl);
+      const $2 = load$1(html2);
+      const resultLink = $2("div.mw-search-result-heading a").first();
+      if (!resultLink.length) {
+        log.info("[Wikipedia] No search results");
+        return null;
+      }
+      const resultTitle = resultLink.text().trim();
+      const resultHref = resultLink.attr("href") || "";
+      const articleUrl = URLS.WIKIPEDIA_BASE + resultHref;
+      log.info(`[Wikipedia] Found article: ${resultTitle}`);
+      const articleHtml = await this.httpClient.get(articleUrl);
+      const $article = load$1(articleHtml);
+      let coverUrl;
+      const infobox = $article("table.infobox").first();
+      if (infobox.length) {
+        const firstImg = infobox.find("img").first();
+        if (firstImg.length) {
+          const src2 = firstImg.attr("src") || "";
+          if (src2) {
+            coverUrl = this.fixWikipediaUrl(src2);
+          }
+        }
+      }
+      if (!coverUrl) {
+        const fileLink = $article('a.image[href*="File:"]').first();
+        if (fileLink.length) {
+          const fileHref = fileLink.attr("href") || "";
+          const fileUrl = URLS.WIKIPEDIA_BASE + fileHref;
+          const fileHtml = await this.httpClient.get(fileUrl);
+          const $file = load$1(fileHtml);
+          const img = $file('img[typeof="mw:File"]').first() || $file("div#file img").first();
+          if (img.length) {
+            const src2 = img.attr("src") || img.attr("data-src") || "";
+            if (src2) {
+              coverUrl = this.fixWikipediaUrl(src2);
+            }
+          }
+        }
+      }
+      if (!coverUrl) {
+        log.info("[Wikipedia] No cover image found");
+        return null;
+      }
+      log.info(`[Wikipedia] Found cover: ${coverUrl.substring(0, 60)}...`);
+      return {
+        title: resultTitle,
+        subjectUrl: articleUrl,
+        coverUrl,
+        rating: void 0,
+        rank: void 0,
+        type: "unknown",
+        date: void 0,
+        summary: void 0,
+        genres: [],
+        staff: [],
+        cast: []
+      };
+    } catch (error2) {
+      log.warn("[Wikipedia] Search failed:", error2);
+      return null;
+    }
+  }
+  /**
+   * 修复 Wikipedia 图片 URL
+   */
+  fixWikipediaUrl(url2) {
+    if (!url2) return "";
+    if (url2.startsWith("//")) {
+      url2 = "https:" + url2;
+    }
+    if (url2.includes("/thumb/")) {
+      url2 = url2.replace(/\/\d+px-[^/]+$/, "");
+    }
+    return url2;
   }
   /**
    * 获取 Bangumi 详细信息
@@ -72212,7 +72303,10 @@ let animeService = null;
 let crawlerService = null;
 let downloadService = null;
 let updateService = null;
-console.log("[Main] Log disabled for preload testing");
+log.initialize({ preload: false });
+log.transports.file.level = "info";
+log.transports.console.level = false;
+console.log("[Main] Log initialized");
 async function initializeServices() {
   log.info("[Main] Initializing services...");
   databaseService = new DatabaseService();

@@ -37,11 +37,12 @@ let crawlerService: CrawlerService | null = null
 let downloadService: DownloadService | null = null
 let updateService: UpdateService | null = null
 
-// 日志配置 - 暂时禁用 electron-log 以测试 preload 问题
-// log.initialize({ preload: false })
-// log.transports.file.level = 'info'
-// log.transports.console.level = 'debug'
-console.log('[Main] Log disabled for preload testing')
+// 日志配置
+log.initialize({ preload: false })
+log.transports.file.level = 'info'
+// 禁用 console 传输以避免 EPIPE 错误
+log.transports.console.level = false
+console.log('[Main] Log initialized')
 
 /**
  * 初始化服务
