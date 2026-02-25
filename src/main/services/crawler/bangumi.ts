@@ -184,7 +184,8 @@ export class BangumiCrawler {
         id: item.id,
         title: item.name,
         titleCn: item.name_cn,
-        coverUrl: item.images?.common,
+        // 优先使用 large 尺寸封面，回退到 common/medium/small
+        coverUrl: item.images?.large || item.images?.common || item.images?.medium || item.images?.small,
         type: item.type,
         score: item.rating?.score,
         rank: item.rank,
@@ -548,7 +549,8 @@ export class BangumiCrawler {
       // 构建封面URL（处理各种格式）
       let coverUrl: string | undefined
       const images = data.images || {}
-      const rawCoverUrl = images.common || images.large || images.medium || images.small
+      // 优先使用 large 尺寸封面
+      const rawCoverUrl = images.large || images.common || images.medium || images.small
       
       if (rawCoverUrl) {
         coverUrl = this.fixCoverUrl(rawCoverUrl)
