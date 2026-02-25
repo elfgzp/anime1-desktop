@@ -50,17 +50,16 @@
           @click="goToDetail(anime.id)"
         >
           <div class="anime-cover">
-            <el-image
-              :src="anime.coverUrl || defaultCover"
-              fit="cover"
-              loading="lazy"
-            >
-              <template #error>
-                <div class="image-error">
-                  <el-icon><Picture /></el-icon>
-                </div>
-              </template>
-            </el-image>
+            <img
+              v-if="anime.coverUrl"
+              :src="anime.coverUrl"
+              :alt="anime.title"
+              class="cover-image"
+              @error="handleImageError(anime)"
+            />
+            <div v-else class="image-error">
+              <el-icon><Picture /></el-icon>
+            </div>
             <span v-if="anime.episode > 0" class="episode-badge">
               更新至 {{ anime.episode }} 集
             </span>
@@ -129,6 +128,11 @@ function handlePageChange(page: number) {
 function goToDetail(id: string) {
   router.push(`/anime/${id}`)
 }
+
+function handleImageError(anime: any) {
+  // 图片加载失败时清空 coverUrl，显示默认错误图标
+  anime.coverUrl = ''
+}
 </script>
 
 <style scoped>
@@ -188,15 +192,11 @@ function goToDetail(id: string) {
   border-radius: 4px;
 }
 
-.anime-cover :deep(.el-image) {
-  width: 100%;
-  height: 100%;
-}
-
-.anime-cover :deep(.el-image__inner) {
+.cover-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .image-error {

@@ -20548,7 +20548,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
   finalizeSubselector();
   return selectorIndex;
 }
-var boolbase$1 = {
+var boolbase = {
   trueFunc: function trueFunc() {
     return true;
   },
@@ -20556,7 +20556,7 @@ var boolbase$1 = {
     return false;
   }
 };
-const boolbase = /* @__PURE__ */ getDefaultExportFromCjs(boolbase$1);
+const boolbase$1 = /* @__PURE__ */ getDefaultExportFromCjs(boolbase);
 const procedure = /* @__PURE__ */ new Map([
   [SelectorType.Universal, 50],
   [SelectorType.Tag, 30],
@@ -20706,7 +20706,7 @@ const attributeRules = {
     const { adapter: adapter2 } = options;
     const { name, value } = data2;
     if (/\s/.test(value)) {
-      return boolbase.falseFunc;
+      return boolbase$1.falseFunc;
     }
     const regex = new RegExp(`(?:^|\\s)${escapeRegex(value)}(?:$|\\s)`, shouldIgnoreCase(data2, options) ? "i" : "");
     return function element(elem) {
@@ -20723,7 +20723,7 @@ const attributeRules = {
     let { value } = data2;
     const len = value.length;
     if (len === 0) {
-      return boolbase.falseFunc;
+      return boolbase$1.falseFunc;
     }
     if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
@@ -20743,7 +20743,7 @@ const attributeRules = {
     let { value } = data2;
     const len = -value.length;
     if (len === 0) {
-      return boolbase.falseFunc;
+      return boolbase$1.falseFunc;
     }
     if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
@@ -20761,7 +20761,7 @@ const attributeRules = {
     const { adapter: adapter2 } = options;
     const { name, value } = data2;
     if (value === "") {
-      return boolbase.falseFunc;
+      return boolbase$1.falseFunc;
     }
     if (shouldIgnoreCase(data2, options)) {
       const regex = new RegExp(escapeRegex(value), "i");
@@ -20850,13 +20850,13 @@ function compile(parsed) {
   const a = parsed[0];
   const b = parsed[1] - 1;
   if (b < 0 && a <= 0)
-    return boolbase.falseFunc;
+    return boolbase$1.falseFunc;
   if (a === -1)
     return (index2) => index2 <= b;
   if (a === 0)
     return (index2) => index2 === b;
   if (a === 1)
-    return b < 0 ? boolbase.trueFunc : (index2) => index2 >= b;
+    return b < 0 ? boolbase$1.trueFunc : (index2) => index2 >= b;
   const absA = Math.abs(a);
   const bMod = (b % absA + absA) % absA;
   return a > 1 ? (index2) => index2 >= b && index2 % absA === bMod : (index2) => index2 <= b && index2 % absA === bMod;
@@ -20885,9 +20885,9 @@ const filters = {
   // Location specific methods
   "nth-child"(next2, rule, { adapter: adapter2, equals: equals2 }) {
     const func = nthCheck(rule);
-    if (func === boolbase.falseFunc)
-      return boolbase.falseFunc;
-    if (func === boolbase.trueFunc)
+    if (func === boolbase$1.falseFunc)
+      return boolbase$1.falseFunc;
+    if (func === boolbase$1.trueFunc)
       return getChildFunc(next2, adapter2);
     return function nthChild(elem) {
       const siblings2 = adapter2.getSiblings(elem);
@@ -20904,9 +20904,9 @@ const filters = {
   },
   "nth-last-child"(next2, rule, { adapter: adapter2, equals: equals2 }) {
     const func = nthCheck(rule);
-    if (func === boolbase.falseFunc)
-      return boolbase.falseFunc;
-    if (func === boolbase.trueFunc)
+    if (func === boolbase$1.falseFunc)
+      return boolbase$1.falseFunc;
+    if (func === boolbase$1.trueFunc)
       return getChildFunc(next2, adapter2);
     return function nthLastChild(elem) {
       const siblings2 = adapter2.getSiblings(elem);
@@ -20923,9 +20923,9 @@ const filters = {
   },
   "nth-of-type"(next2, rule, { adapter: adapter2, equals: equals2 }) {
     const func = nthCheck(rule);
-    if (func === boolbase.falseFunc)
-      return boolbase.falseFunc;
-    if (func === boolbase.trueFunc)
+    if (func === boolbase$1.falseFunc)
+      return boolbase$1.falseFunc;
+    if (func === boolbase$1.trueFunc)
       return getChildFunc(next2, adapter2);
     return function nthOfType(elem) {
       const siblings2 = adapter2.getSiblings(elem);
@@ -20943,9 +20943,9 @@ const filters = {
   },
   "nth-last-of-type"(next2, rule, { adapter: adapter2, equals: equals2 }) {
     const func = nthCheck(rule);
-    if (func === boolbase.falseFunc)
-      return boolbase.falseFunc;
-    if (func === boolbase.trueFunc)
+    if (func === boolbase$1.falseFunc)
+      return boolbase$1.falseFunc;
+    if (func === boolbase$1.trueFunc)
       return getChildFunc(next2, adapter2);
     return function nthLastOfType(elem) {
       const siblings2 = adapter2.getSiblings(elem);
@@ -20986,7 +20986,7 @@ function dynamicStatePseudo(name) {
   return function dynamicPseudo(next2, _rule, { adapter: adapter2 }) {
     const func = adapter2[name];
     if (typeof func !== "function") {
-      return boolbase.falseFunc;
+      return boolbase$1.falseFunc;
     }
     return function active(elem) {
       return func(elem) && next2(elem);
@@ -21093,8 +21093,8 @@ const aliases = {
 };
 const PLACEHOLDER_ELEMENT = {};
 function ensureIsTag(next2, adapter2) {
-  if (next2 === boolbase.falseFunc)
-    return boolbase.falseFunc;
+  if (next2 === boolbase$1.falseFunc)
+    return boolbase$1.falseFunc;
   return (elem) => adapter2.isTag(elem) && next2(elem);
 }
 function getNextSiblings(elem, adapter2) {
@@ -21120,7 +21120,7 @@ function copyOptions(options) {
 }
 const is$2 = (next2, token, options, context, compileToken2) => {
   const func = compileToken2(token, copyOptions(options), context);
-  return func === boolbase.trueFunc ? next2 : func === boolbase.falseFunc ? boolbase.falseFunc : (elem) => func(elem) && next2(elem);
+  return func === boolbase$1.trueFunc ? next2 : func === boolbase$1.falseFunc ? boolbase$1.falseFunc : (elem) => func(elem) && next2(elem);
 };
 const subselects = {
   is: is$2,
@@ -21131,7 +21131,7 @@ const subselects = {
   where: is$2,
   not(next2, token, options, context, compileToken2) {
     const func = compileToken2(token, copyOptions(options), context);
-    return func === boolbase.falseFunc ? next2 : func === boolbase.trueFunc ? boolbase.falseFunc : (elem) => !func(elem) && next2(elem);
+    return func === boolbase$1.falseFunc ? next2 : func === boolbase$1.trueFunc ? boolbase$1.falseFunc : (elem) => !func(elem) && next2(elem);
   },
   has(next2, subselect, options, _context, compileToken2) {
     const { adapter: adapter2 } = options;
@@ -21142,10 +21142,10 @@ const subselects = {
       [PLACEHOLDER_ELEMENT]
     ) : void 0;
     const compiled = compileToken2(subselect, opts, context);
-    if (compiled === boolbase.falseFunc)
-      return boolbase.falseFunc;
+    if (compiled === boolbase$1.falseFunc)
+      return boolbase$1.falseFunc;
     const hasElement = ensureIsTag(compiled, adapter2);
-    if (context && compiled !== boolbase.trueFunc) {
+    if (context && compiled !== boolbase$1.trueFunc) {
       const { shouldTestNextSiblings = false } = compiled;
       return (elem) => {
         if (!next2(elem))
@@ -21371,19 +21371,19 @@ function compileToken(token, options, context) {
       }
     }
     return compileRules(rules2, options, finalContext);
-  }).reduce(reduceRules, boolbase.falseFunc);
+  }).reduce(reduceRules, boolbase$1.falseFunc);
   query.shouldTestNextSiblings = shouldTestNextSiblings;
   return query;
 }
 function compileRules(rules2, options, context) {
   var _a2;
-  return rules2.reduce((previous, rule) => previous === boolbase.falseFunc ? boolbase.falseFunc : compileGeneralSelector(previous, rule, options, context, compileToken), (_a2 = options.rootFunc) !== null && _a2 !== void 0 ? _a2 : boolbase.trueFunc);
+  return rules2.reduce((previous, rule) => previous === boolbase$1.falseFunc ? boolbase$1.falseFunc : compileGeneralSelector(previous, rule, options, context, compileToken), (_a2 = options.rootFunc) !== null && _a2 !== void 0 ? _a2 : boolbase$1.trueFunc);
 }
 function reduceRules(a, b) {
-  if (b === boolbase.falseFunc || a === boolbase.trueFunc) {
+  if (b === boolbase$1.falseFunc || a === boolbase$1.trueFunc) {
     return a;
   }
-  if (a === boolbase.falseFunc || b === boolbase.trueFunc) {
+  if (a === boolbase$1.falseFunc || b === boolbase$1.trueFunc) {
     return b;
   }
   return function combine(elem) {
@@ -21623,8 +21623,8 @@ function findFilterElements(root2, selector, options, queryForSelector, totalLim
        */
       rootFunc: (el) => result.includes(el)
     };
-  } else if (options.rootFunc && options.rootFunc !== boolbase$1.trueFunc) {
-    options = { ...options, rootFunc: boolbase$1.trueFunc };
+  } else if (options.rootFunc && options.rootFunc !== boolbase.trueFunc) {
+    options = { ...options, rootFunc: boolbase.trueFunc };
   }
   return remainingSelector.some(isFilter) ? findFilterElements(result, remainingSelector, options, false, totalLimit) : remainingHasTraversal ? (
     // Query existing elements to resolve traversal.
@@ -21647,7 +21647,7 @@ function filterElements(elements, sel, options) {
   if (els.length === 0)
     return els;
   const query = _compileToken(sel, options);
-  return query === boolbase$1.trueFunc ? els : els.filter(query);
+  return query === boolbase.trueFunc ? els : els.filter(query);
 }
 const reContextSelector = /^\s*(?:[+~]|:scope\b)/;
 function find(selectorOrHaystack) {
@@ -53550,14 +53550,7 @@ var _eval = EvalError;
 var range = RangeError;
 var ref = ReferenceError;
 var syntax = SyntaxError;
-var type$1;
-var hasRequiredType;
-function requireType() {
-  if (hasRequiredType) return type$1;
-  hasRequiredType = 1;
-  type$1 = TypeError;
-  return type$1;
-}
+var type$1 = TypeError;
 var uri = URIError;
 var abs$1 = Math.abs;
 var floor$1 = Math.floor;
@@ -53803,7 +53796,7 @@ function requireCallBindApplyHelpers() {
   if (hasRequiredCallBindApplyHelpers) return callBindApplyHelpers;
   hasRequiredCallBindApplyHelpers = 1;
   var bind3 = functionBind;
-  var $TypeError2 = requireType();
+  var $TypeError2 = type$1;
   var $call2 = requireFunctionCall();
   var $actualApply = requireActualApply();
   callBindApplyHelpers = function callBindBasic(args) {
@@ -53876,7 +53869,7 @@ var $EvalError = _eval;
 var $RangeError = range;
 var $ReferenceError = ref;
 var $SyntaxError = syntax;
-var $TypeError$1 = requireType();
+var $TypeError$1 = type$1;
 var $URIError = uri;
 var abs = abs$1;
 var floor = floor$1;
@@ -54207,7 +54200,7 @@ var GetIntrinsic2 = getIntrinsic;
 var $defineProperty = GetIntrinsic2("%Object.defineProperty%", true);
 var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
-var $TypeError = requireType();
+var $TypeError = type$1;
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
 var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
@@ -54248,9 +54241,9 @@ var asynckit = asynckit$1;
 var setToStringTag2 = esSetTostringtag;
 var hasOwn = hasown;
 var populate = populate$1;
-function FormData$2(options) {
-  if (!(this instanceof FormData$2)) {
-    return new FormData$2(options);
+function FormData$1(options) {
+  if (!(this instanceof FormData$1)) {
+    return new FormData$1(options);
   }
   this._overheadLength = 0;
   this._valueLength = 0;
@@ -54261,10 +54254,10 @@ function FormData$2(options) {
     this[option] = options[option];
   }
 }
-util$3.inherits(FormData$2, CombinedStream);
-FormData$2.LINE_BREAK = "\r\n";
-FormData$2.DEFAULT_CONTENT_TYPE = "application/octet-stream";
-FormData$2.prototype.append = function(field, value, options) {
+util$3.inherits(FormData$1, CombinedStream);
+FormData$1.LINE_BREAK = "\r\n";
+FormData$1.DEFAULT_CONTENT_TYPE = "application/octet-stream";
+FormData$1.prototype.append = function(field, value, options) {
   options = options || {};
   if (typeof options === "string") {
     options = { filename: options };
@@ -54284,7 +54277,7 @@ FormData$2.prototype.append = function(field, value, options) {
   append3(footer);
   this._trackLength(header, value, options);
 };
-FormData$2.prototype._trackLength = function(header, value, options) {
+FormData$1.prototype._trackLength = function(header, value, options) {
   var valueLength = 0;
   if (options.knownLength != null) {
     valueLength += Number(options.knownLength);
@@ -54294,7 +54287,7 @@ FormData$2.prototype._trackLength = function(header, value, options) {
     valueLength = Buffer.byteLength(value);
   }
   this._valueLength += valueLength;
-  this._overheadLength += Buffer.byteLength(header) + FormData$2.LINE_BREAK.length;
+  this._overheadLength += Buffer.byteLength(header) + FormData$1.LINE_BREAK.length;
   if (!value || !value.path && !(value.readable && hasOwn(value, "httpVersion")) && !(value instanceof Stream$1)) {
     return;
   }
@@ -54302,7 +54295,7 @@ FormData$2.prototype._trackLength = function(header, value, options) {
     this._valuesToMeasure.push(value);
   }
 };
-FormData$2.prototype._lengthRetriever = function(value, callback) {
+FormData$1.prototype._lengthRetriever = function(value, callback) {
   if (hasOwn(value, "fd")) {
     if (value.end != void 0 && value.end != Infinity && value.start != void 0) {
       callback(null, value.end + 1 - (value.start ? value.start : 0));
@@ -54328,7 +54321,7 @@ FormData$2.prototype._lengthRetriever = function(value, callback) {
     callback("Unknown stream");
   }
 };
-FormData$2.prototype._multiPartHeader = function(field, value, options) {
+FormData$1.prototype._multiPartHeader = function(field, value, options) {
   if (typeof options.header === "string") {
     return options.header;
   }
@@ -54355,13 +54348,13 @@ FormData$2.prototype._multiPartHeader = function(field, value, options) {
         header = [header];
       }
       if (header.length) {
-        contents2 += prop2 + ": " + header.join("; ") + FormData$2.LINE_BREAK;
+        contents2 += prop2 + ": " + header.join("; ") + FormData$1.LINE_BREAK;
       }
     }
   }
-  return "--" + this.getBoundary() + FormData$2.LINE_BREAK + contents2 + FormData$2.LINE_BREAK;
+  return "--" + this.getBoundary() + FormData$1.LINE_BREAK + contents2 + FormData$1.LINE_BREAK;
 };
-FormData$2.prototype._getContentDisposition = function(value, options) {
+FormData$1.prototype._getContentDisposition = function(value, options) {
   var filename;
   if (typeof options.filepath === "string") {
     filename = path$m.normalize(options.filepath).replace(/\\/g, "/");
@@ -54374,7 +54367,7 @@ FormData$2.prototype._getContentDisposition = function(value, options) {
     return 'filename="' + filename + '"';
   }
 };
-FormData$2.prototype._getContentType = function(value, options) {
+FormData$1.prototype._getContentType = function(value, options) {
   var contentType = options.contentType;
   if (!contentType && value && value.name) {
     contentType = mime.lookup(value.name);
@@ -54389,13 +54382,13 @@ FormData$2.prototype._getContentType = function(value, options) {
     contentType = mime.lookup(options.filepath || options.filename);
   }
   if (!contentType && value && typeof value === "object") {
-    contentType = FormData$2.DEFAULT_CONTENT_TYPE;
+    contentType = FormData$1.DEFAULT_CONTENT_TYPE;
   }
   return contentType;
 };
-FormData$2.prototype._multiPartFooter = function() {
+FormData$1.prototype._multiPartFooter = function() {
   return (function(next2) {
-    var footer = FormData$2.LINE_BREAK;
+    var footer = FormData$1.LINE_BREAK;
     var lastPart = this._streams.length === 0;
     if (lastPart) {
       footer += this._lastBoundary();
@@ -54403,10 +54396,10 @@ FormData$2.prototype._multiPartFooter = function() {
     next2(footer);
   }).bind(this);
 };
-FormData$2.prototype._lastBoundary = function() {
-  return "--" + this.getBoundary() + "--" + FormData$2.LINE_BREAK;
+FormData$1.prototype._lastBoundary = function() {
+  return "--" + this.getBoundary() + "--" + FormData$1.LINE_BREAK;
 };
-FormData$2.prototype.getHeaders = function(userHeaders) {
+FormData$1.prototype.getHeaders = function(userHeaders) {
   var header;
   var formHeaders = {
     "content-type": "multipart/form-data; boundary=" + this.getBoundary()
@@ -54418,19 +54411,19 @@ FormData$2.prototype.getHeaders = function(userHeaders) {
   }
   return formHeaders;
 };
-FormData$2.prototype.setBoundary = function(boundary) {
+FormData$1.prototype.setBoundary = function(boundary) {
   if (typeof boundary !== "string") {
     throw new TypeError("FormData boundary must be a string");
   }
   this._boundary = boundary;
 };
-FormData$2.prototype.getBoundary = function() {
+FormData$1.prototype.getBoundary = function() {
   if (!this._boundary) {
     this._generateBoundary();
   }
   return this._boundary;
 };
-FormData$2.prototype.getBuffer = function() {
+FormData$1.prototype.getBuffer = function() {
   var dataBuffer = new Buffer.alloc(0);
   var boundary = this.getBoundary();
   for (var i = 0, len = this._streams.length; i < len; i++) {
@@ -54441,16 +54434,16 @@ FormData$2.prototype.getBuffer = function() {
         dataBuffer = Buffer.concat([dataBuffer, Buffer.from(this._streams[i])]);
       }
       if (typeof this._streams[i] !== "string" || this._streams[i].substring(2, boundary.length + 2) !== boundary) {
-        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$2.LINE_BREAK)]);
+        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$1.LINE_BREAK)]);
       }
     }
   }
   return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
 };
-FormData$2.prototype._generateBoundary = function() {
+FormData$1.prototype._generateBoundary = function() {
   this._boundary = "--------------------------" + crypto.randomBytes(12).toString("hex");
 };
-FormData$2.prototype.getLengthSync = function() {
+FormData$1.prototype.getLengthSync = function() {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -54460,14 +54453,14 @@ FormData$2.prototype.getLengthSync = function() {
   }
   return knownLength;
 };
-FormData$2.prototype.hasKnownLength = function() {
+FormData$1.prototype.hasKnownLength = function() {
   var hasKnownLength = true;
   if (this._valuesToMeasure.length) {
     hasKnownLength = false;
   }
   return hasKnownLength;
 };
-FormData$2.prototype.getLength = function(cb) {
+FormData$1.prototype.getLength = function(cb) {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -54487,7 +54480,7 @@ FormData$2.prototype.getLength = function(cb) {
     cb(null, knownLength);
   });
 };
-FormData$2.prototype.submit = function(params, cb) {
+FormData$1.prototype.submit = function(params, cb) {
   var request;
   var options;
   var defaults2 = { method: "post" };
@@ -54534,19 +54527,19 @@ FormData$2.prototype.submit = function(params, cb) {
   }).bind(this));
   return request;
 };
-FormData$2.prototype._error = function(err) {
+FormData$1.prototype._error = function(err) {
   if (!this.error) {
     this.error = err;
     this.pause();
     this.emit("error", err);
   }
 };
-FormData$2.prototype.toString = function() {
+FormData$1.prototype.toString = function() {
   return "[object FormData]";
 };
-setToStringTag2(FormData$2.prototype, "FormData");
-var form_data = FormData$2;
-const FormData$1 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
+setToStringTag2(FormData$1.prototype, "FormData");
+var form_data = FormData$1;
+const FormData$2 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
 function isVisitable(thing) {
   return utils$3.isPlainObject(thing) || utils$3.isArray(thing);
 }
@@ -54570,7 +54563,7 @@ function toFormData$1(obj, formData, options) {
   if (!utils$3.isObject(obj)) {
     throw new TypeError("target must be an object");
   }
-  formData = formData || new (FormData$1 || FormData)();
+  formData = formData || new (FormData$2 || FormData)();
   options = utils$3.toFlatObject(options, {
     metaTokens: true,
     dots: false,
@@ -54806,7 +54799,7 @@ const platform$2 = {
   isNode: true,
   classes: {
     URLSearchParams,
-    FormData: FormData$1,
+    FormData: FormData$2,
     Blob: typeof Blob !== "undefined" && Blob || null
   },
   ALPHABET,
@@ -59766,14 +59759,16 @@ class BangumiCrawler {
   }
   /**
    * 标准化封面 URL（与 Python: _normalize_cover_url 一致）
+   * 去掉 /r/xxx/ 缩略图限制，获取原图
    */
   normalizeCoverUrl(url2) {
     if (!url2) return "";
     if (url2.startsWith("//")) {
-      return "https:" + url2;
+      url2 = "https:" + url2;
     } else if (url2.startsWith("/")) {
-      return "https://bangumi.tv" + url2;
+      url2 = "https://bangumi.tv" + url2;
     }
+    url2 = url2.replace(/\/r\/\d+\//, "/");
     return url2;
   }
   /**
