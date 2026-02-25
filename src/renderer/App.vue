@@ -1,12 +1,20 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <Layout />
+    <router-view />
   </el-config-provider>
 </template>
 
 <script setup lang="ts">
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import Layout from './components/Layout.vue'
+import { onMounted } from 'vue'
+
+// 应用默认亮色主题
+onMounted(() => {
+  const html = document.documentElement
+  if (!html.classList.contains('dark') && !html.classList.contains('light')) {
+    html.classList.add('light')
+  }
+})
 </script>
 
 <style>
@@ -22,6 +30,7 @@ body {
   padding: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  background-color: var(--el-bg-color-page, #f2f3f5);
 }
 
 html {
@@ -33,8 +42,18 @@ html {
   min-height: 100vh;
 }
 
-/* 主题变量 */
+/* 主题变量 - 覆盖 Element Plus 默认主题 */
 :root {
+  /* Element Plus 主色调 */
+  --el-color-primary: #7c5cff;
+  --el-color-primary-light-3: #9c8aff;
+  --el-color-primary-light-5: #b5adff;
+  --el-color-primary-light-7: #d0ccff;
+  --el-color-primary-light-8: #e0ddff;
+  --el-color-primary-light-9: #f0eeff;
+  --el-color-primary-dark-2: #6a4fd6;
+  
+  /* Anime 主题变量 */
   --anime-primary: #7c5cff;
   --anime-primary-hover: #6a4fd6;
   --anime-secondary: #ff6b9d;

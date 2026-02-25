@@ -1,0 +1,285 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: A1
+    - menubar [ref=e7]:
+      - menuitem [ref=e8] [cursor=pointer]:
+        - img [ref=e11]
+      - menuitem [ref=e13] [cursor=pointer]:
+        - img [ref=e16]
+      - menuitem [ref=e18] [cursor=pointer]:
+        - img [ref=e21]
+      - menuitem [ref=e25] [cursor=pointer]:
+        - img [ref=e28]
+      - menuitem [ref=e30] [cursor=pointer]:
+        - img [ref=e33]
+    - button [ref=e36] [cursor=pointer]:
+      - img [ref=e38]
+  - main [ref=e41]:
+    - generic [ref=e42]:
+      - complementary [ref=e43]:
+        - generic [ref=e45]: A1
+        - menubar [ref=e46]:
+          - menuitem [ref=e47] [cursor=pointer]:
+            - img [ref=e50]
+          - menuitem [ref=e52] [cursor=pointer]:
+            - img [ref=e55]
+          - menuitem [ref=e57] [cursor=pointer]:
+            - img [ref=e60]
+          - menuitem [ref=e64] [cursor=pointer]:
+            - img [ref=e67]
+          - menuitem [ref=e69] [cursor=pointer]:
+            - img [ref=e72]
+        - button [ref=e75] [cursor=pointer]:
+          - img [ref=e77]
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - heading "最新番剧" [level=1] [ref=e83]
+            - generic [ref=e85]:
+              - textbox "搜索番剧..." [ref=e87]
+              - button [ref=e89] [cursor=pointer]:
+                - img [ref=e92]
+          - main [ref=e94]:
+            - generic [ref=e95]:
+              - generic [ref=e97] [cursor=pointer]:
+                - generic [ref=e98]:
+                  - img [ref=e100]
+                  - generic [ref=e101]: 更新至 7 集
+                - generic [ref=e102]:
+                  - heading "身為魔族的我 想向勇者小隊的可愛女孩告白" [level=3] [ref=e103]
+                  - generic [ref=e104]:
+                    - generic [ref=e106]: "2026"
+                    - generic [ref=e108]: 冬
+              - generic [ref=e110] [cursor=pointer]:
+                - generic [ref=e111]:
+                  - img [ref=e113]
+                  - generic [ref=e114]: 更新至 8 集
+                - generic [ref=e115]:
+                  - heading "異世界的處置依社畜而定" [level=3] [ref=e116]
+                  - generic [ref=e117]:
+                    - generic [ref=e119]: "2026"
+                    - generic [ref=e121]: 冬
+              - generic [ref=e123] [cursor=pointer]:
+                - generic [ref=e124]:
+                  - img [ref=e126]
+                  - generic [ref=e127]: 更新至 8 集
+                - generic [ref=e128]:
+                  - heading "午夜的傾心旋律" [level=3] [ref=e129]
+                  - generic [ref=e130]:
+                    - generic [ref=e132]: "2026"
+                    - generic [ref=e134]: 冬
+              - generic [ref=e136] [cursor=pointer]:
+                - generic [ref=e137]:
+                  - img [ref=e139]
+                  - generic [ref=e140]: 更新至 8 集
+                - generic [ref=e141]:
+                  - heading "為了疼愛最推的義兄，我要長久活下去！" [level=3] [ref=e142]
+                  - generic [ref=e143]:
+                    - generic [ref=e145]: "2026"
+                    - generic [ref=e147]: 冬
+                    - generic [ref=e149]: 奶²
+              - generic [ref=e151] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - img [ref=e154]
+                  - generic [ref=e155]: 更新至 46 集
+                - generic [ref=e156]:
+                  - heading "秘密的偶像公主 第二季" [level=3] [ref=e157]
+                  - generic [ref=e158]:
+                    - generic [ref=e160]: "2025"
+                    - generic [ref=e162]: 春
+              - generic [ref=e164] [cursor=pointer]:
+                - generic [ref=e165]:
+                  - img [ref=e167]
+                  - generic [ref=e168]: 更新至 7 集
+                - generic [ref=e169]:
+                  - heading "非人學生與厭世教師" [level=3] [ref=e170]
+                  - generic [ref=e171]:
+                    - generic [ref=e173]: "2026"
+                    - generic [ref=e175]: 冬
+                    - generic [ref=e177]: 桜都
+              - generic [ref=e179] [cursor=pointer]:
+                - generic [ref=e180]:
+                  - img [ref=e182]
+                  - generic [ref=e183]: 更新至 19 集
+                - generic [ref=e184]:
+                  - heading "公主殿下，「拷問」的時間到了 第二季" [level=3] [ref=e185]
+                  - generic [ref=e186]:
+                    - generic [ref=e188]: "2026"
+                    - generic [ref=e190]: 冬
+              - generic [ref=e192] [cursor=pointer]:
+                - generic [ref=e193]:
+                  - img [ref=e195]
+                  - generic [ref=e196]: 更新至 8 集
+                - generic [ref=e197]:
+                  - heading "青梅竹馬的戀愛喜劇無法成立" [level=3] [ref=e198]
+                  - generic [ref=e199]:
+                    - generic [ref=e201]: "2026"
+                    - generic [ref=e203]: 冬
+              - generic [ref=e205] [cursor=pointer]:
+                - generic [ref=e206]:
+                  - img [ref=e208]
+                  - generic [ref=e209]: 更新至 21 集
+                - generic [ref=e210]:
+                  - heading "正義使者 -我的英雄學院之非法英雄- 第二季" [level=3] [ref=e211]
+                  - generic [ref=e212]:
+                    - generic [ref=e214]: "2026"
+                    - generic [ref=e216]: 冬
+              - generic [ref=e218] [cursor=pointer]:
+                - generic [ref=e219]:
+                  - img [ref=e221]
+                  - generic [ref=e222]: 更新至 20 集
+                - generic [ref=e223]:
+                  - heading "藍色管弦樂 第二季" [level=3] [ref=e224]
+                  - generic [ref=e225]:
+                    - generic [ref=e227]: "2025"
+                    - generic [ref=e229]: 秋
+              - generic [ref=e231] [cursor=pointer]:
+                - generic [ref=e232]:
+                  - img [ref=e234]
+                  - generic [ref=e235]: 更新至 6 集
+                - generic [ref=e236]:
+                  - heading "大江戶烈火殺手 – 鳳凰傳說" [level=3] [ref=e237]
+                  - generic [ref=e238]:
+                    - generic [ref=e240]: "2026"
+                    - generic [ref=e242]: 冬
+              - generic [ref=e244] [cursor=pointer]:
+                - generic [ref=e245]:
+                  - img [ref=e247]
+                  - generic [ref=e248]: 更新至 8 集
+                - generic [ref=e249]:
+                  - heading "異國日記" [level=3] [ref=e250]
+                  - generic [ref=e251]:
+                    - generic [ref=e253]: "2026"
+                    - generic [ref=e255]: 冬
+              - generic [ref=e257] [cursor=pointer]:
+                - generic [ref=e258]:
+                  - img [ref=e260]
+                  - generic [ref=e261]: 更新至 8 集
+                - generic [ref=e262]:
+                  - heading "打工仔的拷問日常" [level=3] [ref=e263]
+                  - generic [ref=e264]:
+                    - generic [ref=e266]: "2026"
+                    - generic [ref=e268]: 冬
+              - generic [ref=e270] [cursor=pointer]:
+                - generic [ref=e271]:
+                  - img [ref=e273]
+                  - generic [ref=e274]: 更新至 7 集
+                - generic [ref=e275]:
+                  - heading "被鄰國王太子溺愛的反派千金" [level=3] [ref=e276]
+                  - generic [ref=e277]:
+                    - generic [ref=e279]: "2026"
+                    - generic [ref=e281]: 冬
+                    - generic [ref=e283]: 六四位元
+              - generic [ref=e285] [cursor=pointer]:
+                - generic [ref=e286]:
+                  - img [ref=e288]
+                  - generic [ref=e289]: 更新至 9 集
+                - generic [ref=e290]:
+                  - heading "花樣少年少女" [level=3] [ref=e291]
+                  - generic [ref=e292]:
+                    - generic [ref=e294]: "2026"
+                    - generic [ref=e296]: 冬
+              - generic [ref=e298] [cursor=pointer]:
+                - generic [ref=e299]:
+                  - img [ref=e301]
+                  - generic [ref=e302]: 更新至 9 集
+                - generic [ref=e303]:
+                  - heading "魔術師庫諾看得見一切" [level=3] [ref=e304]
+                  - generic [ref=e305]:
+                    - generic [ref=e307]: "2026"
+                    - generic [ref=e309]: 冬
+              - generic [ref=e311] [cursor=pointer]:
+                - generic [ref=e312]:
+                  - img [ref=e314]
+                  - generic [ref=e315]: 更新至 125 集
+                - generic [ref=e316]:
+                  - heading "寶可夢 地平線 超級電壓" [level=3] [ref=e317]
+                  - generic [ref=e318]:
+                    - generic [ref=e320]: "2025"
+                    - generic [ref=e322]: 春
+                    - generic [ref=e324]: 楓葉
+              - generic [ref=e326] [cursor=pointer]:
+                - generic [ref=e327]:
+                  - img [ref=e329]
+                  - generic [ref=e330]: 更新至 20 集
+                - generic [ref=e331]:
+                  - heading "數碼寶貝BEATBREAK" [level=3] [ref=e332]
+                  - generic [ref=e333]:
+                    - generic [ref=e335]: "2025"
+                    - generic [ref=e337]: 秋
+                    - generic [ref=e339]: 馴獸師聯盟
+              - generic [ref=e341] [cursor=pointer]:
+                - generic [ref=e342]:
+                  - img [ref=e344]
+                  - generic [ref=e345]: 更新至 7 集
+                - generic [ref=e346]:
+                  - heading "神八小妹不可怕" [level=3] [ref=e347]
+                  - generic [ref=e348]:
+                    - generic [ref=e350]: "2026"
+                    - generic [ref=e352]: 冬
+              - generic [ref=e354] [cursor=pointer]:
+                - generic [ref=e355]:
+                  - img [ref=e357]
+                  - generic [ref=e358]: 更新至 7 集
+                - generic [ref=e359]:
+                  - heading "相反的你和我" [level=3] [ref=e360]
+                  - generic [ref=e361]:
+                    - generic [ref=e363]: "2026"
+                    - generic [ref=e365]: 冬
+              - generic [ref=e367] [cursor=pointer]:
+                - generic [ref=e368]:
+                  - img [ref=e370]
+                  - generic [ref=e371]: 更新至 20 集
+                - generic [ref=e372]:
+                  - heading "SI-VIS：英雄之聲" [level=3] [ref=e373]
+                  - generic [ref=e374]:
+                    - generic [ref=e376]: "2025"
+                    - generic [ref=e378]: 秋
+              - generic [ref=e380] [cursor=pointer]:
+                - generic [ref=e381]:
+                  - img [ref=e383]
+                  - generic [ref=e384]: 更新至 20 集
+                - generic [ref=e385]:
+                  - heading "東島丹三郎想成為假面騎士" [level=3] [ref=e386]
+                  - generic [ref=e387]:
+                    - generic [ref=e389]: "2025"
+                    - generic [ref=e391]: 秋
+              - generic [ref=e393] [cursor=pointer]:
+                - generic [ref=e394]:
+                  - img [ref=e396]
+                  - generic [ref=e397]: 更新至 7 集
+                - generic [ref=e398]:
+                  - heading "勇者之渣" [level=3] [ref=e399]
+                  - generic [ref=e400]:
+                    - generic [ref=e402]: "2026"
+                    - generic [ref=e404]: 冬
+              - generic [ref=e406] [cursor=pointer]:
+                - generic [ref=e407]:
+                  - img [ref=e409]
+                  - generic [ref=e410]: 更新至 7 集
+                - generic [ref=e411]:
+                  - heading "TRIGUN STARGAZE" [level=3] [ref=e412]
+                  - generic [ref=e413]:
+                    - generic [ref=e415]: "2026"
+                    - generic [ref=e417]: 冬
+            - generic [ref=e419]:
+              - button "上一页" [disabled] [ref=e420]:
+                - generic:
+                  - img
+              - list [ref=e421]:
+                - listitem "第 1 页" [ref=e422]: "1"
+                - listitem "第 2 页" [ref=e423] [cursor=pointer]: "2"
+                - listitem "第 3 页" [ref=e424] [cursor=pointer]: "3"
+                - listitem "第 4 页" [ref=e425] [cursor=pointer]: "4"
+                - listitem "第 5 页" [ref=e426] [cursor=pointer]: "5"
+                - listitem "第 6 页" [ref=e427] [cursor=pointer]: "6"
+                - listitem "向后 5 页" [ref=e428] [cursor=pointer]:
+                  - img
+                - listitem "第 75 页" [ref=e429] [cursor=pointer]: "75"
+              - button "下一页" [ref=e430] [cursor=pointer]:
+                - generic:
+                  - img
+```

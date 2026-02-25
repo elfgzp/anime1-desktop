@@ -2,2572 +2,31 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key2, value) => key2 in obj ? __defProp(obj, key2, { enumerable: true, configurable: true, writable: true, value }) : obj[key2] = value;
 var __publicField = (obj, key2, value) => __defNormalProp(obj, typeof key2 !== "symbol" ? key2 + "" : key2, value);
 import require$$1$6, { app as app$1, BrowserWindow, shell as shell$1, nativeImage, Tray, Menu, globalShortcut, ipcMain as ipcMain$1, screen } from "electron";
-import require$$1$2, { join, dirname, resolve as resolve$5 } from "path";
-import require$$0$3 from "child_process";
-import require$$1$3 from "os";
-import require$$0$2, { existsSync, mkdirSync, statSync, createWriteStream } from "fs";
-import require$$1$4 from "util";
-import require$$0$4, { EventEmitter } from "events";
-import require$$0$5 from "http";
-import require$$1$5 from "https";
-import require$$0$8, { fileURLToPath } from "url";
-import require$$0$6 from "crypto";
+import log from "electron-log";
+import require$$1$3, { join, dirname, resolve as resolve$5 } from "path";
+import require$$0$4, { fileURLToPath } from "url";
+import require$$1$2, { existsSync, mkdirSync, statSync, createWriteStream } from "fs";
+import require$$1$5 from "util";
+import require$$0$2 from "crypto";
 import require$$4$1 from "assert";
+import require$$5$1, { EventEmitter } from "events";
+import require$$1$4 from "os";
 import "node:stream";
-import require$$0$7 from "buffer";
+import require$$0$3 from "buffer";
 import require$$1$7 from "string_decoder";
 import "undici";
 import stream, { Readable } from "stream";
+import require$$3$3 from "http";
+import require$$4$2 from "https";
 import http2 from "http2";
 import require$$1$8 from "tty";
 import zlib from "zlib";
-import require$$0$9 from "constants";
+import require$$0$5 from "constants";
+import require$$1$9 from "child_process";
 var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
-var src$1 = { exports: {} };
-var electronLogPreload = { exports: {} };
-var hasRequiredElectronLogPreload;
-function requireElectronLogPreload() {
-  if (hasRequiredElectronLogPreload) return electronLogPreload.exports;
-  hasRequiredElectronLogPreload = 1;
-  (function(module) {
-    let electron = {};
-    try {
-      electron = require("electron");
-    } catch (e) {
-    }
-    if (electron.ipcRenderer) {
-      initialize2(electron);
-    }
-    {
-      module.exports = initialize2;
-    }
-    function initialize2({ contextBridge, ipcRenderer: ipcRenderer2 }) {
-      if (!ipcRenderer2) {
-        return;
-      }
-      ipcRenderer2.on("__ELECTRON_LOG_IPC__", (_, message) => {
-        window.postMessage({ cmd: "message", ...message });
-      });
-      ipcRenderer2.invoke("__ELECTRON_LOG__", { cmd: "getOptions" }).catch((e) => console.error(new Error(
-        `electron-log isn't initialized in the main process. Please call log.initialize() before. ${e.message}`
-      )));
-      const electronLog = {
-        sendToMain(message) {
-          try {
-            ipcRenderer2.send("__ELECTRON_LOG__", message);
-          } catch (e) {
-            console.error("electronLog.sendToMain ", e, "data:", message);
-            ipcRenderer2.send("__ELECTRON_LOG__", {
-              cmd: "errorHandler",
-              error: { message: e == null ? void 0 : e.message, stack: e == null ? void 0 : e.stack },
-              errorName: "sendToMain"
-            });
-          }
-        },
-        log(...data2) {
-          electronLog.sendToMain({ data: data2, level: "info" });
-        }
-      };
-      for (const level of ["error", "warn", "info", "verbose", "debug", "silly"]) {
-        electronLog[level] = (...data2) => electronLog.sendToMain({
-          data: data2,
-          level
-        });
-      }
-      if (contextBridge && process.contextIsolated) {
-        try {
-          contextBridge.exposeInMainWorld("__electronLog", electronLog);
-        } catch {
-        }
-      }
-      if (typeof window === "object") {
-        window.__electronLog = electronLog;
-      } else {
-        __electronLog = electronLog;
-      }
-    }
-  })(electronLogPreload);
-  return electronLogPreload.exports;
-}
-var renderer = { exports: {} };
-var scope$2;
-var hasRequiredScope;
-function requireScope() {
-  if (hasRequiredScope) return scope$2;
-  hasRequiredScope = 1;
-  scope$2 = scopeFactory;
-  function scopeFactory(logger) {
-    return Object.defineProperties(scope2, {
-      defaultLabel: { value: "", writable: true },
-      labelPadding: { value: true, writable: true },
-      maxLabelLength: { value: 0, writable: true },
-      labelLength: {
-        get() {
-          switch (typeof scope2.labelPadding) {
-            case "boolean":
-              return scope2.labelPadding ? scope2.maxLabelLength : 0;
-            case "number":
-              return scope2.labelPadding;
-            default:
-              return 0;
-          }
-        }
-      }
-    });
-    function scope2(label) {
-      scope2.maxLabelLength = Math.max(scope2.maxLabelLength, label.length);
-      const newScope = {};
-      for (const level of logger.levels) {
-        newScope[level] = (...d) => logger.logData(d, { level, scope: label });
-      }
-      newScope.log = newScope.info;
-      return newScope;
-    }
-  }
-  return scope$2;
-}
-var Buffering_1;
-var hasRequiredBuffering;
-function requireBuffering() {
-  if (hasRequiredBuffering) return Buffering_1;
-  hasRequiredBuffering = 1;
-  class Buffering {
-    constructor({ processMessage }) {
-      this.processMessage = processMessage;
-      this.buffer = [];
-      this.enabled = false;
-      this.begin = this.begin.bind(this);
-      this.commit = this.commit.bind(this);
-      this.reject = this.reject.bind(this);
-    }
-    addMessage(message) {
-      this.buffer.push(message);
-    }
-    begin() {
-      this.enabled = [];
-    }
-    commit() {
-      this.enabled = false;
-      this.buffer.forEach((item) => this.processMessage(item));
-      this.buffer = [];
-    }
-    reject() {
-      this.enabled = false;
-      this.buffer = [];
-    }
-  }
-  Buffering_1 = Buffering;
-  return Buffering_1;
-}
-var Logger_1;
-var hasRequiredLogger;
-function requireLogger() {
-  if (hasRequiredLogger) return Logger_1;
-  hasRequiredLogger = 1;
-  const scopeFactory = requireScope();
-  const Buffering = requireBuffering();
-  const _Logger = class _Logger {
-    constructor({
-      allowUnknownLevel = false,
-      dependencies: dependencies2 = {},
-      errorHandler,
-      eventLogger,
-      initializeFn,
-      isDev = false,
-      levels = ["error", "warn", "info", "verbose", "debug", "silly"],
-      logId,
-      transportFactories = {},
-      variables
-    } = {}) {
-      __publicField(this, "dependencies", {});
-      __publicField(this, "errorHandler", null);
-      __publicField(this, "eventLogger", null);
-      __publicField(this, "functions", {});
-      __publicField(this, "hooks", []);
-      __publicField(this, "isDev", false);
-      __publicField(this, "levels", null);
-      __publicField(this, "logId", null);
-      __publicField(this, "scope", null);
-      __publicField(this, "transports", {});
-      __publicField(this, "variables", {});
-      this.addLevel = this.addLevel.bind(this);
-      this.create = this.create.bind(this);
-      this.initialize = this.initialize.bind(this);
-      this.logData = this.logData.bind(this);
-      this.processMessage = this.processMessage.bind(this);
-      this.allowUnknownLevel = allowUnknownLevel;
-      this.buffering = new Buffering(this);
-      this.dependencies = dependencies2;
-      this.initializeFn = initializeFn;
-      this.isDev = isDev;
-      this.levels = levels;
-      this.logId = logId;
-      this.scope = scopeFactory(this);
-      this.transportFactories = transportFactories;
-      this.variables = variables || {};
-      for (const name of this.levels) {
-        this.addLevel(name, false);
-      }
-      this.log = this.info;
-      this.functions.log = this.log;
-      this.errorHandler = errorHandler;
-      errorHandler == null ? void 0 : errorHandler.setOptions({ ...dependencies2, logFn: this.error });
-      this.eventLogger = eventLogger;
-      eventLogger == null ? void 0 : eventLogger.setOptions({ ...dependencies2, logger: this });
-      for (const [name, factory2] of Object.entries(transportFactories)) {
-        this.transports[name] = factory2(this, dependencies2);
-      }
-      _Logger.instances[logId] = this;
-    }
-    static getInstance({ logId }) {
-      return this.instances[logId] || this.instances.default;
-    }
-    addLevel(level, index2 = this.levels.length) {
-      if (index2 !== false) {
-        this.levels.splice(index2, 0, level);
-      }
-      this[level] = (...args) => this.logData(args, { level });
-      this.functions[level] = this[level];
-    }
-    catchErrors(options) {
-      this.processMessage(
-        {
-          data: ["log.catchErrors is deprecated. Use log.errorHandler instead"],
-          level: "warn"
-        },
-        { transports: ["console"] }
-      );
-      return this.errorHandler.startCatching(options);
-    }
-    create(options) {
-      if (typeof options === "string") {
-        options = { logId: options };
-      }
-      return new _Logger({
-        dependencies: this.dependencies,
-        errorHandler: this.errorHandler,
-        initializeFn: this.initializeFn,
-        isDev: this.isDev,
-        transportFactories: this.transportFactories,
-        variables: { ...this.variables },
-        ...options
-      });
-    }
-    compareLevels(passLevel, checkLevel, levels = this.levels) {
-      const pass = levels.indexOf(passLevel);
-      const check = levels.indexOf(checkLevel);
-      if (check === -1 || pass === -1) {
-        return true;
-      }
-      return check <= pass;
-    }
-    initialize(options = {}) {
-      this.initializeFn({ logger: this, ...this.dependencies, ...options });
-    }
-    logData(data2, options = {}) {
-      if (this.buffering.enabled) {
-        this.buffering.addMessage({ data: data2, date: /* @__PURE__ */ new Date(), ...options });
-      } else {
-        this.processMessage({ data: data2, ...options });
-      }
-    }
-    processMessage(message, { transports = this.transports } = {}) {
-      if (message.cmd === "errorHandler") {
-        this.errorHandler.handle(message.error, {
-          errorName: message.errorName,
-          processType: "renderer",
-          showDialog: Boolean(message.showDialog)
-        });
-        return;
-      }
-      let level = message.level;
-      if (!this.allowUnknownLevel) {
-        level = this.levels.includes(message.level) ? message.level : "info";
-      }
-      const normalizedMessage = {
-        date: /* @__PURE__ */ new Date(),
-        logId: this.logId,
-        ...message,
-        level,
-        variables: {
-          ...this.variables,
-          ...message.variables
-        }
-      };
-      for (const [transName, transFn] of this.transportEntries(transports)) {
-        if (typeof transFn !== "function" || transFn.level === false) {
-          continue;
-        }
-        if (!this.compareLevels(transFn.level, message.level)) {
-          continue;
-        }
-        try {
-          const transformedMsg = this.hooks.reduce((msg, hook) => {
-            return msg ? hook(msg, transFn, transName) : msg;
-          }, normalizedMessage);
-          if (transformedMsg) {
-            transFn({ ...transformedMsg, data: [...transformedMsg.data] });
-          }
-        } catch (e) {
-          this.processInternalErrorFn(e);
-        }
-      }
-    }
-    processInternalErrorFn(_e) {
-    }
-    transportEntries(transports = this.transports) {
-      const transportArray = Array.isArray(transports) ? transports : Object.entries(transports);
-      return transportArray.map((item) => {
-        switch (typeof item) {
-          case "string":
-            return this.transports[item] ? [item, this.transports[item]] : null;
-          case "function":
-            return [item.name, item];
-          default:
-            return Array.isArray(item) ? item : null;
-        }
-      }).filter(Boolean);
-    }
-  };
-  __publicField(_Logger, "instances", {});
-  let Logger = _Logger;
-  Logger_1 = Logger;
-  return Logger_1;
-}
-var RendererErrorHandler_1;
-var hasRequiredRendererErrorHandler;
-function requireRendererErrorHandler() {
-  if (hasRequiredRendererErrorHandler) return RendererErrorHandler_1;
-  hasRequiredRendererErrorHandler = 1;
-  const consoleError = console.error;
-  class RendererErrorHandler {
-    constructor({ logFn = null } = {}) {
-      __publicField(this, "logFn", null);
-      __publicField(this, "onError", null);
-      __publicField(this, "showDialog", false);
-      __publicField(this, "preventDefault", true);
-      this.handleError = this.handleError.bind(this);
-      this.handleRejection = this.handleRejection.bind(this);
-      this.startCatching = this.startCatching.bind(this);
-      this.logFn = logFn;
-    }
-    handle(error2, {
-      logFn = this.logFn,
-      errorName = "",
-      onError = this.onError,
-      showDialog = this.showDialog
-    } = {}) {
-      try {
-        if ((onError == null ? void 0 : onError({ error: error2, errorName, processType: "renderer" })) !== false) {
-          logFn({ error: error2, errorName, showDialog });
-        }
-      } catch {
-        consoleError(error2);
-      }
-    }
-    setOptions({ logFn, onError, preventDefault, showDialog }) {
-      if (typeof logFn === "function") {
-        this.logFn = logFn;
-      }
-      if (typeof onError === "function") {
-        this.onError = onError;
-      }
-      if (typeof preventDefault === "boolean") {
-        this.preventDefault = preventDefault;
-      }
-      if (typeof showDialog === "boolean") {
-        this.showDialog = showDialog;
-      }
-    }
-    startCatching({ onError, showDialog } = {}) {
-      if (this.isActive) {
-        return;
-      }
-      this.isActive = true;
-      this.setOptions({ onError, showDialog });
-      window.addEventListener("error", (event) => {
-        var _a2;
-        this.preventDefault && ((_a2 = event.preventDefault) == null ? void 0 : _a2.call(event));
-        this.handleError(event.error || event);
-      });
-      window.addEventListener("unhandledrejection", (event) => {
-        var _a2;
-        this.preventDefault && ((_a2 = event.preventDefault) == null ? void 0 : _a2.call(event));
-        this.handleRejection(event.reason || event);
-      });
-    }
-    handleError(error2) {
-      this.handle(error2, { errorName: "Unhandled" });
-    }
-    handleRejection(reason) {
-      const error2 = reason instanceof Error ? reason : new Error(JSON.stringify(reason));
-      this.handle(error2, { errorName: "Unhandled rejection" });
-    }
-  }
-  RendererErrorHandler_1 = RendererErrorHandler;
-  return RendererErrorHandler_1;
-}
-var transform_1;
-var hasRequiredTransform;
-function requireTransform() {
-  if (hasRequiredTransform) return transform_1;
-  hasRequiredTransform = 1;
-  transform_1 = { transform };
-  function transform({
-    logger,
-    message,
-    transport,
-    initialData = (message == null ? void 0 : message.data) || [],
-    transforms = transport == null ? void 0 : transport.transforms
-  }) {
-    return transforms.reduce((data2, trans) => {
-      if (typeof trans === "function") {
-        return trans({ data: data2, logger, message, transport });
-      }
-      return data2;
-    }, initialData);
-  }
-  return transform_1;
-}
-var console_1$1;
-var hasRequiredConsole$1;
-function requireConsole$1() {
-  if (hasRequiredConsole$1) return console_1$1;
-  hasRequiredConsole$1 = 1;
-  const { transform } = requireTransform();
-  console_1$1 = consoleTransportRendererFactory;
-  const consoleMethods = {
-    error: console.error,
-    warn: console.warn,
-    info: console.info,
-    verbose: console.info,
-    debug: console.debug,
-    silly: console.debug,
-    log: console.log
-  };
-  function consoleTransportRendererFactory(logger) {
-    return Object.assign(transport, {
-      format: "{h}:{i}:{s}.{ms}{scope} › {text}",
-      transforms: [formatDataFn],
-      writeFn({ message: { level, data: data2 } }) {
-        const consoleLogFn = consoleMethods[level] || consoleMethods.info;
-        setTimeout(() => consoleLogFn(...data2));
-      }
-    });
-    function transport(message) {
-      transport.writeFn({
-        message: { ...message, data: transform({ logger, message, transport }) }
-      });
-    }
-  }
-  function formatDataFn({
-    data: data2 = [],
-    logger = {},
-    message = {},
-    transport = {}
-  }) {
-    if (typeof transport.format === "function") {
-      return transport.format({
-        data: data2,
-        level: (message == null ? void 0 : message.level) || "info",
-        logger,
-        message,
-        transport
-      });
-    }
-    if (typeof transport.format !== "string") {
-      return data2;
-    }
-    data2.unshift(transport.format);
-    if (typeof data2[1] === "string" && data2[1].match(/%[1cdfiOos]/)) {
-      data2 = [`${data2[0]}${data2[1]}`, ...data2.slice(2)];
-    }
-    const date = message.date || /* @__PURE__ */ new Date();
-    data2[0] = data2[0].replace(/\{(\w+)}/g, (substring, name) => {
-      var _a2, _b;
-      switch (name) {
-        case "level":
-          return message.level;
-        case "logId":
-          return message.logId;
-        case "scope": {
-          const scope2 = message.scope || ((_a2 = logger.scope) == null ? void 0 : _a2.defaultLabel);
-          return scope2 ? ` (${scope2})` : "";
-        }
-        case "text":
-          return "";
-        case "y":
-          return date.getFullYear().toString(10);
-        case "m":
-          return (date.getMonth() + 1).toString(10).padStart(2, "0");
-        case "d":
-          return date.getDate().toString(10).padStart(2, "0");
-        case "h":
-          return date.getHours().toString(10).padStart(2, "0");
-        case "i":
-          return date.getMinutes().toString(10).padStart(2, "0");
-        case "s":
-          return date.getSeconds().toString(10).padStart(2, "0");
-        case "ms":
-          return date.getMilliseconds().toString(10).padStart(3, "0");
-        case "iso":
-          return date.toISOString();
-        default:
-          return ((_b = message.variables) == null ? void 0 : _b[name]) || substring;
-      }
-    }).trim();
-    return data2;
-  }
-  return console_1$1;
-}
-var ipc$1;
-var hasRequiredIpc$1;
-function requireIpc$1() {
-  if (hasRequiredIpc$1) return ipc$1;
-  hasRequiredIpc$1 = 1;
-  const { transform } = requireTransform();
-  ipc$1 = ipcTransportRendererFactory;
-  const RESTRICTED_TYPES = /* @__PURE__ */ new Set([Promise, WeakMap, WeakSet]);
-  function ipcTransportRendererFactory(logger) {
-    return Object.assign(transport, {
-      depth: 5,
-      transforms: [serializeFn]
-    });
-    function transport(message) {
-      if (!window.__electronLog) {
-        logger.processMessage(
-          {
-            data: ["electron-log: logger isn't initialized in the main process"],
-            level: "error"
-          },
-          { transports: ["console"] }
-        );
-        return;
-      }
-      try {
-        const serialized = transform({
-          initialData: message,
-          logger,
-          message,
-          transport
-        });
-        __electronLog.sendToMain(serialized);
-      } catch (e) {
-        logger.transports.console({
-          data: ["electronLog.transports.ipc", e, "data:", message.data],
-          level: "error"
-        });
-      }
-    }
-  }
-  function isPrimitive(value) {
-    return Object(value) !== value;
-  }
-  function serializeFn({
-    data: data2,
-    depth,
-    seen = /* @__PURE__ */ new WeakSet(),
-    transport = {}
-  } = {}) {
-    const actualDepth = depth || transport.depth || 5;
-    if (seen.has(data2)) {
-      return "[Circular]";
-    }
-    if (actualDepth < 1) {
-      if (isPrimitive(data2)) {
-        return data2;
-      }
-      if (Array.isArray(data2)) {
-        return "[Array]";
-      }
-      return `[${typeof data2}]`;
-    }
-    if (["function", "symbol"].includes(typeof data2)) {
-      return data2.toString();
-    }
-    if (isPrimitive(data2)) {
-      return data2;
-    }
-    if (RESTRICTED_TYPES.has(data2.constructor)) {
-      return `[${data2.constructor.name}]`;
-    }
-    if (Array.isArray(data2)) {
-      return data2.map((item) => serializeFn({
-        data: item,
-        depth: actualDepth - 1,
-        seen
-      }));
-    }
-    if (data2 instanceof Date) {
-      return data2.toISOString();
-    }
-    if (data2 instanceof Error) {
-      return data2.stack;
-    }
-    if (data2 instanceof Map) {
-      return new Map(
-        Array.from(data2).map(([key2, value]) => [
-          serializeFn({ data: key2, depth: actualDepth - 1, seen }),
-          serializeFn({ data: value, depth: actualDepth - 1, seen })
-        ])
-      );
-    }
-    if (data2 instanceof Set) {
-      return new Set(
-        Array.from(data2).map(
-          (val2) => serializeFn({ data: val2, depth: actualDepth - 1, seen })
-        )
-      );
-    }
-    seen.add(data2);
-    return Object.fromEntries(
-      Object.entries(data2).map(
-        ([key2, value]) => [
-          key2,
-          serializeFn({ data: value, depth: actualDepth - 1, seen })
-        ]
-      )
-    );
-  }
-  return ipc$1;
-}
-var hasRequiredRenderer;
-function requireRenderer() {
-  if (hasRequiredRenderer) return renderer.exports;
-  hasRequiredRenderer = 1;
-  (function(module) {
-    const Logger = requireLogger();
-    const RendererErrorHandler = requireRendererErrorHandler();
-    const transportConsole = requireConsole$1();
-    const transportIpc = requireIpc$1();
-    if (typeof process === "object" && process.type === "browser") {
-      console.warn(
-        "electron-log/renderer is loaded in the main process. It could cause unexpected behaviour."
-      );
-    }
-    module.exports = createLogger();
-    module.exports.Logger = Logger;
-    module.exports.default = module.exports;
-    function createLogger() {
-      const logger = new Logger({
-        allowUnknownLevel: true,
-        errorHandler: new RendererErrorHandler(),
-        initializeFn: () => {
-        },
-        logId: "default",
-        transportFactories: {
-          console: transportConsole,
-          ipc: transportIpc
-        },
-        variables: {
-          processType: "renderer"
-        }
-      });
-      logger.errorHandler.setOptions({
-        logFn({ error: error2, errorName, showDialog }) {
-          logger.transports.console({
-            data: [errorName, error2].filter(Boolean),
-            level: "error"
-          });
-          logger.transports.ipc({
-            cmd: "errorHandler",
-            error: {
-              cause: error2 == null ? void 0 : error2.cause,
-              code: error2 == null ? void 0 : error2.code,
-              name: error2 == null ? void 0 : error2.name,
-              message: error2 == null ? void 0 : error2.message,
-              stack: error2 == null ? void 0 : error2.stack
-            },
-            errorName,
-            logId: logger.logId,
-            showDialog
-          });
-        }
-      });
-      if (typeof window === "object") {
-        window.addEventListener("message", (event) => {
-          const { cmd, logId, ...message } = event.data || {};
-          const instance = Logger.getInstance({ logId });
-          if (cmd === "message") {
-            instance.processMessage(message, { transports: ["console"] });
-          }
-        });
-      }
-      return new Proxy(logger, {
-        get(target, prop2) {
-          if (typeof target[prop2] !== "undefined") {
-            return target[prop2];
-          }
-          return (...data2) => logger.logData(data2, { level: prop2 });
-        }
-      });
-    }
-  })(renderer);
-  return renderer.exports;
-}
-var packageJson;
-var hasRequiredPackageJson;
-function requirePackageJson() {
-  if (hasRequiredPackageJson) return packageJson;
-  hasRequiredPackageJson = 1;
-  const fs2 = require$$0$2;
-  const path2 = require$$1$2;
-  packageJson = {
-    findAndReadPackageJson,
-    tryReadJsonAt
-  };
-  function findAndReadPackageJson() {
-    return tryReadJsonAt(getMainModulePath()) || tryReadJsonAt(extractPathFromArgs()) || tryReadJsonAt(process.resourcesPath, "app.asar") || tryReadJsonAt(process.resourcesPath, "app") || tryReadJsonAt(process.cwd()) || { name: void 0, version: void 0 };
-  }
-  function tryReadJsonAt(...searchPaths) {
-    if (!searchPaths[0]) {
-      return void 0;
-    }
-    try {
-      const searchPath = path2.join(...searchPaths);
-      const fileName = findUp2("package.json", searchPath);
-      if (!fileName) {
-        return void 0;
-      }
-      const json2 = JSON.parse(fs2.readFileSync(fileName, "utf8"));
-      const name = (json2 == null ? void 0 : json2.productName) || (json2 == null ? void 0 : json2.name);
-      if (!name || name.toLowerCase() === "electron") {
-        return void 0;
-      }
-      if (name) {
-        return { name, version: json2 == null ? void 0 : json2.version };
-      }
-      return void 0;
-    } catch (e) {
-      return void 0;
-    }
-  }
-  function findUp2(fileName, cwd2) {
-    let currentPath = cwd2;
-    while (true) {
-      const parsedPath = path2.parse(currentPath);
-      const root2 = parsedPath.root;
-      const dir = parsedPath.dir;
-      if (fs2.existsSync(path2.join(currentPath, fileName))) {
-        return path2.resolve(path2.join(currentPath, fileName));
-      }
-      if (currentPath === root2) {
-        return null;
-      }
-      currentPath = dir;
-    }
-  }
-  function extractPathFromArgs() {
-    const matchedArgs = process.argv.filter((arg) => {
-      return arg.indexOf("--user-data-dir=") === 0;
-    });
-    if (matchedArgs.length === 0 || typeof matchedArgs[0] !== "string") {
-      return null;
-    }
-    const userDataDir = matchedArgs[0];
-    return userDataDir.replace("--user-data-dir=", "");
-  }
-  function getMainModulePath() {
-    var _a2;
-    try {
-      return (_a2 = require.main) == null ? void 0 : _a2.filename;
-    } catch {
-      return void 0;
-    }
-  }
-  return packageJson;
-}
-var NodeExternalApi_1;
-var hasRequiredNodeExternalApi;
-function requireNodeExternalApi() {
-  if (hasRequiredNodeExternalApi) return NodeExternalApi_1;
-  hasRequiredNodeExternalApi = 1;
-  const childProcess = require$$0$3;
-  const os2 = require$$1$3;
-  const path2 = require$$1$2;
-  const packageJson2 = requirePackageJson();
-  class NodeExternalApi {
-    constructor() {
-      __publicField(this, "appName");
-      __publicField(this, "appPackageJson");
-      __publicField(this, "platform", process.platform);
-    }
-    getAppLogPath(appName = this.getAppName()) {
-      if (this.platform === "darwin") {
-        return path2.join(this.getSystemPathHome(), "Library/Logs", appName);
-      }
-      return path2.join(this.getAppUserDataPath(appName), "logs");
-    }
-    getAppName() {
-      var _a2;
-      const appName = this.appName || ((_a2 = this.getAppPackageJson()) == null ? void 0 : _a2.name);
-      if (!appName) {
-        throw new Error(
-          "electron-log can't determine the app name. It tried these methods:\n1. Use `electron.app.name`\n2. Use productName or name from the nearest package.json`\nYou can also set it through log.transports.file.setAppName()"
-        );
-      }
-      return appName;
-    }
-    /**
-     * @private
-     * @returns {undefined}
-     */
-    getAppPackageJson() {
-      if (typeof this.appPackageJson !== "object") {
-        this.appPackageJson = packageJson2.findAndReadPackageJson();
-      }
-      return this.appPackageJson;
-    }
-    getAppUserDataPath(appName = this.getAppName()) {
-      return appName ? path2.join(this.getSystemPathAppData(), appName) : void 0;
-    }
-    getAppVersion() {
-      var _a2;
-      return (_a2 = this.getAppPackageJson()) == null ? void 0 : _a2.version;
-    }
-    getElectronLogPath() {
-      return this.getAppLogPath();
-    }
-    getMacOsVersion() {
-      const release = Number(os2.release().split(".")[0]);
-      if (release <= 19) {
-        return `10.${release - 4}`;
-      }
-      return release - 9;
-    }
-    /**
-     * @protected
-     * @returns {string}
-     */
-    getOsVersion() {
-      let osName = os2.type().replace("_", " ");
-      let osVersion = os2.release();
-      if (osName === "Darwin") {
-        osName = "macOS";
-        osVersion = this.getMacOsVersion();
-      }
-      return `${osName} ${osVersion}`;
-    }
-    /**
-     * @return {PathVariables}
-     */
-    getPathVariables() {
-      const appName = this.getAppName();
-      const appVersion = this.getAppVersion();
-      const self2 = this;
-      return {
-        appData: this.getSystemPathAppData(),
-        appName,
-        appVersion,
-        get electronDefaultDir() {
-          return self2.getElectronLogPath();
-        },
-        home: this.getSystemPathHome(),
-        libraryDefaultDir: this.getAppLogPath(appName),
-        libraryTemplate: this.getAppLogPath("{appName}"),
-        temp: this.getSystemPathTemp(),
-        userData: this.getAppUserDataPath(appName)
-      };
-    }
-    getSystemPathAppData() {
-      const home = this.getSystemPathHome();
-      switch (this.platform) {
-        case "darwin": {
-          return path2.join(home, "Library/Application Support");
-        }
-        case "win32": {
-          return process.env.APPDATA || path2.join(home, "AppData/Roaming");
-        }
-        default: {
-          return process.env.XDG_CONFIG_HOME || path2.join(home, ".config");
-        }
-      }
-    }
-    getSystemPathHome() {
-      var _a2;
-      return ((_a2 = os2.homedir) == null ? void 0 : _a2.call(os2)) || process.env.HOME;
-    }
-    getSystemPathTemp() {
-      return os2.tmpdir();
-    }
-    getVersions() {
-      return {
-        app: `${this.getAppName()} ${this.getAppVersion()}`,
-        electron: void 0,
-        os: this.getOsVersion()
-      };
-    }
-    isDev() {
-      return process.env.NODE_ENV === "development" || process.env.ELECTRON_IS_DEV === "1";
-    }
-    isElectron() {
-      return Boolean(process.versions.electron);
-    }
-    onAppEvent(_eventName, _handler) {
-    }
-    onAppReady(handler) {
-      handler();
-    }
-    onEveryWebContentsEvent(eventName, handler) {
-    }
-    /**
-     * Listen to async messages sent from opposite process
-     * @param {string} channel
-     * @param {function} listener
-     */
-    onIpc(channel, listener) {
-    }
-    onIpcInvoke(channel, listener) {
-    }
-    /**
-     * @param {string} url
-     * @param {Function} [logFunction]
-     */
-    openUrl(url2, logFunction = console.error) {
-      const startMap = { darwin: "open", win32: "start", linux: "xdg-open" };
-      const start = startMap[process.platform] || "xdg-open";
-      childProcess.exec(`${start} ${url2}`, {}, (err) => {
-        if (err) {
-          logFunction(err);
-        }
-      });
-    }
-    setAppName(appName) {
-      this.appName = appName;
-    }
-    setPlatform(platform2) {
-      this.platform = platform2;
-    }
-    setPreloadFileForSessions({
-      filePath,
-      // eslint-disable-line no-unused-vars
-      includeFutureSession = true,
-      // eslint-disable-line no-unused-vars
-      getSessions = () => []
-      // eslint-disable-line no-unused-vars
-    }) {
-    }
-    /**
-     * Sent a message to opposite process
-     * @param {string} channel
-     * @param {any} message
-     */
-    sendIpc(channel, message) {
-    }
-    showErrorBox(title2, message) {
-    }
-  }
-  NodeExternalApi_1 = NodeExternalApi;
-  return NodeExternalApi_1;
-}
-var ElectronExternalApi_1;
-var hasRequiredElectronExternalApi;
-function requireElectronExternalApi() {
-  if (hasRequiredElectronExternalApi) return ElectronExternalApi_1;
-  hasRequiredElectronExternalApi = 1;
-  const path2 = require$$1$2;
-  const NodeExternalApi = requireNodeExternalApi();
-  class ElectronExternalApi extends NodeExternalApi {
-    /**
-     * @param {object} options
-     * @param {typeof Electron} [options.electron]
-     */
-    constructor({ electron } = {}) {
-      super();
-      /**
-       * @type {typeof Electron}
-       */
-      __publicField(this, "electron");
-      this.electron = electron;
-    }
-    getAppName() {
-      var _a2, _b;
-      let appName;
-      try {
-        appName = this.appName || ((_a2 = this.electron.app) == null ? void 0 : _a2.name) || ((_b = this.electron.app) == null ? void 0 : _b.getName());
-      } catch {
-      }
-      return appName || super.getAppName();
-    }
-    getAppUserDataPath(appName) {
-      return this.getPath("userData") || super.getAppUserDataPath(appName);
-    }
-    getAppVersion() {
-      var _a2;
-      let appVersion;
-      try {
-        appVersion = (_a2 = this.electron.app) == null ? void 0 : _a2.getVersion();
-      } catch {
-      }
-      return appVersion || super.getAppVersion();
-    }
-    getElectronLogPath() {
-      return this.getPath("logs") || super.getElectronLogPath();
-    }
-    /**
-     * @private
-     * @param {any} name
-     * @returns {string|undefined}
-     */
-    getPath(name) {
-      var _a2;
-      try {
-        return (_a2 = this.electron.app) == null ? void 0 : _a2.getPath(name);
-      } catch {
-        return void 0;
-      }
-    }
-    getVersions() {
-      return {
-        app: `${this.getAppName()} ${this.getAppVersion()}`,
-        electron: `Electron ${process.versions.electron}`,
-        os: this.getOsVersion()
-      };
-    }
-    getSystemPathAppData() {
-      return this.getPath("appData") || super.getSystemPathAppData();
-    }
-    isDev() {
-      var _a2;
-      if (((_a2 = this.electron.app) == null ? void 0 : _a2.isPackaged) !== void 0) {
-        return !this.electron.app.isPackaged;
-      }
-      if (typeof process.execPath === "string") {
-        const execFileName = path2.basename(process.execPath).toLowerCase();
-        return execFileName.startsWith("electron");
-      }
-      return super.isDev();
-    }
-    onAppEvent(eventName, handler) {
-      var _a2;
-      (_a2 = this.electron.app) == null ? void 0 : _a2.on(eventName, handler);
-      return () => {
-        var _a3;
-        (_a3 = this.electron.app) == null ? void 0 : _a3.off(eventName, handler);
-      };
-    }
-    onAppReady(handler) {
-      var _a2, _b, _c;
-      if ((_a2 = this.electron.app) == null ? void 0 : _a2.isReady()) {
-        handler();
-      } else if ((_b = this.electron.app) == null ? void 0 : _b.once) {
-        (_c = this.electron.app) == null ? void 0 : _c.once("ready", handler);
-      } else {
-        handler();
-      }
-    }
-    onEveryWebContentsEvent(eventName, handler) {
-      var _a2, _b, _c;
-      (_b = (_a2 = this.electron.webContents) == null ? void 0 : _a2.getAllWebContents()) == null ? void 0 : _b.forEach((webContents) => {
-        webContents.on(eventName, handler);
-      });
-      (_c = this.electron.app) == null ? void 0 : _c.on("web-contents-created", onWebContentsCreated);
-      return () => {
-        var _a3, _b2;
-        (_a3 = this.electron.webContents) == null ? void 0 : _a3.getAllWebContents().forEach((webContents) => {
-          webContents.off(eventName, handler);
-        });
-        (_b2 = this.electron.app) == null ? void 0 : _b2.off("web-contents-created", onWebContentsCreated);
-      };
-      function onWebContentsCreated(_, webContents) {
-        webContents.on(eventName, handler);
-      }
-    }
-    /**
-     * Listen to async messages sent from opposite process
-     * @param {string} channel
-     * @param {function} listener
-     */
-    onIpc(channel, listener) {
-      var _a2;
-      (_a2 = this.electron.ipcMain) == null ? void 0 : _a2.on(channel, listener);
-    }
-    onIpcInvoke(channel, listener) {
-      var _a2, _b;
-      (_b = (_a2 = this.electron.ipcMain) == null ? void 0 : _a2.handle) == null ? void 0 : _b.call(_a2, channel, listener);
-    }
-    /**
-     * @param {string} url
-     * @param {Function} [logFunction]
-     */
-    openUrl(url2, logFunction = console.error) {
-      var _a2;
-      (_a2 = this.electron.shell) == null ? void 0 : _a2.openExternal(url2).catch(logFunction);
-    }
-    setPreloadFileForSessions({
-      filePath,
-      includeFutureSession = true,
-      getSessions = () => {
-        var _a2;
-        return [(_a2 = this.electron.session) == null ? void 0 : _a2.defaultSession];
-      }
-    }) {
-      for (const session of getSessions().filter(Boolean)) {
-        setPreload(session);
-      }
-      if (includeFutureSession) {
-        this.onAppEvent("session-created", (session) => {
-          setPreload(session);
-        });
-      }
-      function setPreload(session) {
-        if (typeof session.registerPreloadScript === "function") {
-          session.registerPreloadScript({
-            filePath,
-            id: "electron-log-preload",
-            type: "frame"
-          });
-        } else {
-          session.setPreloads([...session.getPreloads(), filePath]);
-        }
-      }
-    }
-    /**
-     * Sent a message to opposite process
-     * @param {string} channel
-     * @param {any} message
-     */
-    sendIpc(channel, message) {
-      var _a2, _b;
-      (_b = (_a2 = this.electron.BrowserWindow) == null ? void 0 : _a2.getAllWindows()) == null ? void 0 : _b.forEach((wnd) => {
-        var _a3, _b2;
-        if (((_a3 = wnd.webContents) == null ? void 0 : _a3.isDestroyed()) === false && ((_b2 = wnd.webContents) == null ? void 0 : _b2.isCrashed()) === false) {
-          wnd.webContents.send(channel, message);
-        }
-      });
-    }
-    showErrorBox(title2, message) {
-      var _a2;
-      (_a2 = this.electron.dialog) == null ? void 0 : _a2.showErrorBox(title2, message);
-    }
-  }
-  ElectronExternalApi_1 = ElectronExternalApi;
-  return ElectronExternalApi_1;
-}
-var initialize;
-var hasRequiredInitialize;
-function requireInitialize() {
-  if (hasRequiredInitialize) return initialize;
-  hasRequiredInitialize = 1;
-  const fs2 = require$$0$2;
-  const os2 = require$$1$3;
-  const path2 = require$$1$2;
-  const preloadInitializeFn = requireElectronLogPreload();
-  let preloadInitialized = false;
-  let spyConsoleInitialized = false;
-  initialize = {
-    initialize({
-      externalApi,
-      getSessions,
-      includeFutureSession,
-      logger,
-      preload = true,
-      spyRendererConsole = false
-    }) {
-      externalApi.onAppReady(() => {
-        try {
-          if (preload) {
-            initializePreload({
-              externalApi,
-              getSessions,
-              includeFutureSession,
-              logger,
-              preloadOption: preload
-            });
-          }
-          if (spyRendererConsole) {
-            initializeSpyRendererConsole({ externalApi, logger });
-          }
-        } catch (err) {
-          logger.warn(err);
-        }
-      });
-    }
-  };
-  function initializePreload({
-    externalApi,
-    getSessions,
-    includeFutureSession,
-    logger,
-    preloadOption
-  }) {
-    let preloadPath = typeof preloadOption === "string" ? preloadOption : void 0;
-    if (preloadInitialized) {
-      logger.warn(new Error("log.initialize({ preload }) already called").stack);
-      return;
-    }
-    preloadInitialized = true;
-    try {
-      preloadPath = path2.resolve(
-        __dirname,
-        "../renderer/electron-log-preload.js"
-      );
-    } catch {
-    }
-    if (!preloadPath || !fs2.existsSync(preloadPath)) {
-      preloadPath = path2.join(
-        externalApi.getAppUserDataPath() || os2.tmpdir(),
-        "electron-log-preload.js"
-      );
-      const preloadCode = `
-      try {
-        (${preloadInitializeFn.toString()})(require('electron'));
-      } catch(e) {
-        console.error(e);
-      }
-    `;
-      fs2.writeFileSync(preloadPath, preloadCode, "utf8");
-    }
-    externalApi.setPreloadFileForSessions({
-      filePath: preloadPath,
-      includeFutureSession,
-      getSessions
-    });
-  }
-  function initializeSpyRendererConsole({ externalApi, logger }) {
-    if (spyConsoleInitialized) {
-      logger.warn(
-        new Error("log.initialize({ spyRendererConsole }) already called").stack
-      );
-      return;
-    }
-    spyConsoleInitialized = true;
-    const levels = ["debug", "info", "warn", "error"];
-    externalApi.onEveryWebContentsEvent(
-      "console-message",
-      (event, level, message) => {
-        logger.processMessage({
-          data: [message],
-          level: levels[level],
-          variables: { processType: "renderer" }
-        });
-      }
-    );
-  }
-  return initialize;
-}
-var ErrorHandler_1;
-var hasRequiredErrorHandler;
-function requireErrorHandler() {
-  if (hasRequiredErrorHandler) return ErrorHandler_1;
-  hasRequiredErrorHandler = 1;
-  class ErrorHandler {
-    constructor({
-      externalApi,
-      logFn = void 0,
-      onError = void 0,
-      showDialog = void 0
-    } = {}) {
-      __publicField(this, "externalApi");
-      __publicField(this, "isActive", false);
-      __publicField(this, "logFn");
-      __publicField(this, "onError");
-      __publicField(this, "showDialog", true);
-      this.createIssue = this.createIssue.bind(this);
-      this.handleError = this.handleError.bind(this);
-      this.handleRejection = this.handleRejection.bind(this);
-      this.setOptions({ externalApi, logFn, onError, showDialog });
-      this.startCatching = this.startCatching.bind(this);
-      this.stopCatching = this.stopCatching.bind(this);
-    }
-    handle(error2, {
-      logFn = this.logFn,
-      onError = this.onError,
-      processType = "browser",
-      showDialog = this.showDialog,
-      errorName = ""
-    } = {}) {
-      var _a2;
-      error2 = normalizeError(error2);
-      try {
-        if (typeof onError === "function") {
-          const versions = ((_a2 = this.externalApi) == null ? void 0 : _a2.getVersions()) || {};
-          const createIssue = this.createIssue;
-          const result = onError({
-            createIssue,
-            error: error2,
-            errorName,
-            processType,
-            versions
-          });
-          if (result === false) {
-            return;
-          }
-        }
-        errorName ? logFn(errorName, error2) : logFn(error2);
-        if (showDialog && !errorName.includes("rejection") && this.externalApi) {
-          this.externalApi.showErrorBox(
-            `A JavaScript error occurred in the ${processType} process`,
-            error2.stack
-          );
-        }
-      } catch {
-        console.error(error2);
-      }
-    }
-    setOptions({ externalApi, logFn, onError, showDialog }) {
-      if (typeof externalApi === "object") {
-        this.externalApi = externalApi;
-      }
-      if (typeof logFn === "function") {
-        this.logFn = logFn;
-      }
-      if (typeof onError === "function") {
-        this.onError = onError;
-      }
-      if (typeof showDialog === "boolean") {
-        this.showDialog = showDialog;
-      }
-    }
-    startCatching({ onError, showDialog } = {}) {
-      if (this.isActive) {
-        return;
-      }
-      this.isActive = true;
-      this.setOptions({ onError, showDialog });
-      process.on("uncaughtException", this.handleError);
-      process.on("unhandledRejection", this.handleRejection);
-    }
-    stopCatching() {
-      this.isActive = false;
-      process.removeListener("uncaughtException", this.handleError);
-      process.removeListener("unhandledRejection", this.handleRejection);
-    }
-    createIssue(pageUrl, queryParams) {
-      var _a2;
-      (_a2 = this.externalApi) == null ? void 0 : _a2.openUrl(
-        `${pageUrl}?${new URLSearchParams(queryParams).toString()}`
-      );
-    }
-    handleError(error2) {
-      this.handle(error2, { errorName: "Unhandled" });
-    }
-    handleRejection(reason) {
-      const error2 = reason instanceof Error ? reason : new Error(JSON.stringify(reason));
-      this.handle(error2, { errorName: "Unhandled rejection" });
-    }
-  }
-  function normalizeError(e) {
-    if (e instanceof Error) {
-      return e;
-    }
-    if (e && typeof e === "object") {
-      if (e.message) {
-        return Object.assign(new Error(e.message), e);
-      }
-      try {
-        return new Error(JSON.stringify(e));
-      } catch (serErr) {
-        return new Error(`Couldn't normalize error ${String(e)}: ${serErr}`);
-      }
-    }
-    return new Error(`Can't normalize error ${String(e)}`);
-  }
-  ErrorHandler_1 = ErrorHandler;
-  return ErrorHandler_1;
-}
-var EventLogger_1;
-var hasRequiredEventLogger;
-function requireEventLogger() {
-  if (hasRequiredEventLogger) return EventLogger_1;
-  hasRequiredEventLogger = 1;
-  class EventLogger {
-    constructor(options = {}) {
-      __publicField(this, "disposers", []);
-      __publicField(this, "format", "{eventSource}#{eventName}:");
-      __publicField(this, "formatters", {
-        app: {
-          "certificate-error": ({ args }) => {
-            return this.arrayToObject(args.slice(1, 4), [
-              "url",
-              "error",
-              "certificate"
-            ]);
-          },
-          "child-process-gone": ({ args }) => {
-            return args.length === 1 ? args[0] : args;
-          },
-          "render-process-gone": ({ args: [webContents, details] }) => {
-            return details && typeof details === "object" ? { ...details, ...this.getWebContentsDetails(webContents) } : [];
-          }
-        },
-        webContents: {
-          "console-message": ({ args: [level, message, line, sourceId] }) => {
-            if (level < 3) {
-              return void 0;
-            }
-            return { message, source: `${sourceId}:${line}` };
-          },
-          "did-fail-load": ({ args }) => {
-            return this.arrayToObject(args, [
-              "errorCode",
-              "errorDescription",
-              "validatedURL",
-              "isMainFrame",
-              "frameProcessId",
-              "frameRoutingId"
-            ]);
-          },
-          "did-fail-provisional-load": ({ args }) => {
-            return this.arrayToObject(args, [
-              "errorCode",
-              "errorDescription",
-              "validatedURL",
-              "isMainFrame",
-              "frameProcessId",
-              "frameRoutingId"
-            ]);
-          },
-          "plugin-crashed": ({ args }) => {
-            return this.arrayToObject(args, ["name", "version"]);
-          },
-          "preload-error": ({ args }) => {
-            return this.arrayToObject(args, ["preloadPath", "error"]);
-          }
-        }
-      });
-      __publicField(this, "events", {
-        app: {
-          "certificate-error": true,
-          "child-process-gone": true,
-          "render-process-gone": true
-        },
-        webContents: {
-          // 'console-message': true,
-          "did-fail-load": true,
-          "did-fail-provisional-load": true,
-          "plugin-crashed": true,
-          "preload-error": true,
-          "unresponsive": true
-        }
-      });
-      __publicField(this, "externalApi");
-      __publicField(this, "level", "error");
-      __publicField(this, "scope", "");
-      this.setOptions(options);
-    }
-    setOptions({
-      events: events2,
-      externalApi,
-      level,
-      logger,
-      format: format2,
-      formatters,
-      scope: scope2
-    }) {
-      if (typeof events2 === "object") {
-        this.events = events2;
-      }
-      if (typeof externalApi === "object") {
-        this.externalApi = externalApi;
-      }
-      if (typeof level === "string") {
-        this.level = level;
-      }
-      if (typeof logger === "object") {
-        this.logger = logger;
-      }
-      if (typeof format2 === "string" || typeof format2 === "function") {
-        this.format = format2;
-      }
-      if (typeof formatters === "object") {
-        this.formatters = formatters;
-      }
-      if (typeof scope2 === "string") {
-        this.scope = scope2;
-      }
-    }
-    startLogging(options = {}) {
-      this.setOptions(options);
-      this.disposeListeners();
-      for (const eventName of this.getEventNames(this.events.app)) {
-        this.disposers.push(
-          this.externalApi.onAppEvent(eventName, (...handlerArgs) => {
-            this.handleEvent({ eventSource: "app", eventName, handlerArgs });
-          })
-        );
-      }
-      for (const eventName of this.getEventNames(this.events.webContents)) {
-        this.disposers.push(
-          this.externalApi.onEveryWebContentsEvent(
-            eventName,
-            (...handlerArgs) => {
-              this.handleEvent(
-                { eventSource: "webContents", eventName, handlerArgs }
-              );
-            }
-          )
-        );
-      }
-    }
-    stopLogging() {
-      this.disposeListeners();
-    }
-    arrayToObject(array, fieldNames) {
-      const obj = {};
-      fieldNames.forEach((fieldName, index2) => {
-        obj[fieldName] = array[index2];
-      });
-      if (array.length > fieldNames.length) {
-        obj.unknownArgs = array.slice(fieldNames.length);
-      }
-      return obj;
-    }
-    disposeListeners() {
-      this.disposers.forEach((disposer) => disposer());
-      this.disposers = [];
-    }
-    formatEventLog({ eventName, eventSource, handlerArgs }) {
-      var _a2;
-      const [event, ...args] = handlerArgs;
-      if (typeof this.format === "function") {
-        return this.format({ args, event, eventName, eventSource });
-      }
-      const formatter = (_a2 = this.formatters[eventSource]) == null ? void 0 : _a2[eventName];
-      let formattedArgs = args;
-      if (typeof formatter === "function") {
-        formattedArgs = formatter({ args, event, eventName, eventSource });
-      }
-      if (!formattedArgs) {
-        return void 0;
-      }
-      const eventData = {};
-      if (Array.isArray(formattedArgs)) {
-        eventData.args = formattedArgs;
-      } else if (typeof formattedArgs === "object") {
-        Object.assign(eventData, formattedArgs);
-      }
-      if (eventSource === "webContents") {
-        Object.assign(eventData, this.getWebContentsDetails(event == null ? void 0 : event.sender));
-      }
-      const title2 = this.format.replace("{eventSource}", eventSource === "app" ? "App" : "WebContents").replace("{eventName}", eventName);
-      return [title2, eventData];
-    }
-    getEventNames(eventMap) {
-      if (!eventMap || typeof eventMap !== "object") {
-        return [];
-      }
-      return Object.entries(eventMap).filter(([_, listen]) => listen).map(([eventName]) => eventName);
-    }
-    getWebContentsDetails(webContents) {
-      if (!(webContents == null ? void 0 : webContents.loadURL)) {
-        return {};
-      }
-      try {
-        return {
-          webContents: {
-            id: webContents.id,
-            url: webContents.getURL()
-          }
-        };
-      } catch {
-        return {};
-      }
-    }
-    handleEvent({ eventName, eventSource, handlerArgs }) {
-      var _a2;
-      const log2 = this.formatEventLog({ eventName, eventSource, handlerArgs });
-      if (log2) {
-        const logFns = this.scope ? this.logger.scope(this.scope) : this.logger;
-        (_a2 = logFns == null ? void 0 : logFns[this.level]) == null ? void 0 : _a2.call(logFns, ...log2);
-      }
-    }
-  }
-  EventLogger_1 = EventLogger;
-  return EventLogger_1;
-}
-var format$6;
-var hasRequiredFormat;
-function requireFormat() {
-  if (hasRequiredFormat) return format$6;
-  hasRequiredFormat = 1;
-  const { transform } = requireTransform();
-  format$6 = {
-    concatFirstStringElements,
-    formatScope,
-    formatText,
-    formatVariables,
-    timeZoneFromOffset,
-    format({ message, logger, transport, data: data2 = message == null ? void 0 : message.data }) {
-      switch (typeof transport.format) {
-        case "string": {
-          return transform({
-            message,
-            logger,
-            transforms: [formatVariables, formatScope, formatText],
-            transport,
-            initialData: [transport.format, ...data2]
-          });
-        }
-        case "function": {
-          return transport.format({
-            data: data2,
-            level: (message == null ? void 0 : message.level) || "info",
-            logger,
-            message,
-            transport
-          });
-        }
-        default: {
-          return data2;
-        }
-      }
-    }
-  };
-  function concatFirstStringElements({ data: data2 }) {
-    if (typeof data2[0] !== "string" || typeof data2[1] !== "string") {
-      return data2;
-    }
-    if (data2[0].match(/%[1cdfiOos]/)) {
-      return data2;
-    }
-    return [`${data2[0]} ${data2[1]}`, ...data2.slice(2)];
-  }
-  function timeZoneFromOffset(minutesOffset) {
-    const minutesPositive = Math.abs(minutesOffset);
-    const sign3 = minutesOffset > 0 ? "-" : "+";
-    const hours = Math.floor(minutesPositive / 60).toString().padStart(2, "0");
-    const minutes = (minutesPositive % 60).toString().padStart(2, "0");
-    return `${sign3}${hours}:${minutes}`;
-  }
-  function formatScope({ data: data2, logger, message }) {
-    const { defaultLabel, labelLength } = (logger == null ? void 0 : logger.scope) || {};
-    const template = data2[0];
-    let label = message.scope;
-    if (!label) {
-      label = defaultLabel;
-    }
-    let scopeText;
-    if (label === "") {
-      scopeText = labelLength > 0 ? "".padEnd(labelLength + 3) : "";
-    } else if (typeof label === "string") {
-      scopeText = ` (${label})`.padEnd(labelLength + 3);
-    } else {
-      scopeText = "";
-    }
-    data2[0] = template.replace("{scope}", scopeText);
-    return data2;
-  }
-  function formatVariables({ data: data2, message }) {
-    let template = data2[0];
-    if (typeof template !== "string") {
-      return data2;
-    }
-    template = template.replace("{level}]", `${message.level}]`.padEnd(6, " "));
-    const date = message.date || /* @__PURE__ */ new Date();
-    data2[0] = template.replace(/\{(\w+)}/g, (substring, name) => {
-      var _a2;
-      switch (name) {
-        case "level":
-          return message.level || "info";
-        case "logId":
-          return message.logId;
-        case "y":
-          return date.getFullYear().toString(10);
-        case "m":
-          return (date.getMonth() + 1).toString(10).padStart(2, "0");
-        case "d":
-          return date.getDate().toString(10).padStart(2, "0");
-        case "h":
-          return date.getHours().toString(10).padStart(2, "0");
-        case "i":
-          return date.getMinutes().toString(10).padStart(2, "0");
-        case "s":
-          return date.getSeconds().toString(10).padStart(2, "0");
-        case "ms":
-          return date.getMilliseconds().toString(10).padStart(3, "0");
-        case "z":
-          return timeZoneFromOffset(date.getTimezoneOffset());
-        case "iso":
-          return date.toISOString();
-        default: {
-          return ((_a2 = message.variables) == null ? void 0 : _a2[name]) || substring;
-        }
-      }
-    }).trim();
-    return data2;
-  }
-  function formatText({ data: data2 }) {
-    const template = data2[0];
-    if (typeof template !== "string") {
-      return data2;
-    }
-    const textTplPosition = template.lastIndexOf("{text}");
-    if (textTplPosition === template.length - 6) {
-      data2[0] = template.replace(/\s?{text}/, "");
-      if (data2[0] === "") {
-        data2.shift();
-      }
-      return data2;
-    }
-    const templatePieces = template.split("{text}");
-    let result = [];
-    if (templatePieces[0] !== "") {
-      result.push(templatePieces[0]);
-    }
-    result = result.concat(data2.slice(1));
-    if (templatePieces[1] !== "") {
-      result.push(templatePieces[1]);
-    }
-    return result;
-  }
-  return format$6;
-}
-var object = { exports: {} };
-var hasRequiredObject;
-function requireObject() {
-  if (hasRequiredObject) return object.exports;
-  hasRequiredObject = 1;
-  (function(module) {
-    const util2 = require$$1$4;
-    module.exports = {
-      serialize: serialize2,
-      maxDepth({ data: data2, transport, depth = (transport == null ? void 0 : transport.depth) ?? 6 }) {
-        if (!data2) {
-          return data2;
-        }
-        if (depth < 1) {
-          if (Array.isArray(data2)) return "[array]";
-          if (typeof data2 === "object" && data2) return "[object]";
-          return data2;
-        }
-        if (Array.isArray(data2)) {
-          return data2.map((child) => module.exports.maxDepth({
-            data: child,
-            depth: depth - 1
-          }));
-        }
-        if (typeof data2 !== "object") {
-          return data2;
-        }
-        if (data2 && typeof data2.toISOString === "function") {
-          return data2;
-        }
-        if (data2 === null) {
-          return null;
-        }
-        if (data2 instanceof Error) {
-          return data2;
-        }
-        const newJson = {};
-        for (const i in data2) {
-          if (!Object.prototype.hasOwnProperty.call(data2, i)) continue;
-          newJson[i] = module.exports.maxDepth({
-            data: data2[i],
-            depth: depth - 1
-          });
-        }
-        return newJson;
-      },
-      toJSON({ data: data2 }) {
-        return JSON.parse(JSON.stringify(data2, createSerializer()));
-      },
-      toString({ data: data2, transport }) {
-        const inspectOptions = (transport == null ? void 0 : transport.inspectOptions) || {};
-        const simplifiedData = data2.map((item) => {
-          if (item === void 0) {
-            return void 0;
-          }
-          try {
-            const str2 = JSON.stringify(item, createSerializer(), "  ");
-            return str2 === void 0 ? void 0 : JSON.parse(str2);
-          } catch (e) {
-            return item;
-          }
-        });
-        return util2.formatWithOptions(inspectOptions, ...simplifiedData);
-      }
-    };
-    function createSerializer(options = {}) {
-      const seen = /* @__PURE__ */ new WeakSet();
-      return function(key2, value) {
-        if (typeof value === "object" && value !== null) {
-          if (seen.has(value)) {
-            return void 0;
-          }
-          seen.add(value);
-        }
-        return serialize2(key2, value, options);
-      };
-    }
-    function serialize2(key2, value, options = {}) {
-      const serializeMapAndSet = (options == null ? void 0 : options.serializeMapAndSet) !== false;
-      if (value instanceof Error) {
-        return value.stack;
-      }
-      if (!value) {
-        return value;
-      }
-      if (typeof value === "function") {
-        return `[function] ${value.toString()}`;
-      }
-      if (value instanceof Date) {
-        return value.toISOString();
-      }
-      if (serializeMapAndSet && value instanceof Map && Object.fromEntries) {
-        return Object.fromEntries(value);
-      }
-      if (serializeMapAndSet && value instanceof Set && Array.from) {
-        return Array.from(value);
-      }
-      return value;
-    }
-  })(object);
-  return object.exports;
-}
-var style;
-var hasRequiredStyle;
-function requireStyle() {
-  if (hasRequiredStyle) return style;
-  hasRequiredStyle = 1;
-  style = {
-    transformStyles,
-    applyAnsiStyles({ data: data2 }) {
-      return transformStyles(data2, styleToAnsi, resetAnsiStyle);
-    },
-    removeStyles({ data: data2 }) {
-      return transformStyles(data2, () => "");
-    }
-  };
-  const ANSI_COLORS = {
-    unset: "\x1B[0m",
-    black: "\x1B[30m",
-    red: "\x1B[31m",
-    green: "\x1B[32m",
-    yellow: "\x1B[33m",
-    blue: "\x1B[34m",
-    magenta: "\x1B[35m",
-    cyan: "\x1B[36m",
-    white: "\x1B[37m",
-    gray: "\x1B[90m"
-  };
-  function styleToAnsi(style2) {
-    const color = style2.replace(/color:\s*(\w+).*/, "$1").toLowerCase();
-    return ANSI_COLORS[color] || "";
-  }
-  function resetAnsiStyle(string) {
-    return string + ANSI_COLORS.unset;
-  }
-  function transformStyles(data2, onStyleFound, onStyleApplied) {
-    const foundStyles = {};
-    return data2.reduce((result, item, index2, array) => {
-      if (foundStyles[index2]) {
-        return result;
-      }
-      if (typeof item === "string") {
-        let valueIndex = index2;
-        let styleApplied = false;
-        item = item.replace(/%[1cdfiOos]/g, (match) => {
-          valueIndex += 1;
-          if (match !== "%c") {
-            return match;
-          }
-          const style2 = array[valueIndex];
-          if (typeof style2 === "string") {
-            foundStyles[valueIndex] = true;
-            styleApplied = true;
-            return onStyleFound(style2, item);
-          }
-          return match;
-        });
-        if (styleApplied && onStyleApplied) {
-          item = onStyleApplied(item);
-        }
-      }
-      result.push(item);
-      return result;
-    }, []);
-  }
-  return style;
-}
-var console_1;
-var hasRequiredConsole;
-function requireConsole() {
-  if (hasRequiredConsole) return console_1;
-  hasRequiredConsole = 1;
-  const {
-    concatFirstStringElements,
-    format: format2
-  } = requireFormat();
-  const { maxDepth, toJSON } = requireObject();
-  const {
-    applyAnsiStyles,
-    removeStyles
-  } = requireStyle();
-  const { transform } = requireTransform();
-  const consoleMethods = {
-    error: console.error,
-    warn: console.warn,
-    info: console.info,
-    verbose: console.info,
-    debug: console.debug,
-    silly: console.debug,
-    log: console.log
-  };
-  console_1 = consoleTransportFactory;
-  const separator = process.platform === "win32" ? ">" : "›";
-  const DEFAULT_FORMAT = `%c{h}:{i}:{s}.{ms}{scope}%c ${separator} {text}`;
-  Object.assign(consoleTransportFactory, {
-    DEFAULT_FORMAT
-  });
-  function consoleTransportFactory(logger) {
-    return Object.assign(transport, {
-      colorMap: {
-        error: "red",
-        warn: "yellow",
-        info: "cyan",
-        verbose: "unset",
-        debug: "gray",
-        silly: "gray",
-        default: "unset"
-      },
-      format: DEFAULT_FORMAT,
-      level: "silly",
-      transforms: [
-        addTemplateColors,
-        format2,
-        formatStyles,
-        concatFirstStringElements,
-        maxDepth,
-        toJSON
-      ],
-      useStyles: process.env.FORCE_STYLES,
-      writeFn({ message }) {
-        const consoleLogFn = consoleMethods[message.level] || consoleMethods.info;
-        consoleLogFn(...message.data);
-      }
-    });
-    function transport(message) {
-      const data2 = transform({ logger, message, transport });
-      transport.writeFn({
-        message: { ...message, data: data2 }
-      });
-    }
-  }
-  function addTemplateColors({ data: data2, message, transport }) {
-    if (typeof transport.format !== "string" || !transport.format.includes("%c")) {
-      return data2;
-    }
-    return [
-      `color:${levelToStyle(message.level, transport)}`,
-      "color:unset",
-      ...data2
-    ];
-  }
-  function canUseStyles(useStyleValue, level) {
-    if (typeof useStyleValue === "boolean") {
-      return useStyleValue;
-    }
-    const useStderr = level === "error" || level === "warn";
-    const stream2 = useStderr ? process.stderr : process.stdout;
-    return stream2 && stream2.isTTY;
-  }
-  function formatStyles(args) {
-    const { message, transport } = args;
-    const useStyles = canUseStyles(transport.useStyles, message.level);
-    const nextTransform = useStyles ? applyAnsiStyles : removeStyles;
-    return nextTransform(args);
-  }
-  function levelToStyle(level, transport) {
-    return transport.colorMap[level] || transport.colorMap.default;
-  }
-  return console_1;
-}
-var File_1;
-var hasRequiredFile$1;
-function requireFile$1() {
-  if (hasRequiredFile$1) return File_1;
-  hasRequiredFile$1 = 1;
-  const EventEmitter2 = require$$0$4;
-  const fs2 = require$$0$2;
-  const os2 = require$$1$3;
-  class File extends EventEmitter2 {
-    constructor({
-      path: path2,
-      writeOptions = { encoding: "utf8", flag: "a", mode: 438 },
-      writeAsync = false
-    }) {
-      super();
-      __publicField(this, "asyncWriteQueue", []);
-      __publicField(this, "bytesWritten", 0);
-      __publicField(this, "hasActiveAsyncWriting", false);
-      __publicField(this, "path", null);
-      __publicField(this, "initialSize");
-      __publicField(this, "writeOptions", null);
-      __publicField(this, "writeAsync", false);
-      this.path = path2;
-      this.writeOptions = writeOptions;
-      this.writeAsync = writeAsync;
-    }
-    get size() {
-      return this.getSize();
-    }
-    clear() {
-      try {
-        fs2.writeFileSync(this.path, "", {
-          mode: this.writeOptions.mode,
-          flag: "w"
-        });
-        this.reset();
-        return true;
-      } catch (e) {
-        if (e.code === "ENOENT") {
-          return true;
-        }
-        this.emit("error", e, this);
-        return false;
-      }
-    }
-    crop(bytesAfter) {
-      try {
-        const content = readFileSyncFromEnd(this.path, bytesAfter || 4096);
-        this.clear();
-        this.writeLine(`[log cropped]${os2.EOL}${content}`);
-      } catch (e) {
-        this.emit(
-          "error",
-          new Error(`Couldn't crop file ${this.path}. ${e.message}`),
-          this
-        );
-      }
-    }
-    getSize() {
-      if (this.initialSize === void 0) {
-        try {
-          const stats = fs2.statSync(this.path);
-          this.initialSize = stats.size;
-        } catch (e) {
-          this.initialSize = 0;
-        }
-      }
-      return this.initialSize + this.bytesWritten;
-    }
-    increaseBytesWrittenCounter(text2) {
-      this.bytesWritten += Buffer.byteLength(text2, this.writeOptions.encoding);
-    }
-    isNull() {
-      return false;
-    }
-    nextAsyncWrite() {
-      const file2 = this;
-      if (this.hasActiveAsyncWriting || this.asyncWriteQueue.length === 0) {
-        return;
-      }
-      const text2 = this.asyncWriteQueue.join("");
-      this.asyncWriteQueue = [];
-      this.hasActiveAsyncWriting = true;
-      fs2.writeFile(this.path, text2, this.writeOptions, (e) => {
-        file2.hasActiveAsyncWriting = false;
-        if (e) {
-          file2.emit(
-            "error",
-            new Error(`Couldn't write to ${file2.path}. ${e.message}`),
-            this
-          );
-        } else {
-          file2.increaseBytesWrittenCounter(text2);
-        }
-        file2.nextAsyncWrite();
-      });
-    }
-    reset() {
-      this.initialSize = void 0;
-      this.bytesWritten = 0;
-    }
-    toString() {
-      return this.path;
-    }
-    writeLine(text2) {
-      text2 += os2.EOL;
-      if (this.writeAsync) {
-        this.asyncWriteQueue.push(text2);
-        this.nextAsyncWrite();
-        return;
-      }
-      try {
-        fs2.writeFileSync(this.path, text2, this.writeOptions);
-        this.increaseBytesWrittenCounter(text2);
-      } catch (e) {
-        this.emit(
-          "error",
-          new Error(`Couldn't write to ${this.path}. ${e.message}`),
-          this
-        );
-      }
-    }
-  }
-  File_1 = File;
-  function readFileSyncFromEnd(filePath, bytesCount) {
-    const buffer2 = Buffer.alloc(bytesCount);
-    const stats = fs2.statSync(filePath);
-    const readLength = Math.min(stats.size, bytesCount);
-    const offset = Math.max(0, stats.size - bytesCount);
-    const fd = fs2.openSync(filePath, "r");
-    const totalBytes = fs2.readSync(fd, buffer2, 0, readLength, offset);
-    fs2.closeSync(fd);
-    return buffer2.toString("utf8", 0, totalBytes);
-  }
-  return File_1;
-}
-var NullFile_1;
-var hasRequiredNullFile;
-function requireNullFile() {
-  if (hasRequiredNullFile) return NullFile_1;
-  hasRequiredNullFile = 1;
-  const File = requireFile$1();
-  class NullFile extends File {
-    clear() {
-    }
-    crop() {
-    }
-    getSize() {
-      return 0;
-    }
-    isNull() {
-      return true;
-    }
-    writeLine() {
-    }
-  }
-  NullFile_1 = NullFile;
-  return NullFile_1;
-}
-var FileRegistry_1;
-var hasRequiredFileRegistry;
-function requireFileRegistry() {
-  if (hasRequiredFileRegistry) return FileRegistry_1;
-  hasRequiredFileRegistry = 1;
-  const EventEmitter2 = require$$0$4;
-  const fs2 = require$$0$2;
-  const path2 = require$$1$2;
-  const File = requireFile$1();
-  const NullFile = requireNullFile();
-  class FileRegistry extends EventEmitter2 {
-    constructor() {
-      super();
-      __publicField(this, "store", {});
-      this.emitError = this.emitError.bind(this);
-    }
-    /**
-     * Provide a File object corresponding to the filePath
-     * @param {string} filePath
-     * @param {WriteOptions} [writeOptions]
-     * @param {boolean} [writeAsync]
-     * @return {File}
-     */
-    provide({ filePath, writeOptions = {}, writeAsync = false }) {
-      let file2;
-      try {
-        filePath = path2.resolve(filePath);
-        if (this.store[filePath]) {
-          return this.store[filePath];
-        }
-        file2 = this.createFile({ filePath, writeOptions, writeAsync });
-      } catch (e) {
-        file2 = new NullFile({ path: filePath });
-        this.emitError(e, file2);
-      }
-      file2.on("error", this.emitError);
-      this.store[filePath] = file2;
-      return file2;
-    }
-    /**
-     * @param {string} filePath
-     * @param {WriteOptions} writeOptions
-     * @param {boolean} async
-     * @return {File}
-     * @private
-     */
-    createFile({ filePath, writeOptions, writeAsync }) {
-      this.testFileWriting({ filePath, writeOptions });
-      return new File({ path: filePath, writeOptions, writeAsync });
-    }
-    /**
-     * @param {Error} error
-     * @param {File} file
-     * @private
-     */
-    emitError(error2, file2) {
-      this.emit("error", error2, file2);
-    }
-    /**
-     * @param {string} filePath
-     * @param {WriteOptions} writeOptions
-     * @private
-     */
-    testFileWriting({ filePath, writeOptions }) {
-      fs2.mkdirSync(path2.dirname(filePath), { recursive: true });
-      fs2.writeFileSync(filePath, "", { flag: "a", mode: writeOptions.mode });
-    }
-  }
-  FileRegistry_1 = FileRegistry;
-  return FileRegistry_1;
-}
-var file$1;
-var hasRequiredFile;
-function requireFile() {
-  if (hasRequiredFile) return file$1;
-  hasRequiredFile = 1;
-  const fs2 = require$$0$2;
-  const os2 = require$$1$3;
-  const path2 = require$$1$2;
-  const FileRegistry = requireFileRegistry();
-  const { transform } = requireTransform();
-  const { removeStyles } = requireStyle();
-  const {
-    format: format2,
-    concatFirstStringElements
-  } = requireFormat();
-  const { toString: toString4 } = requireObject();
-  file$1 = fileTransportFactory;
-  const globalRegistry = new FileRegistry();
-  function fileTransportFactory(logger, { registry = globalRegistry, externalApi } = {}) {
-    let pathVariables;
-    if (registry.listenerCount("error") < 1) {
-      registry.on("error", (e, file2) => {
-        logConsole(`Can't write to ${file2}`, e);
-      });
-    }
-    return Object.assign(transport, {
-      fileName: getDefaultFileName(logger.variables.processType),
-      format: "[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}]{scope} {text}",
-      getFile,
-      inspectOptions: { depth: 5 },
-      level: "silly",
-      maxSize: 1024 ** 2,
-      readAllLogs,
-      sync: true,
-      transforms: [removeStyles, format2, concatFirstStringElements, toString4],
-      writeOptions: { flag: "a", mode: 438, encoding: "utf8" },
-      archiveLogFn(file2) {
-        const oldPath = file2.toString();
-        const inf = path2.parse(oldPath);
-        try {
-          fs2.renameSync(oldPath, path2.join(inf.dir, `${inf.name}.old${inf.ext}`));
-        } catch (e) {
-          logConsole("Could not rotate log", e);
-          const quarterOfMaxSize = Math.round(transport.maxSize / 4);
-          file2.crop(Math.min(quarterOfMaxSize, 256 * 1024));
-        }
-      },
-      resolvePathFn(vars) {
-        return path2.join(vars.libraryDefaultDir, vars.fileName);
-      },
-      setAppName(name) {
-        logger.dependencies.externalApi.setAppName(name);
-      }
-    });
-    function transport(message) {
-      const file2 = getFile(message);
-      const needLogRotation = transport.maxSize > 0 && file2.size > transport.maxSize;
-      if (needLogRotation) {
-        transport.archiveLogFn(file2);
-        file2.reset();
-      }
-      const content = transform({ logger, message, transport });
-      file2.writeLine(content);
-    }
-    function initializeOnFirstAccess() {
-      if (pathVariables) {
-        return;
-      }
-      pathVariables = Object.create(
-        Object.prototype,
-        {
-          ...Object.getOwnPropertyDescriptors(
-            externalApi.getPathVariables()
-          ),
-          fileName: {
-            get() {
-              return transport.fileName;
-            },
-            enumerable: true
-          }
-        }
-      );
-      if (typeof transport.archiveLog === "function") {
-        transport.archiveLogFn = transport.archiveLog;
-        logConsole("archiveLog is deprecated. Use archiveLogFn instead");
-      }
-      if (typeof transport.resolvePath === "function") {
-        transport.resolvePathFn = transport.resolvePath;
-        logConsole("resolvePath is deprecated. Use resolvePathFn instead");
-      }
-    }
-    function logConsole(message, error2 = null, level = "error") {
-      const data2 = [`electron-log.transports.file: ${message}`];
-      if (error2) {
-        data2.push(error2);
-      }
-      logger.transports.console({ data: data2, date: /* @__PURE__ */ new Date(), level });
-    }
-    function getFile(msg) {
-      initializeOnFirstAccess();
-      const filePath = transport.resolvePathFn(pathVariables, msg);
-      return registry.provide({
-        filePath,
-        writeAsync: !transport.sync,
-        writeOptions: transport.writeOptions
-      });
-    }
-    function readAllLogs({ fileFilter = (f) => f.endsWith(".log") } = {}) {
-      initializeOnFirstAccess();
-      const logsPath = path2.dirname(transport.resolvePathFn(pathVariables));
-      if (!fs2.existsSync(logsPath)) {
-        return [];
-      }
-      return fs2.readdirSync(logsPath).map((fileName) => path2.join(logsPath, fileName)).filter(fileFilter).map((logPath) => {
-        try {
-          return {
-            path: logPath,
-            lines: fs2.readFileSync(logPath, "utf8").split(os2.EOL)
-          };
-        } catch {
-          return null;
-        }
-      }).filter(Boolean);
-    }
-  }
-  function getDefaultFileName(processType = process.type) {
-    switch (processType) {
-      case "renderer":
-        return "renderer.log";
-      case "worker":
-        return "worker.log";
-      default:
-        return "main.log";
-    }
-  }
-  return file$1;
-}
-var ipc;
-var hasRequiredIpc;
-function requireIpc() {
-  if (hasRequiredIpc) return ipc;
-  hasRequiredIpc = 1;
-  const { maxDepth, toJSON } = requireObject();
-  const { transform } = requireTransform();
-  ipc = ipcTransportFactory;
-  function ipcTransportFactory(logger, { externalApi }) {
-    Object.assign(transport, {
-      depth: 3,
-      eventId: "__ELECTRON_LOG_IPC__",
-      level: logger.isDev ? "silly" : false,
-      transforms: [toJSON, maxDepth]
-    });
-    return (externalApi == null ? void 0 : externalApi.isElectron()) ? transport : void 0;
-    function transport(message) {
-      var _a2;
-      if (((_a2 = message == null ? void 0 : message.variables) == null ? void 0 : _a2.processType) === "renderer") {
-        return;
-      }
-      externalApi == null ? void 0 : externalApi.sendIpc(transport.eventId, {
-        ...message,
-        data: transform({ logger, message, transport })
-      });
-    }
-  }
-  return ipc;
-}
-var remote;
-var hasRequiredRemote;
-function requireRemote() {
-  if (hasRequiredRemote) return remote;
-  hasRequiredRemote = 1;
-  const http3 = require$$0$5;
-  const https2 = require$$1$5;
-  const { transform } = requireTransform();
-  const { removeStyles } = requireStyle();
-  const { toJSON, maxDepth } = requireObject();
-  remote = remoteTransportFactory;
-  function remoteTransportFactory(logger) {
-    return Object.assign(transport, {
-      client: { name: "electron-application" },
-      depth: 6,
-      level: false,
-      requestOptions: {},
-      transforms: [removeStyles, toJSON, maxDepth],
-      makeBodyFn({ message }) {
-        return JSON.stringify({
-          client: transport.client,
-          data: message.data,
-          date: message.date.getTime(),
-          level: message.level,
-          scope: message.scope,
-          variables: message.variables
-        });
-      },
-      processErrorFn({ error: error2 }) {
-        logger.processMessage(
-          {
-            data: [`electron-log: can't POST ${transport.url}`, error2],
-            level: "warn"
-          },
-          { transports: ["console", "file"] }
-        );
-      },
-      sendRequestFn({ serverUrl, requestOptions, body }) {
-        const httpTransport = serverUrl.startsWith("https:") ? https2 : http3;
-        const request = httpTransport.request(serverUrl, {
-          method: "POST",
-          ...requestOptions,
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": body.length,
-            ...requestOptions.headers
-          }
-        });
-        request.write(body);
-        request.end();
-        return request;
-      }
-    });
-    function transport(message) {
-      if (!transport.url) {
-        return;
-      }
-      const body = transport.makeBodyFn({
-        logger,
-        message: { ...message, data: transform({ logger, message, transport }) },
-        transport
-      });
-      const request = transport.sendRequestFn({
-        serverUrl: transport.url,
-        requestOptions: transport.requestOptions,
-        body: Buffer.from(body, "utf8")
-      });
-      request.on("error", (error2) => transport.processErrorFn({
-        error: error2,
-        logger,
-        message,
-        request,
-        transport
-      }));
-    }
-  }
-  return remote;
-}
-var createDefaultLogger_1;
-var hasRequiredCreateDefaultLogger;
-function requireCreateDefaultLogger() {
-  if (hasRequiredCreateDefaultLogger) return createDefaultLogger_1;
-  hasRequiredCreateDefaultLogger = 1;
-  const Logger = requireLogger();
-  const ErrorHandler = requireErrorHandler();
-  const EventLogger = requireEventLogger();
-  const transportConsole = requireConsole();
-  const transportFile = requireFile();
-  const transportIpc = requireIpc();
-  const transportRemote = requireRemote();
-  createDefaultLogger_1 = createDefaultLogger;
-  function createDefaultLogger({ dependencies: dependencies2, initializeFn }) {
-    var _a2;
-    const defaultLogger = new Logger({
-      dependencies: dependencies2,
-      errorHandler: new ErrorHandler(),
-      eventLogger: new EventLogger(),
-      initializeFn,
-      isDev: (_a2 = dependencies2.externalApi) == null ? void 0 : _a2.isDev(),
-      logId: "default",
-      transportFactories: {
-        console: transportConsole,
-        file: transportFile,
-        ipc: transportIpc,
-        remote: transportRemote
-      },
-      variables: {
-        processType: "main"
-      }
-    });
-    defaultLogger.default = defaultLogger;
-    defaultLogger.Logger = Logger;
-    defaultLogger.processInternalErrorFn = (e) => {
-      defaultLogger.transports.console.writeFn({
-        message: {
-          data: ["Unhandled electron-log error", e],
-          level: "error"
-        }
-      });
-    };
-    return defaultLogger;
-  }
-  return createDefaultLogger_1;
-}
-var main$2;
-var hasRequiredMain;
-function requireMain() {
-  if (hasRequiredMain) return main$2;
-  hasRequiredMain = 1;
-  const electron = require$$1$6;
-  const ElectronExternalApi = requireElectronExternalApi();
-  const { initialize: initialize2 } = requireInitialize();
-  const createDefaultLogger = requireCreateDefaultLogger();
-  const externalApi = new ElectronExternalApi({ electron });
-  const defaultLogger = createDefaultLogger({
-    dependencies: { externalApi },
-    initializeFn: initialize2
-  });
-  main$2 = defaultLogger;
-  externalApi.onIpc("__ELECTRON_LOG__", (_, message) => {
-    if (message.scope) {
-      defaultLogger.Logger.getInstance(message).scope(message.scope);
-    }
-    const date = new Date(message.date);
-    processMessage({
-      ...message,
-      date: date.getTime() ? date : /* @__PURE__ */ new Date()
-    });
-  });
-  externalApi.onIpcInvoke("__ELECTRON_LOG__", (_, { cmd = "", logId }) => {
-    switch (cmd) {
-      case "getOptions": {
-        const logger = defaultLogger.Logger.getInstance({ logId });
-        return {
-          levels: logger.levels,
-          logId
-        };
-      }
-      default: {
-        processMessage({ data: [`Unknown cmd '${cmd}'`], level: "error" });
-        return {};
-      }
-    }
-  });
-  function processMessage(message) {
-    var _a2;
-    (_a2 = defaultLogger.Logger.getInstance(message)) == null ? void 0 : _a2.processMessage(message);
-  }
-  return main$2;
-}
-var node$1;
-var hasRequiredNode$1;
-function requireNode$1() {
-  if (hasRequiredNode$1) return node$1;
-  hasRequiredNode$1 = 1;
-  const NodeExternalApi = requireNodeExternalApi();
-  const createDefaultLogger = requireCreateDefaultLogger();
-  const externalApi = new NodeExternalApi();
-  const defaultLogger = createDefaultLogger({
-    dependencies: { externalApi }
-  });
-  node$1 = defaultLogger;
-  return node$1;
-}
-const isRenderer = typeof process === "undefined" || (process.type === "renderer" || process.type === "worker");
-const isMain = typeof process === "object" && process.type === "browser";
-if (isRenderer) {
-  requireElectronLogPreload();
-  src$1.exports = requireRenderer();
-} else if (isMain) {
-  src$1.exports = requireMain();
-} else {
-  src$1.exports = requireNode$1();
-}
-var srcExports$1 = src$1.exports;
-const log = /* @__PURE__ */ getDefaultExportFromCjs(srcExports$1);
 var source = { exports: {} };
 var isObj$1 = (value) => {
   const type2 = typeof value;
@@ -2597,62 +56,62 @@ function getPathSegments(path2) {
   return parts;
 }
 var dotProp = {
-  get(object2, path2, value) {
-    if (!isObj(object2) || typeof path2 !== "string") {
-      return value === void 0 ? object2 : value;
+  get(object, path2, value) {
+    if (!isObj(object) || typeof path2 !== "string") {
+      return value === void 0 ? object : value;
     }
     const pathArray = getPathSegments(path2);
     if (pathArray.length === 0) {
       return;
     }
     for (let i = 0; i < pathArray.length; i++) {
-      object2 = object2[pathArray[i]];
-      if (object2 === void 0 || object2 === null) {
+      object = object[pathArray[i]];
+      if (object === void 0 || object === null) {
         if (i !== pathArray.length - 1) {
           return value;
         }
         break;
       }
     }
-    return object2 === void 0 ? value : object2;
+    return object === void 0 ? value : object;
   },
-  set(object2, path2, value) {
-    if (!isObj(object2) || typeof path2 !== "string") {
-      return object2;
+  set(object, path2, value) {
+    if (!isObj(object) || typeof path2 !== "string") {
+      return object;
     }
-    const root2 = object2;
+    const root2 = object;
     const pathArray = getPathSegments(path2);
     for (let i = 0; i < pathArray.length; i++) {
       const p = pathArray[i];
-      if (!isObj(object2[p])) {
-        object2[p] = {};
+      if (!isObj(object[p])) {
+        object[p] = {};
       }
       if (i === pathArray.length - 1) {
-        object2[p] = value;
+        object[p] = value;
       }
-      object2 = object2[p];
+      object = object[p];
     }
     return root2;
   },
-  delete(object2, path2) {
-    if (!isObj(object2) || typeof path2 !== "string") {
+  delete(object, path2) {
+    if (!isObj(object) || typeof path2 !== "string") {
       return false;
     }
     const pathArray = getPathSegments(path2);
     for (let i = 0; i < pathArray.length; i++) {
       const p = pathArray[i];
       if (i === pathArray.length - 1) {
-        delete object2[p];
+        delete object[p];
         return true;
       }
-      object2 = object2[p];
-      if (!isObj(object2)) {
+      object = object[p];
+      if (!isObj(object)) {
         return false;
       }
     }
   },
-  has(object2, path2) {
-    if (!isObj(object2) || typeof path2 !== "string") {
+  has(object, path2) {
+    if (!isObj(object) || typeof path2 !== "string") {
       return false;
     }
     const pathArray = getPathSegments(path2);
@@ -2660,11 +119,11 @@ var dotProp = {
       return false;
     }
     for (let i = 0; i < pathArray.length; i++) {
-      if (isObj(object2)) {
-        if (!(pathArray[i] in object2)) {
+      if (isObj(object)) {
+        if (!(pathArray[i] in object)) {
           return false;
         }
-        object2 = object2[pathArray[i]];
+        object = object[pathArray[i]];
       } else {
         return false;
       }
@@ -2676,7 +135,7 @@ var pkgUp = { exports: {} };
 var findUp$1 = { exports: {} };
 var locatePath$1 = { exports: {} };
 var pathExists$8 = { exports: {} };
-const fs$m = require$$0$2;
+const fs$m = require$$1$2;
 pathExists$8.exports = (fp) => new Promise((resolve2) => {
   fs$m.access(fp, (err) => {
     resolve2(!err);
@@ -2764,7 +223,7 @@ var pLocate$1 = (iterable, tester, opts) => {
   return Promise.all(items2.map((el) => checkLimit(finder, el))).then(() => {
   }).catch((err) => err instanceof EndError ? err.value : Promise.reject(err));
 };
-const path$s = require$$1$2;
+const path$s = require$$1$3;
 const pathExists$7 = pathExistsExports;
 const pLocate = pLocate$1;
 locatePath$1.exports = (iterable, options) => {
@@ -2784,7 +243,7 @@ locatePath$1.exports.sync = (iterable, options) => {
   }
 };
 var locatePathExports = locatePath$1.exports;
-const path$r = require$$1$2;
+const path$r = require$$1$3;
 const locatePath = locatePathExports;
 findUp$1.exports = (filename, opts = {}) => {
   const startDir = path$r.resolve(opts.cwd || "");
@@ -2825,8 +284,8 @@ pkgUp.exports = async ({ cwd: cwd2 } = {}) => findUp("package.json", { cwd: cwd2
 pkgUp.exports.sync = ({ cwd: cwd2 } = {}) => findUp.sync("package.json", { cwd: cwd2 });
 var pkgUpExports = pkgUp.exports;
 var envPaths$1 = { exports: {} };
-const path$q = require$$1$2;
-const os$1 = require$$1$3;
+const path$q = require$$1$3;
+const os$1 = require$$1$4;
 const homedir = os$1.homedir();
 const tmpdir = os$1.tmpdir();
 const { env } = process;
@@ -3054,8 +513,8 @@ const retryifySync = (fn, isRetriableError) => {
 };
 retryify.retryifySync = retryifySync;
 Object.defineProperty(fs$l, "__esModule", { value: true });
-const fs$k = require$$0$2;
-const util_1$$ = require$$1$4;
+const fs$k = require$$1$2;
+const util_1$$ = require$$1$5;
 const attemptify_1 = attemptify;
 const fs_handlers_1 = fs_handlers;
 const retryify_1 = retryify;
@@ -3136,7 +595,7 @@ const Scheduler = {
 scheduler.default = Scheduler;
 var temp = {};
 Object.defineProperty(temp, "__esModule", { value: true });
-const path$p = require$$1$2;
+const path$p = require$$1$3;
 const consts_1$1 = consts;
 const fs_1$7 = fs$l;
 const Temp = {
@@ -3185,7 +644,7 @@ process.on("exit", Temp.purgeSyncAll);
 temp.default = Temp;
 Object.defineProperty(dist$1, "__esModule", { value: true });
 dist$1.writeFileSync = dist$1.writeFile = dist$1.readFileSync = dist$1.readFile = void 0;
-const path$o = require$$1$2;
+const path$o = require$$1$3;
 const consts_1 = consts;
 const fs_1$6 = fs$l;
 const lang_1 = lang;
@@ -16972,12 +14431,12 @@ var onetimeExports = onetime$1.exports;
   var _a2, _b;
   var _Conf_validator, _Conf_encryptionKey, _Conf_options, _Conf_defaultValues;
   Object.defineProperty(exports$1, "__esModule", { value: true });
-  const util_12 = require$$1$4;
-  const fs2 = require$$0$2;
-  const path2 = require$$1$2;
-  const crypto2 = require$$0$6;
+  const util_12 = require$$1$5;
+  const fs2 = require$$1$2;
+  const path2 = require$$1$3;
+  const crypto2 = require$$0$2;
   const assert2 = require$$4$1;
-  const events_12 = require$$0$4;
+  const events_12 = require$$5$1;
   const dotProp$1 = dotProp;
   const pkgUp2 = pkgUpExports;
   const envPaths2 = envPathsExports;
@@ -17130,8 +14589,8 @@ var onetimeExports = onetime$1.exports;
         }
       };
       if (typeof key2 === "object") {
-        const object2 = key2;
-        for (const [key22, value2] of Object.entries(object2)) {
+        const object = key2;
+        for (const [key22, value2] of Object.entries(object)) {
           set2(key22, value2);
         }
       } else {
@@ -17415,7 +14874,7 @@ var onetimeExports = onetime$1.exports;
   module.exports.default = Conf2;
 })(source, source.exports);
 var sourceExports = source.exports;
-const path$n = require$$1$2;
+const path$n = require$$1$3;
 const { app, ipcMain, ipcRenderer, shell } = require$$1$6;
 const Conf = sourceExports;
 let isInitialized = false;
@@ -17701,7 +15160,8 @@ class WindowManager {
         preload: preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: false,
+        allowRunningInsecureContent: true
       },
       icon: join(__dirname$1, "../../../resources/icon.png")
     });
@@ -17737,6 +15197,16 @@ class WindowManager {
    */
   setupWindowEvents() {
     if (!this.mainWindow) return;
+    this.mainWindow.webContents.on("preload-error", (event, preloadPath, error2) => {
+      log.error("[Window] Preload error:", preloadPath, error2);
+    });
+    this.mainWindow.webContents.on("console-message", (event) => {
+      const message = event.message || "";
+      log.info("[Window] Console:", message);
+      if (message.includes("[Preload]")) {
+        log.info("[Window] Preload console:", message);
+      }
+    });
     const saveState = () => {
       this.saveWindowState();
     };
@@ -18601,13 +16071,33 @@ class DatabaseService {
     if (!this.db) throw new Error("Database not connected");
     const stmt = this.db.prepare("SELECT * FROM cover_cache WHERE anime_id = ?");
     const row = stmt.get(animeId);
-    if (!row) return null;
+    if (!row) {
+      log.debug(`[Database] No cover cache found for ${animeId}`);
+      return null;
+    }
+    let coverUrl = row.cover_url;
+    if (!coverUrl && row.cover_data) {
+      try {
+        const coverData = JSON.parse(row.cover_data);
+        coverUrl = coverData.coverUrl || coverData.imageUrl;
+        if (coverUrl && coverUrl.startsWith("https:http://")) {
+          coverUrl = coverUrl.replace("https:http://", "https://");
+        }
+        if (coverUrl && coverUrl.startsWith("https:https://")) {
+          coverUrl = coverUrl.replace("https:https://", "https://");
+        }
+        log.debug(`[Database] Extracted coverUrl from cover_data for ${animeId}: ${coverUrl ? "success" : "failed"}`);
+      } catch (e) {
+        log.warn(`[Database] Failed to parse cover_data for ${animeId}:`, e);
+      }
+    }
+    log.debug(`[Database] Got cover cache for ${animeId}: coverUrl=${coverUrl ? "present" : "missing"}`);
     return {
       animeId: row.anime_id,
       title: row.title,
       year: row.year,
       season: row.season,
-      coverUrl: row.cover_url,
+      coverUrl,
       episode: row.episode,
       coverData: JSON.parse(row.cover_data),
       bangumiInfo: row.bangumi_info ? JSON.parse(row.bangumi_info) : void 0,
@@ -18628,12 +16118,26 @@ class DatabaseService {
     const rows = stmt.all(...animeIds);
     const result = {};
     for (const row of rows) {
+      let coverUrl = row.cover_url;
+      if (!coverUrl && row.cover_data) {
+        try {
+          const coverData = JSON.parse(row.cover_data);
+          coverUrl = coverData.coverUrl || coverData.imageUrl;
+          if (coverUrl && coverUrl.startsWith("https:http://")) {
+            coverUrl = coverUrl.replace("https:http://", "https://");
+          }
+          if (coverUrl && coverUrl.startsWith("https:https://")) {
+            coverUrl = coverUrl.replace("https:https://", "https://");
+          }
+        } catch (e) {
+        }
+      }
       result[row.anime_id] = {
         animeId: row.anime_id,
         title: row.title,
         year: row.year,
         season: row.season,
-        coverUrl: row.cover_url,
+        coverUrl,
         episode: row.episode,
         coverData: JSON.parse(row.cover_data),
         bangumiInfo: row.bangumi_info ? JSON.parse(row.bangumi_info) : void 0,
@@ -18968,32 +16472,56 @@ class AnimeService extends EventEmitter {
   }
   /**
    * 后台加载封面缓存
+   * 对应原项目: src/services/anime_cache_service.py - _fetch_anime_details
    */
   async loadCoverCachesInBackground() {
     const animeList = Array.from(this.animeCache.values());
+    log.info(`[AnimeService] Loading cover caches for ${animeList.length} anime...`);
+    let cachedCount = 0;
+    let fetchedCount = 0;
+    let failedCount = 0;
     const batchSize = 5;
     for (let i = 0; i < animeList.length; i += batchSize) {
       const batch = animeList.slice(i, i + batchSize);
+      log.debug(`[AnimeService] Processing batch ${i / batchSize + 1}/${Math.ceil(animeList.length / batchSize)}`);
       await Promise.all(
         batch.map(async (anime) => {
+          var _a2;
           try {
             const cached = this.databaseService.getCoverCache(anime.id);
             if (cached) {
+              log.debug(`[AnimeService] Cache hit for ${anime.id}: coverUrl=${cached.coverUrl ? "present" : "missing"}`);
               anime.coverUrl = cached.coverUrl;
-              anime.year = cached.year;
-              anime.season = cached.season;
-              anime.subtitleGroup = cached.subtitleGroup;
+              anime.year = cached.year || anime.year;
+              anime.season = cached.season || anime.season;
+              anime.subtitleGroup = cached.subtitleGroup || anime.subtitleGroup;
+              cachedCount++;
               return;
             }
+            if (anime.detailUrl && !anime.detailUrl.startsWith("http")) {
+              try {
+                log.debug(`[AnimeService] Fetching detail for ${anime.id} from ${anime.detailUrl}`);
+                const detailInfo = await this.crawlerService.fetchAnimeDetail(anime.detailUrl);
+                if (detailInfo.year) anime.year = detailInfo.year;
+                if (detailInfo.season) anime.season = detailInfo.season;
+                if (detailInfo.subtitleGroup) anime.subtitleGroup = detailInfo.subtitleGroup;
+                log.debug(`[AnimeService] Got detail for ${anime.id}: year=${anime.year}, season=${anime.season}`);
+              } catch (e) {
+                log.debug(`[AnimeService] Failed to fetch detail for ${anime.id}:`, e);
+              }
+            }
+            log.debug(`[AnimeService] Searching Bangumi for ${anime.id}: ${anime.title}`);
             const bangumiResult = await this.crawlerService.findBangumiInfo(
               anime.title,
               anime.year,
               anime.season
             );
             if (bangumiResult) {
+              log.info(`[AnimeService] Got Bangumi cover for ${anime.id}: ${(_a2 = bangumiResult.info.coverUrl) == null ? void 0 : _a2.substring(0, 50)}...`);
               anime.coverUrl = bangumiResult.info.coverUrl || "";
               anime.matchScore = bangumiResult.score;
               anime.matchSource = "Bangumi";
+              fetchedCount++;
               this.databaseService.setCoverCache(anime.id, {
                 title: anime.title,
                 coverUrl: anime.coverUrl,
@@ -19002,14 +16530,19 @@ class AnimeService extends EventEmitter {
                 subtitleGroup: anime.subtitleGroup,
                 episode: anime.episode
               }, bangumiResult.info);
+            } else {
+              log.debug(`[AnimeService] No Bangumi result for ${anime.id}: ${anime.title}`);
+              failedCount++;
             }
           } catch (error2) {
             log.warn(`[AnimeService] Failed to load cover for ${anime.id}:`, error2);
+            failedCount++;
           }
         })
       );
       await this.sleep(1e3);
     }
+    log.info(`[AnimeService] Cover cache loading complete: ${cachedCount} cached, ${fetchedCount} fetched, ${failedCount} failed`);
   }
   /**
    * 启动后台刷新
@@ -22256,7 +19789,7 @@ function parseDocument(data2, options) {
 var _a;
 const hasOwn$3 = (
   // @ts-expect-error `hasOwn` is a standard object method
-  (_a = Object.hasOwn) !== null && _a !== void 0 ? _a : (object2, prop2) => Object.prototype.hasOwnProperty.call(object2, prop2)
+  (_a = Object.hasOwn) !== null && _a !== void 0 ? _a : (object, prop2) => Object.prototype.hasOwnProperty.call(object, prop2)
 );
 const rspace = /\s+/;
 const dataAttrPrefix = "data-";
@@ -24989,7 +22522,7 @@ function getLoad(parse2, render2) {
     const initialRoot = parse2(content, internalOpts, isDocument2, null);
     class LoadedCheerio extends Cheerio {
       _make(selector, context) {
-        const cheerio = initialize2(selector, context);
+        const cheerio = initialize(selector, context);
         cheerio.prevObject = this;
         return cheerio;
       }
@@ -25000,7 +22533,7 @@ function getLoad(parse2, render2) {
         return render2(dom, this.options);
       }
     }
-    function initialize2(selector, context, root2 = initialRoot, opts) {
+    function initialize(selector, context, root2 = initialRoot, opts) {
       if (selector && isCheerio(selector))
         return selector;
       const options2 = flattenOptions(opts, internalOpts);
@@ -25048,7 +22581,7 @@ function getLoad(parse2, render2) {
         return instance;
       return searchContext.find(search);
     }
-    Object.assign(initialize2, staticMethods, {
+    Object.assign(initialize, staticMethods, {
       load: load2,
       // `_root` and `_options` are used in static methods.
       _root: initialRoot,
@@ -25058,7 +22591,7 @@ function getLoad(parse2, render2) {
       // Add the prototype here to maintain `instanceof` behavior.
       prototype: LoadedCheerio.prototype
     });
-    return initialize2;
+    return initialize;
   };
 }
 function isNode(obj) {
@@ -33202,7 +30735,7 @@ function renderWithParse5(dom) {
 const parse = getParse((content, options, isDocument2, context) => options._useHtmlParser2 ? parseDocument(content, options) : parseWithParse5(content, options, isDocument2, context));
 const load$1 = getLoad(parse, (dom, options) => options._useHtmlParser2 ? render$1(dom, options) : renderWithParse5(dom));
 var lib$1 = { exports: {} };
-var buffer = require$$0$7;
+var buffer = require$$0$3;
 var Buffer$1 = buffer.Buffer;
 var safer = {};
 var key;
@@ -44822,7 +42355,7 @@ AxiosError$1.ERR_CANCELED = "ERR_CANCELED";
 AxiosError$1.ERR_NOT_SUPPORT = "ERR_NOT_SUPPORT";
 AxiosError$1.ERR_INVALID_URL = "ERR_INVALID_URL";
 var Stream$3 = stream.Stream;
-var util$5 = require$$1$4;
+var util$5 = require$$1$5;
 var delayed_stream = DelayedStream$1;
 function DelayedStream$1() {
   this.source = null;
@@ -44906,7 +42439,7 @@ DelayedStream$1.prototype._checkIfMaxDataSizeExceeded = function() {
   var message = "DelayedStream#maxDataSize of " + this.maxDataSize + " bytes exceeded.";
   this.emit("error", new Error(message));
 };
-var util$4 = require$$1$4;
+var util$4 = require$$1$5;
 var Stream$2 = stream.Stream;
 var DelayedStream = delayed_stream;
 var combined_stream = CombinedStream$1;
@@ -55787,7 +53320,7 @@ var mimeDb = require$$0;
  */
 (function(exports$1) {
   var db = mimeDb;
-  var extname = require$$1$2.extname;
+  var extname = require$$1$3.extname;
   var EXTRACT_TYPE_REGEXP = /^\s*([^;\s]*)(?:;|\s|$)/;
   var TEXT_TYPE_REGEXP = /^text\//i;
   exports$1.charset = charset;
@@ -56673,22 +54206,22 @@ var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
 var $TypeError = type$1;
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
-var esSetTostringtag = function setToStringTag(object2, value) {
+var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
   var nonConfigurable = arguments.length > 2 && !!arguments[2] && arguments[2].nonConfigurable;
   if (typeof overrideIfSet !== "undefined" && typeof overrideIfSet !== "boolean" || typeof nonConfigurable !== "undefined" && typeof nonConfigurable !== "boolean") {
     throw new $TypeError("if provided, the `overrideIfSet` and `nonConfigurable` options must be booleans");
   }
-  if (toStringTag && (overrideIfSet || !hasOwn$1(object2, toStringTag))) {
+  if (toStringTag && (overrideIfSet || !hasOwn$1(object, toStringTag))) {
     if ($defineProperty) {
-      $defineProperty(object2, toStringTag, {
+      $defineProperty(object, toStringTag, {
         configurable: !nonConfigurable,
         enumerable: false,
         value,
         writable: false
       });
     } else {
-      object2[toStringTag] = value;
+      object[toStringTag] = value;
     }
   }
 };
@@ -56699,14 +54232,14 @@ var populate$1 = function(dst, src2) {
   return dst;
 };
 var CombinedStream = combined_stream;
-var util$3 = require$$1$4;
-var path$m = require$$1$2;
-var http$1 = require$$0$5;
-var https$1 = require$$1$5;
-var parseUrl$3 = require$$0$8.parse;
-var fs$j = require$$0$2;
+var util$3 = require$$1$5;
+var path$m = require$$1$3;
+var http$1 = require$$3$3;
+var https$1 = require$$4$2;
+var parseUrl$3 = require$$0$4.parse;
+var fs$j = require$$1$2;
 var Stream$1 = stream.Stream;
-var crypto = require$$0$6;
+var crypto = require$$0$2;
 var mime = mimeTypes;
 var asynckit = asynckit$1;
 var setToStringTag2 = esSetTostringtag;
@@ -57248,7 +54781,7 @@ const transitionalDefaults = {
   clarifyTimeoutError: false,
   legacyInterceptorReqResOrdering: true
 };
-const URLSearchParams$1 = require$$0$8.URLSearchParams;
+const URLSearchParams = require$$0$4.URLSearchParams;
 const ALPHA = "abcdefghijklmnopqrstuvwxyz";
 const DIGIT = "0123456789";
 const ALPHABET = {
@@ -57260,7 +54793,7 @@ const generateString = (size = 16, alphabet = ALPHABET.ALPHA_DIGIT) => {
   let str2 = "";
   const { length } = alphabet;
   const randomValues = new Uint32Array(size);
-  require$$0$6.randomFillSync(randomValues);
+  require$$0$2.randomFillSync(randomValues);
   for (let i = 0; i < size; i++) {
     str2 += alphabet[randomValues[i] % length];
   }
@@ -57269,7 +54802,7 @@ const generateString = (size = 16, alphabet = ALPHABET.ALPHA_DIGIT) => {
 const platform$2 = {
   isNode: true,
   classes: {
-    URLSearchParams: URLSearchParams$1,
+    URLSearchParams,
     FormData: FormData$2,
     Blob: typeof Blob !== "undefined" && Blob || null
   },
@@ -57795,7 +55328,7 @@ function buildFullPath(baseURL, requestedURL, allowAbsoluteUrls) {
   return requestedURL;
 }
 var proxyFromEnv = {};
-var parseUrl$2 = require$$0$8.parse;
+var parseUrl$2 = require$$0$4.parse;
 var DEFAULT_PORTS = {
   ftp: 21,
   gopher: 70,
@@ -58347,7 +55880,7 @@ var hasRequiredSupportsColor;
 function requireSupportsColor() {
   if (hasRequiredSupportsColor) return supportsColor_1;
   hasRequiredSupportsColor = 1;
-  const os2 = require$$1$3;
+  const os2 = require$$1$4;
   const tty = require$$1$8;
   const hasFlag2 = requireHasFlag();
   const { env: env2 } = process;
@@ -58450,7 +55983,7 @@ function requireNode() {
   hasRequiredNode = 1;
   (function(module, exports$1) {
     const tty = require$$1$8;
-    const util2 = require$$1$4;
+    const util2 = require$$1$5;
     exports$1.init = init;
     exports$1.log = log2;
     exports$1.formatArgs = formatArgs;
@@ -58640,10 +56173,10 @@ var debug_1$1 = function() {
   }
   debug$3.apply(null, arguments);
 };
-var url = require$$0$8;
+var url = require$$0$4;
 var URL$1 = url.URL;
-var http = require$$0$5;
-var https = require$$1$5;
+var http = require$$3$3;
+var https = require$$4$2;
 var Writable = stream.Writable;
 var assert$1 = require$$4$1;
 var debug$2 = debug_1$1;
@@ -59288,7 +56821,7 @@ const readBlob = async function* (blob) {
   }
 };
 const BOUNDARY_ALPHABET = platform$1.ALPHABET.ALPHA_DIGIT + "-_";
-const textEncoder = typeof TextEncoder === "function" ? new TextEncoder() : new require$$1$4.TextEncoder();
+const textEncoder = typeof TextEncoder === "function" ? new TextEncoder() : new require$$1$5.TextEncoder();
 const CRLF = "\r\n";
 const CRLF_BYTES = textEncoder.encode(CRLF);
 const CRLF_BYTES_COUNT = 2;
@@ -59571,7 +57104,7 @@ class Http2Sessions {
       let len = authoritySessions.length;
       for (let i = 0; i < len; i++) {
         const [sessionHandle, sessionOptions] = authoritySessions[i];
-        if (!sessionHandle.destroyed && !sessionHandle.closed && require$$1$4.isDeepStrictEqual(sessionOptions, options)) {
+        if (!sessionHandle.destroyed && !sessionHandle.closed && require$$1$5.isDeepStrictEqual(sessionOptions, options)) {
           return sessionHandle;
         }
       }
@@ -59876,7 +57409,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       headers.set(data2.getHeaders());
       if (!headers.hasContentLength()) {
         try {
-          const knownLength = await require$$1$4.promisify(data2.getLength).call(data2);
+          const knownLength = await require$$1$5.promisify(data2.getLength).call(data2);
           Number.isFinite(knownLength) && knownLength >= 0 && headers.setContentLength(knownLength);
         } catch (e) {
         }
@@ -59989,7 +57522,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       if (config2.transport) {
         transport = config2.transport;
       } else if (config2.maxRedirects === 0) {
-        transport = isHttpsRequest ? require$$1$5 : require$$0$5;
+        transport = isHttpsRequest ? require$$4$2 : require$$3$3;
       } else {
         if (config2.maxRedirects) {
           options.maxRedirects = config2.maxRedirects;
@@ -62425,7 +59958,7 @@ universalify$1.fromPromise = function(fn) {
     }
   }, "name", { value: fn.name });
 };
-var constants = require$$0$9;
+var constants = require$$0$5;
 var origCwd = process.cwd;
 var cwd = null;
 var platform = process.env.GRACEFUL_FS_PLATFORM || process.platform;
@@ -62812,11 +60345,11 @@ function clone$1(obj) {
   });
   return copy2;
 }
-var fs$h = require$$0$2;
+var fs$h = require$$1$2;
 var polyfills = polyfills$1;
 var legacy = legacyStreams;
 var clone = clone_1;
-var util$2 = require$$1$4;
+var util$2 = require$$1$5;
 var gracefulQueue;
 var previousSymbol;
 if (typeof Symbol === "function" && typeof Symbol.for === "function") {
@@ -63275,7 +60808,7 @@ function retry$2() {
 })(fs$i);
 var makeDir$1 = {};
 var utils$1 = {};
-const path$l = require$$1$2;
+const path$l = require$$1$3;
 utils$1.checkPath = function checkPath(pth) {
   if (process.platform === "win32") {
     const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path$l.parse(pth).root, ""));
@@ -63349,8 +60882,8 @@ var utimes = {
   utimesMillisSync: utimesMillisSync$1
 };
 const fs$d = fs$i;
-const path$k = require$$1$2;
-const util$1 = require$$1$4;
+const path$k = require$$1$3;
+const util$1 = require$$1$5;
 function getStats$2(src2, dest, opts) {
   const statFunc = opts.dereference ? (file2) => fs$d.stat(file2, { bigint: true }) : (file2) => fs$d.lstat(file2, { bigint: true });
   return Promise.all([
@@ -63473,7 +61006,7 @@ var stat$4 = {
   areIdentical: areIdentical$2
 };
 const fs$c = gracefulFs;
-const path$j = require$$1$2;
+const path$j = require$$1$3;
 const mkdirs$1 = mkdirs$2.mkdirs;
 const pathExists$5 = pathExists_1.pathExists;
 const utimesMillis = utimes.utimesMillis;
@@ -63663,7 +61196,7 @@ function copyLink$1(resolvedSrc, dest, cb) {
 }
 var copy_1 = copy$2;
 const fs$b = gracefulFs;
-const path$i = require$$1$2;
+const path$i = require$$1$3;
 const mkdirsSync$1 = mkdirs$2.mkdirsSync;
 const utimesMillisSync = utimes.utimesMillisSync;
 const stat$2 = stat$4;
@@ -63795,7 +61328,7 @@ var copy$1 = {
   copySync: copySync_1
 };
 const fs$a = gracefulFs;
-const path$h = require$$1$2;
+const path$h = require$$1$3;
 const assert = require$$4$1;
 const isWindows = process.platform === "win32";
 function defaults(options) {
@@ -64039,7 +61572,7 @@ var remove_1 = {
 };
 const u$6 = universalify$1.fromPromise;
 const fs$8 = fs$i;
-const path$g = require$$1$2;
+const path$g = require$$1$3;
 const mkdir$3 = mkdirs$2;
 const remove$1 = remove_1;
 const emptyDir = u$6(async function emptyDir2(dir) {
@@ -64070,7 +61603,7 @@ var empty = {
   emptydir: emptyDir
 };
 const u$5 = universalify$1.fromCallback;
-const path$f = require$$1$2;
+const path$f = require$$1$3;
 const fs$7 = gracefulFs;
 const mkdir$2 = mkdirs$2;
 function createFile$1(file2, callback) {
@@ -64125,7 +61658,7 @@ var file = {
   createFileSync: createFileSync$1
 };
 const u$4 = universalify$1.fromCallback;
-const path$e = require$$1$2;
+const path$e = require$$1$3;
 const fs$6 = gracefulFs;
 const mkdir$1 = mkdirs$2;
 const pathExists$4 = pathExists_1.pathExists;
@@ -64179,7 +61712,7 @@ var link = {
   createLink: u$4(createLink$1),
   createLinkSync: createLinkSync$1
 };
-const path$d = require$$1$2;
+const path$d = require$$1$3;
 const fs$5 = gracefulFs;
 const pathExists$3 = pathExists_1.pathExists;
 function symlinkPaths$1(srcpath, dstpath, callback) {
@@ -64277,7 +61810,7 @@ var symlinkType_1 = {
   symlinkTypeSync: symlinkTypeSync$1
 };
 const u$3 = universalify$1.fromCallback;
-const path$c = require$$1$2;
+const path$c = require$$1$3;
 const fs$3 = fs$i;
 const _mkdirs = mkdirs$2;
 const mkdirs = _mkdirs.mkdirs;
@@ -64381,7 +61914,7 @@ let _fs;
 try {
   _fs = gracefulFs;
 } catch (_) {
-  _fs = require$$0$2;
+  _fs = require$$1$2;
 }
 const universalify = universalify$1;
 const { stringify: stringify$3, stripBom } = utils;
@@ -64453,7 +61986,7 @@ var jsonfile = {
 };
 const u$2 = universalify$1.fromCallback;
 const fs$2 = gracefulFs;
-const path$b = require$$1$2;
+const path$b = require$$1$3;
 const mkdir = mkdirs$2;
 const pathExists$1 = pathExists_1.pathExists;
 function outputFile$1(file2, data2, encoding, callback) {
@@ -64509,7 +62042,7 @@ jsonFile.readJSON = jsonFile.readJson;
 jsonFile.readJSONSync = jsonFile.readJsonSync;
 var json$1 = jsonFile;
 const fs$1 = gracefulFs;
-const path$a = require$$1$2;
+const path$a = require$$1$3;
 const copy = copy$1.copy;
 const remove = remove_1.remove;
 const mkdirp = mkdirs$2.mkdirp;
@@ -64573,7 +62106,7 @@ function moveAcrossDevice$1(src2, dest, overwrite, cb) {
 }
 var move_1 = move$1;
 const fs = gracefulFs;
-const path$9 = require$$1$2;
+const path$9 = require$$1$3;
 const copySync = copy$1.copySync;
 const removeSync = remove_1.removeSync;
 const mkdirpSync = mkdirs$2.mkdirpSync;
@@ -64642,7 +62175,7 @@ var out = {};
 var CancellationToken$1 = {};
 Object.defineProperty(CancellationToken$1, "__esModule", { value: true });
 CancellationToken$1.CancellationError = CancellationToken$1.CancellationToken = void 0;
-const events_1$1 = require$$0$4;
+const events_1$1 = require$$5$1;
 class CancellationToken extends events_1$1.EventEmitter {
   get cancelled() {
     return this._cancelled || this._parent != null && this._parent.cancelled;
@@ -64810,11 +62343,11 @@ httpExecutor.configureRequestUrl = configureRequestUrl;
 httpExecutor.safeGetHeader = safeGetHeader;
 httpExecutor.configureRequestOptions = configureRequestOptions;
 httpExecutor.safeStringifyJson = safeStringifyJson;
-const crypto_1$4 = require$$0$6;
+const crypto_1$4 = require$$0$2;
 const debug_1 = srcExports;
-const fs_1$5 = require$$0$2;
+const fs_1$5 = require$$1$2;
 const stream_1$2 = stream;
-const url_1$7 = require$$0$8;
+const url_1$7 = require$$0$4;
 const CancellationToken_1$1 = CancellationToken$1;
 const error_1$2 = error;
 const ProgressCallbackTransform_1 = ProgressCallbackTransform$1;
@@ -65435,7 +62968,7 @@ function parseDn(seq2) {
 var uuid = {};
 Object.defineProperty(uuid, "__esModule", { value: true });
 uuid.nil = uuid.UUID = void 0;
-const crypto_1$3 = require$$0$6;
+const crypto_1$3 = require$$0$2;
 const error_1$1 = error;
 const invalidName = "options.name must be either a string or a Buffer";
 const randomHost = (0, crypto_1$3.randomBytes)(16);
@@ -67431,9 +64964,9 @@ var YAML_NODE_KINDS = [
 function compileStyleAliases(map2) {
   var result = {};
   if (map2 !== null) {
-    Object.keys(map2).forEach(function(style2) {
-      map2[style2].forEach(function(alias) {
-        result[String(alias)] = style2;
+    Object.keys(map2).forEach(function(style) {
+      map2[style].forEach(function(alias) {
+        result[String(alias)] = style;
       });
     });
   }
@@ -67587,8 +65120,8 @@ function resolveYamlNull(data2) {
 function constructYamlNull() {
   return null;
 }
-function isNull(object2) {
-  return object2 === null;
+function isNull(object) {
+  return object === null;
 }
 var _null = new Type$9("tag:yaml.org,2002:null", {
   kind: "scalar",
@@ -67623,8 +65156,8 @@ function resolveYamlBoolean(data2) {
 function constructYamlBoolean(data2) {
   return data2 === "true" || data2 === "True" || data2 === "TRUE";
 }
-function isBoolean(object2) {
-  return Object.prototype.toString.call(object2) === "[object Boolean]";
+function isBoolean(object) {
+  return Object.prototype.toString.call(object) === "[object Boolean]";
 }
 var bool = new Type$8("tag:yaml.org,2002:bool", {
   kind: "scalar",
@@ -67632,14 +65165,14 @@ var bool = new Type$8("tag:yaml.org,2002:bool", {
   construct: constructYamlBoolean,
   predicate: isBoolean,
   represent: {
-    lowercase: function(object2) {
-      return object2 ? "true" : "false";
+    lowercase: function(object) {
+      return object ? "true" : "false";
     },
-    uppercase: function(object2) {
-      return object2 ? "TRUE" : "FALSE";
+    uppercase: function(object) {
+      return object ? "TRUE" : "FALSE";
     },
-    camelcase: function(object2) {
-      return object2 ? "True" : "False";
+    camelcase: function(object) {
+      return object ? "True" : "False";
     }
   },
   defaultStyle: "lowercase"
@@ -67728,8 +65261,8 @@ function constructYamlInteger(data2) {
   }
   return sign3 * parseInt(value, 10);
 }
-function isInteger(object2) {
-  return Object.prototype.toString.call(object2) === "[object Number]" && (object2 % 1 === 0 && !common$3.isNegativeZero(object2));
+function isInteger(object) {
+  return Object.prototype.toString.call(object) === "[object Number]" && (object % 1 === 0 && !common$3.isNegativeZero(object));
 }
 var int = new Type$7("tag:yaml.org,2002:int", {
   kind: "scalar",
@@ -67789,10 +65322,10 @@ function constructYamlFloat(data2) {
   return sign3 * parseFloat(value, 10);
 }
 var SCIENTIFIC_WITHOUT_DOT = /^[-+]?[0-9]+e/;
-function representYamlFloat(object2, style2) {
+function representYamlFloat(object, style) {
   var res;
-  if (isNaN(object2)) {
-    switch (style2) {
+  if (isNaN(object)) {
+    switch (style) {
       case "lowercase":
         return ".nan";
       case "uppercase":
@@ -67800,8 +65333,8 @@ function representYamlFloat(object2, style2) {
       case "camelcase":
         return ".NaN";
     }
-  } else if (Number.POSITIVE_INFINITY === object2) {
-    switch (style2) {
+  } else if (Number.POSITIVE_INFINITY === object) {
+    switch (style) {
       case "lowercase":
         return ".inf";
       case "uppercase":
@@ -67809,8 +65342,8 @@ function representYamlFloat(object2, style2) {
       case "camelcase":
         return ".Inf";
     }
-  } else if (Number.NEGATIVE_INFINITY === object2) {
-    switch (style2) {
+  } else if (Number.NEGATIVE_INFINITY === object) {
+    switch (style) {
       case "lowercase":
         return "-.inf";
       case "uppercase":
@@ -67818,14 +65351,14 @@ function representYamlFloat(object2, style2) {
       case "camelcase":
         return "-.Inf";
     }
-  } else if (common$2.isNegativeZero(object2)) {
+  } else if (common$2.isNegativeZero(object)) {
     return "-0.0";
   }
-  res = object2.toString(10);
+  res = object.toString(10);
   return SCIENTIFIC_WITHOUT_DOT.test(res) ? res.replace("e", ".e") : res;
 }
-function isFloat(object2) {
-  return Object.prototype.toString.call(object2) === "[object Number]" && (object2 % 1 !== 0 || common$2.isNegativeZero(object2));
+function isFloat(object) {
+  return Object.prototype.toString.call(object) === "[object Number]" && (object % 1 !== 0 || common$2.isNegativeZero(object));
 }
 var float = new Type$6("tag:yaml.org,2002:float", {
   kind: "scalar",
@@ -67888,8 +65421,8 @@ function constructYamlTimestamp(data2) {
   if (delta) date.setTime(date.getTime() - delta);
   return date;
 }
-function representYamlTimestamp(object2) {
-  return object2.toISOString();
+function representYamlTimestamp(object) {
+  return object.toISOString();
 }
 var timestamp = new Type$5("tag:yaml.org,2002:timestamp", {
   kind: "scalar",
@@ -67942,8 +65475,8 @@ function constructYamlBinary(data2) {
   }
   return new Uint8Array(result);
 }
-function representYamlBinary(object2) {
-  var result = "", bits = 0, idx, tail, max2 = object2.length, map2 = BASE64_MAP;
+function representYamlBinary(object) {
+  var result = "", bits = 0, idx, tail, max2 = object.length, map2 = BASE64_MAP;
   for (idx = 0; idx < max2; idx++) {
     if (idx % 3 === 0 && idx) {
       result += map2[bits >> 18 & 63];
@@ -67951,7 +65484,7 @@ function representYamlBinary(object2) {
       result += map2[bits >> 6 & 63];
       result += map2[bits & 63];
     }
-    bits = (bits << 8) + object2[idx];
+    bits = (bits << 8) + object[idx];
   }
   tail = max2 % 3;
   if (tail === 0) {
@@ -67987,9 +65520,9 @@ var _hasOwnProperty$3 = Object.prototype.hasOwnProperty;
 var _toString$2 = Object.prototype.toString;
 function resolveYamlOmap(data2) {
   if (data2 === null) return true;
-  var objectKeys = [], index2, length, pair, pairKey, pairHasKey, object2 = data2;
-  for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-    pair = object2[index2];
+  var objectKeys = [], index2, length, pair, pairKey, pairHasKey, object = data2;
+  for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+    pair = object[index2];
     pairHasKey = false;
     if (_toString$2.call(pair) !== "[object Object]") return false;
     for (pairKey in pair) {
@@ -68016,10 +65549,10 @@ var Type$1 = type;
 var _toString$1 = Object.prototype.toString;
 function resolveYamlPairs(data2) {
   if (data2 === null) return true;
-  var index2, length, pair, keys, result, object2 = data2;
-  result = new Array(object2.length);
-  for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-    pair = object2[index2];
+  var index2, length, pair, keys, result, object = data2;
+  result = new Array(object.length);
+  for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+    pair = object[index2];
     if (_toString$1.call(pair) !== "[object Object]") return false;
     keys = Object.keys(pair);
     if (keys.length !== 1) return false;
@@ -68029,10 +65562,10 @@ function resolveYamlPairs(data2) {
 }
 function constructYamlPairs(data2) {
   if (data2 === null) return [];
-  var index2, length, pair, keys, result, object2 = data2;
-  result = new Array(object2.length);
-  for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-    pair = object2[index2];
+  var index2, length, pair, keys, result, object = data2;
+  result = new Array(object.length);
+  for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+    pair = object[index2];
     keys = Object.keys(pair);
     result[index2] = [keys[0], pair[keys[0]]];
   }
@@ -68047,10 +65580,10 @@ var Type = type;
 var _hasOwnProperty$2 = Object.prototype.hasOwnProperty;
 function resolveYamlSet(data2) {
   if (data2 === null) return true;
-  var key2, object2 = data2;
-  for (key2 in object2) {
-    if (_hasOwnProperty$2.call(object2, key2)) {
-      if (object2[key2] !== null) return false;
+  var key2, object = data2;
+  for (key2 in object) {
+    if (_hasOwnProperty$2.call(object, key2)) {
+      if (object[key2] !== null) return false;
     }
   }
   return true;
@@ -68148,16 +65681,16 @@ function charFromCodepoint(c) {
     (c - 65536 & 1023) + 56320
   );
 }
-function setProperty(object2, key2, value) {
+function setProperty(object, key2, value) {
   if (key2 === "__proto__") {
-    Object.defineProperty(object2, key2, {
+    Object.defineProperty(object, key2, {
       configurable: true,
       enumerable: true,
       writable: true,
       value
     });
   } else {
-    object2[key2] = value;
+    object[key2] = value;
   }
 }
 var simpleEscapeCheck = new Array(256);
@@ -69298,21 +66831,21 @@ var DEPRECATED_BOOLEANS_SYNTAX = [
 ];
 var DEPRECATED_BASE60_SYNTAX = /^[-+]?[0-9_]+(?::[0-9_]+)+(?:\.[0-9_]*)?$/;
 function compileStyleMap(schema2, map2) {
-  var result, keys, index2, length, tag, style2, type2;
+  var result, keys, index2, length, tag, style, type2;
   if (map2 === null) return {};
   result = {};
   keys = Object.keys(map2);
   for (index2 = 0, length = keys.length; index2 < length; index2 += 1) {
     tag = keys[index2];
-    style2 = String(map2[tag]);
+    style = String(map2[tag]);
     if (tag.slice(0, 2) === "!!") {
       tag = "tag:yaml.org,2002:" + tag.slice(2);
     }
     type2 = schema2.compiledTypeMap["fallback"][tag];
-    if (type2 && _hasOwnProperty.call(type2.styleAliases, style2)) {
-      style2 = type2.styleAliases[style2];
+    if (type2 && _hasOwnProperty.call(type2.styleAliases, style)) {
+      style = type2.styleAliases[style];
     }
-    result[tag] = style2;
+    result[tag] = style;
   }
   return result;
 }
@@ -69585,12 +67118,12 @@ function escapeString(string) {
   }
   return result;
 }
-function writeFlowSequence(state2, level, object2) {
+function writeFlowSequence(state2, level, object) {
   var _result = "", _tag = state2.tag, index2, length, value;
-  for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-    value = object2[index2];
+  for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+    value = object[index2];
     if (state2.replacer) {
-      value = state2.replacer.call(object2, String(index2), value);
+      value = state2.replacer.call(object, String(index2), value);
     }
     if (writeNode(state2, level, value, false, false) || typeof value === "undefined" && writeNode(state2, level, null, false, false)) {
       if (_result !== "") _result += "," + (!state2.condenseFlow ? " " : "");
@@ -69600,12 +67133,12 @@ function writeFlowSequence(state2, level, object2) {
   state2.tag = _tag;
   state2.dump = "[" + _result + "]";
 }
-function writeBlockSequence(state2, level, object2, compact) {
+function writeBlockSequence(state2, level, object, compact) {
   var _result = "", _tag = state2.tag, index2, length, value;
-  for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-    value = object2[index2];
+  for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+    value = object[index2];
     if (state2.replacer) {
-      value = state2.replacer.call(object2, String(index2), value);
+      value = state2.replacer.call(object, String(index2), value);
     }
     if (writeNode(state2, level + 1, value, true, true, false, true) || typeof value === "undefined" && writeNode(state2, level + 1, null, true, true, false, true)) {
       if (!compact || _result !== "") {
@@ -69622,16 +67155,16 @@ function writeBlockSequence(state2, level, object2, compact) {
   state2.tag = _tag;
   state2.dump = _result || "[]";
 }
-function writeFlowMapping(state2, level, object2) {
-  var _result = "", _tag = state2.tag, objectKeyList = Object.keys(object2), index2, length, objectKey, objectValue, pairBuffer;
+function writeFlowMapping(state2, level, object) {
+  var _result = "", _tag = state2.tag, objectKeyList = Object.keys(object), index2, length, objectKey, objectValue, pairBuffer;
   for (index2 = 0, length = objectKeyList.length; index2 < length; index2 += 1) {
     pairBuffer = "";
     if (_result !== "") pairBuffer += ", ";
     if (state2.condenseFlow) pairBuffer += '"';
     objectKey = objectKeyList[index2];
-    objectValue = object2[objectKey];
+    objectValue = object[objectKey];
     if (state2.replacer) {
-      objectValue = state2.replacer.call(object2, objectKey, objectValue);
+      objectValue = state2.replacer.call(object, objectKey, objectValue);
     }
     if (!writeNode(state2, level, objectKey, false, false)) {
       continue;
@@ -69647,8 +67180,8 @@ function writeFlowMapping(state2, level, object2) {
   state2.tag = _tag;
   state2.dump = "{" + _result + "}";
 }
-function writeBlockMapping(state2, level, object2, compact) {
-  var _result = "", _tag = state2.tag, objectKeyList = Object.keys(object2), index2, length, objectKey, objectValue, explicitPair, pairBuffer;
+function writeBlockMapping(state2, level, object, compact) {
+  var _result = "", _tag = state2.tag, objectKeyList = Object.keys(object), index2, length, objectKey, objectValue, explicitPair, pairBuffer;
   if (state2.sortKeys === true) {
     objectKeyList.sort();
   } else if (typeof state2.sortKeys === "function") {
@@ -69662,9 +67195,9 @@ function writeBlockMapping(state2, level, object2, compact) {
       pairBuffer += generateNextLine(state2, level);
     }
     objectKey = objectKeyList[index2];
-    objectValue = object2[objectKey];
+    objectValue = object[objectKey];
     if (state2.replacer) {
-      objectValue = state2.replacer.call(object2, objectKey, objectValue);
+      objectValue = state2.replacer.call(object, objectKey, objectValue);
     }
     if (!writeNode(state2, level + 1, objectKey, true, true, true)) {
       continue;
@@ -69695,15 +67228,15 @@ function writeBlockMapping(state2, level, object2, compact) {
   state2.tag = _tag;
   state2.dump = _result || "{}";
 }
-function detectType(state2, object2, explicit) {
-  var _result, typeList, index2, length, type2, style2;
+function detectType(state2, object, explicit) {
+  var _result, typeList, index2, length, type2, style;
   typeList = explicit ? state2.explicitTypes : state2.implicitTypes;
   for (index2 = 0, length = typeList.length; index2 < length; index2 += 1) {
     type2 = typeList[index2];
-    if ((type2.instanceOf || type2.predicate) && (!type2.instanceOf || typeof object2 === "object" && object2 instanceof type2.instanceOf) && (!type2.predicate || type2.predicate(object2))) {
+    if ((type2.instanceOf || type2.predicate) && (!type2.instanceOf || typeof object === "object" && object instanceof type2.instanceOf) && (!type2.predicate || type2.predicate(object))) {
       if (explicit) {
         if (type2.multi && type2.representName) {
-          state2.tag = type2.representName(object2);
+          state2.tag = type2.representName(object);
         } else {
           state2.tag = type2.tag;
         }
@@ -69711,13 +67244,13 @@ function detectType(state2, object2, explicit) {
         state2.tag = "?";
       }
       if (type2.represent) {
-        style2 = state2.styleMap[type2.tag] || type2.defaultStyle;
+        style = state2.styleMap[type2.tag] || type2.defaultStyle;
         if (_toString.call(type2.represent) === "[object Function]") {
-          _result = type2.represent(object2, style2);
-        } else if (_hasOwnProperty.call(type2.represent, style2)) {
-          _result = type2.represent[style2](object2, style2);
+          _result = type2.represent(object, style);
+        } else if (_hasOwnProperty.call(type2.represent, style)) {
+          _result = type2.represent[style](object, style);
         } else {
-          throw new YAMLException("!<" + type2.tag + '> tag resolver accepts not "' + style2 + '" style');
+          throw new YAMLException("!<" + type2.tag + '> tag resolver accepts not "' + style + '" style');
         }
         state2.dump = _result;
       }
@@ -69726,11 +67259,11 @@ function detectType(state2, object2, explicit) {
   }
   return false;
 }
-function writeNode(state2, level, object2, block, compact, iskey, isblockseq) {
+function writeNode(state2, level, object, block, compact, iskey, isblockseq) {
   state2.tag = null;
-  state2.dump = object2;
-  if (!detectType(state2, object2, false)) {
-    detectType(state2, object2, true);
+  state2.dump = object;
+  if (!detectType(state2, object, false)) {
+    detectType(state2, object, true);
   }
   var type2 = _toString.call(state2.dump);
   var inblock = block;
@@ -69740,7 +67273,7 @@ function writeNode(state2, level, object2, block, compact, iskey, isblockseq) {
   }
   var objectOrArray = type2 === "[object Object]" || type2 === "[object Array]", duplicateIndex, duplicate;
   if (objectOrArray) {
-    duplicateIndex = state2.duplicates.indexOf(object2);
+    duplicateIndex = state2.duplicates.indexOf(object);
     duplicate = duplicateIndex !== -1;
   }
   if (state2.tag !== null && state2.tag !== "?" || duplicate || state2.indent !== 2 && level > 0) {
@@ -69806,32 +67339,32 @@ function writeNode(state2, level, object2, block, compact, iskey, isblockseq) {
   }
   return true;
 }
-function getDuplicateReferences(object2, state2) {
+function getDuplicateReferences(object, state2) {
   var objects = [], duplicatesIndexes = [], index2, length;
-  inspectNode(object2, objects, duplicatesIndexes);
+  inspectNode(object, objects, duplicatesIndexes);
   for (index2 = 0, length = duplicatesIndexes.length; index2 < length; index2 += 1) {
     state2.duplicates.push(objects[duplicatesIndexes[index2]]);
   }
   state2.usedDuplicates = new Array(length);
 }
-function inspectNode(object2, objects, duplicatesIndexes) {
+function inspectNode(object, objects, duplicatesIndexes) {
   var objectKeyList, index2, length;
-  if (object2 !== null && typeof object2 === "object") {
-    index2 = objects.indexOf(object2);
+  if (object !== null && typeof object === "object") {
+    index2 = objects.indexOf(object);
     if (index2 !== -1) {
       if (duplicatesIndexes.indexOf(index2) === -1) {
         duplicatesIndexes.push(index2);
       }
     } else {
-      objects.push(object2);
-      if (Array.isArray(object2)) {
-        for (index2 = 0, length = object2.length; index2 < length; index2 += 1) {
-          inspectNode(object2[index2], objects, duplicatesIndexes);
+      objects.push(object);
+      if (Array.isArray(object)) {
+        for (index2 = 0, length = object.length; index2 < length; index2 += 1) {
+          inspectNode(object[index2], objects, duplicatesIndexes);
         }
       } else {
-        objectKeyList = Object.keys(object2);
+        objectKeyList = Object.keys(object);
         for (index2 = 0, length = objectKeyList.length; index2 < length; index2 += 1) {
-          inspectNode(object2[objectKeyList[index2]], objects, duplicatesIndexes);
+          inspectNode(object[objectKeyList[index2]], objects, duplicatesIndexes);
         }
       }
     }
@@ -69980,8 +67513,8 @@ lodash_isequal.exports;
   function cacheHas(cache, key2) {
     return cache.has(key2);
   }
-  function getValue(object2, key2) {
-    return object2 == null ? void 0 : object2[key2];
+  function getValue(object, key2) {
+    return object == null ? void 0 : object[key2];
   }
   function mapToArray(map2) {
     var index2 = -1, result = Array(map2.size);
@@ -70222,9 +67755,9 @@ lodash_isequal.exports;
     }
     return -1;
   }
-  function baseGetAllKeys(object2, keysFunc, symbolsFunc) {
-    var result = keysFunc(object2);
-    return isArray2(object2) ? result : arrayPush(result, symbolsFunc(object2));
+  function baseGetAllKeys(object, keysFunc, symbolsFunc) {
+    var result = keysFunc(object);
+    return isArray2(object) ? result : arrayPush(result, symbolsFunc(object));
   }
   function baseGetTag(value) {
     if (value == null) {
@@ -70244,12 +67777,12 @@ lodash_isequal.exports;
     }
     return baseIsEqualDeep(value, other, bitmask, customizer, baseIsEqual, stack);
   }
-  function baseIsEqualDeep(object2, other, bitmask, customizer, equalFunc, stack) {
-    var objIsArr = isArray2(object2), othIsArr = isArray2(other), objTag = objIsArr ? arrayTag : getTag(object2), othTag = othIsArr ? arrayTag : getTag(other);
+  function baseIsEqualDeep(object, other, bitmask, customizer, equalFunc, stack) {
+    var objIsArr = isArray2(object), othIsArr = isArray2(other), objTag = objIsArr ? arrayTag : getTag(object), othTag = othIsArr ? arrayTag : getTag(other);
     objTag = objTag == argsTag ? objectTag : objTag;
     othTag = othTag == argsTag ? objectTag : othTag;
     var objIsObj = objTag == objectTag, othIsObj = othTag == objectTag, isSameTag = objTag == othTag;
-    if (isSameTag && isBuffer2(object2)) {
+    if (isSameTag && isBuffer2(object)) {
       if (!isBuffer2(other)) {
         return false;
       }
@@ -70258,12 +67791,12 @@ lodash_isequal.exports;
     }
     if (isSameTag && !objIsObj) {
       stack || (stack = new Stack());
-      return objIsArr || isTypedArray2(object2) ? equalArrays(object2, other, bitmask, customizer, equalFunc, stack) : equalByTag(object2, other, objTag, bitmask, customizer, equalFunc, stack);
+      return objIsArr || isTypedArray2(object) ? equalArrays(object, other, bitmask, customizer, equalFunc, stack) : equalByTag(object, other, objTag, bitmask, customizer, equalFunc, stack);
     }
     if (!(bitmask & COMPARE_PARTIAL_FLAG)) {
-      var objIsWrapped = objIsObj && hasOwnProperty2.call(object2, "__wrapped__"), othIsWrapped = othIsObj && hasOwnProperty2.call(other, "__wrapped__");
+      var objIsWrapped = objIsObj && hasOwnProperty2.call(object, "__wrapped__"), othIsWrapped = othIsObj && hasOwnProperty2.call(other, "__wrapped__");
       if (objIsWrapped || othIsWrapped) {
-        var objUnwrapped = objIsWrapped ? object2.value() : object2, othUnwrapped = othIsWrapped ? other.value() : other;
+        var objUnwrapped = objIsWrapped ? object.value() : object, othUnwrapped = othIsWrapped ? other.value() : other;
         stack || (stack = new Stack());
         return equalFunc(objUnwrapped, othUnwrapped, bitmask, customizer, stack);
       }
@@ -70272,7 +67805,7 @@ lodash_isequal.exports;
       return false;
     }
     stack || (stack = new Stack());
-    return equalObjects(object2, other, bitmask, customizer, equalFunc, stack);
+    return equalObjects(object, other, bitmask, customizer, equalFunc, stack);
   }
   function baseIsNative(value) {
     if (!isObject2(value) || isMasked(value)) {
@@ -70284,13 +67817,13 @@ lodash_isequal.exports;
   function baseIsTypedArray(value) {
     return isObjectLike2(value) && isLength(value.length) && !!typedArrayTags[baseGetTag(value)];
   }
-  function baseKeys(object2) {
-    if (!isPrototype(object2)) {
-      return nativeKeys(object2);
+  function baseKeys(object) {
+    if (!isPrototype(object)) {
+      return nativeKeys(object);
     }
     var result = [];
-    for (var key2 in Object(object2)) {
-      if (hasOwnProperty2.call(object2, key2) && key2 != "constructor") {
+    for (var key2 in Object(object)) {
+      if (hasOwnProperty2.call(object, key2) && key2 != "constructor") {
         result.push(key2);
       }
     }
@@ -70338,54 +67871,54 @@ lodash_isequal.exports;
     stack["delete"](other);
     return result;
   }
-  function equalByTag(object2, other, tag, bitmask, customizer, equalFunc, stack) {
+  function equalByTag(object, other, tag, bitmask, customizer, equalFunc, stack) {
     switch (tag) {
       case dataViewTag:
-        if (object2.byteLength != other.byteLength || object2.byteOffset != other.byteOffset) {
+        if (object.byteLength != other.byteLength || object.byteOffset != other.byteOffset) {
           return false;
         }
-        object2 = object2.buffer;
+        object = object.buffer;
         other = other.buffer;
       case arrayBufferTag:
-        if (object2.byteLength != other.byteLength || !equalFunc(new Uint8Array2(object2), new Uint8Array2(other))) {
+        if (object.byteLength != other.byteLength || !equalFunc(new Uint8Array2(object), new Uint8Array2(other))) {
           return false;
         }
         return true;
       case boolTag:
       case dateTag:
       case numberTag:
-        return eq2(+object2, +other);
+        return eq2(+object, +other);
       case errorTag:
-        return object2.name == other.name && object2.message == other.message;
+        return object.name == other.name && object.message == other.message;
       case regexpTag:
       case stringTag:
-        return object2 == other + "";
+        return object == other + "";
       case mapTag:
         var convert = mapToArray;
       case setTag:
         var isPartial = bitmask & COMPARE_PARTIAL_FLAG;
         convert || (convert = setToArray);
-        if (object2.size != other.size && !isPartial) {
+        if (object.size != other.size && !isPartial) {
           return false;
         }
-        var stacked = stack.get(object2);
+        var stacked = stack.get(object);
         if (stacked) {
           return stacked == other;
         }
         bitmask |= COMPARE_UNORDERED_FLAG;
-        stack.set(object2, other);
-        var result = equalArrays(convert(object2), convert(other), bitmask, customizer, equalFunc, stack);
-        stack["delete"](object2);
+        stack.set(object, other);
+        var result = equalArrays(convert(object), convert(other), bitmask, customizer, equalFunc, stack);
+        stack["delete"](object);
         return result;
       case symbolTag2:
         if (symbolValueOf) {
-          return symbolValueOf.call(object2) == symbolValueOf.call(other);
+          return symbolValueOf.call(object) == symbolValueOf.call(other);
         }
     }
     return false;
   }
-  function equalObjects(object2, other, bitmask, customizer, equalFunc, stack) {
-    var isPartial = bitmask & COMPARE_PARTIAL_FLAG, objProps = getAllKeys(object2), objLength = objProps.length, othProps = getAllKeys(other), othLength = othProps.length;
+  function equalObjects(object, other, bitmask, customizer, equalFunc, stack) {
+    var isPartial = bitmask & COMPARE_PARTIAL_FLAG, objProps = getAllKeys(object), objLength = objProps.length, othProps = getAllKeys(other), othLength = othProps.length;
     if (objLength != othLength && !isPartial) {
       return false;
     }
@@ -70396,19 +67929,19 @@ lodash_isequal.exports;
         return false;
       }
     }
-    var stacked = stack.get(object2);
+    var stacked = stack.get(object);
     if (stacked && stack.get(other)) {
       return stacked == other;
     }
     var result = true;
-    stack.set(object2, other);
-    stack.set(other, object2);
+    stack.set(object, other);
+    stack.set(other, object);
     var skipCtor = isPartial;
     while (++index2 < objLength) {
       key2 = objProps[index2];
-      var objValue = object2[key2], othValue = other[key2];
+      var objValue = object[key2], othValue = other[key2];
       if (customizer) {
-        var compared = isPartial ? customizer(othValue, objValue, key2, other, object2, stack) : customizer(objValue, othValue, key2, object2, other, stack);
+        var compared = isPartial ? customizer(othValue, objValue, key2, other, object, stack) : customizer(objValue, othValue, key2, object, other, stack);
       }
       if (!(compared === void 0 ? objValue === othValue || equalFunc(objValue, othValue, bitmask, customizer, stack) : compared)) {
         result = false;
@@ -70417,24 +67950,24 @@ lodash_isequal.exports;
       skipCtor || (skipCtor = key2 == "constructor");
     }
     if (result && !skipCtor) {
-      var objCtor = object2.constructor, othCtor = other.constructor;
-      if (objCtor != othCtor && ("constructor" in object2 && "constructor" in other) && !(typeof objCtor == "function" && objCtor instanceof objCtor && typeof othCtor == "function" && othCtor instanceof othCtor)) {
+      var objCtor = object.constructor, othCtor = other.constructor;
+      if (objCtor != othCtor && ("constructor" in object && "constructor" in other) && !(typeof objCtor == "function" && objCtor instanceof objCtor && typeof othCtor == "function" && othCtor instanceof othCtor)) {
         result = false;
       }
     }
-    stack["delete"](object2);
+    stack["delete"](object);
     stack["delete"](other);
     return result;
   }
-  function getAllKeys(object2) {
-    return baseGetAllKeys(object2, keys, getSymbols);
+  function getAllKeys(object) {
+    return baseGetAllKeys(object, keys, getSymbols);
   }
   function getMapData(map2, key2) {
     var data2 = map2.__data__;
     return isKeyable(key2) ? data2[typeof key2 == "string" ? "string" : "hash"] : data2.map;
   }
-  function getNative(object2, key2) {
-    var value = getValue(object2, key2);
+  function getNative(object, key2) {
+    var value = getValue(object, key2);
     return baseIsNative(value) ? value : void 0;
   }
   function getRawTag(value) {
@@ -70454,13 +67987,13 @@ lodash_isequal.exports;
     }
     return result;
   }
-  var getSymbols = !nativeGetSymbols ? stubArray : function(object2) {
-    if (object2 == null) {
+  var getSymbols = !nativeGetSymbols ? stubArray : function(object) {
+    if (object == null) {
       return [];
     }
-    object2 = Object(object2);
-    return arrayFilter(nativeGetSymbols(object2), function(symbol) {
-      return propertyIsEnumerable.call(object2, symbol);
+    object = Object(object);
+    return arrayFilter(nativeGetSymbols(object), function(symbol) {
+      return propertyIsEnumerable.call(object, symbol);
     });
   };
   var getTag = baseGetTag;
@@ -70549,8 +68082,8 @@ lodash_isequal.exports;
     return value != null && typeof value == "object";
   }
   var isTypedArray2 = nodeIsTypedArray ? baseUnary(nodeIsTypedArray) : baseIsTypedArray;
-  function keys(object2) {
-    return isArrayLike2(object2) ? arrayLikeKeys(object2) : baseKeys(object2);
+  function keys(object) {
+    return isArrayLike2(object) ? arrayLikeKeys(object) : baseKeys(object);
   }
   function stubArray() {
     return [];
@@ -70564,11 +68097,11 @@ var lodash_isequalExports = lodash_isequal.exports;
 Object.defineProperty(DownloadedUpdateHelper$1, "__esModule", { value: true });
 DownloadedUpdateHelper$1.DownloadedUpdateHelper = void 0;
 DownloadedUpdateHelper$1.createTempUpdateFile = createTempUpdateFile;
-const crypto_1$2 = require$$0$6;
-const fs_1$4 = require$$0$2;
+const crypto_1$2 = require$$0$2;
+const fs_1$4 = require$$1$2;
 const isEqual = lodash_isequalExports;
 const fs_extra_1$6 = lib;
-const path$8 = require$$1$2;
+const path$8 = require$$1$3;
 class DownloadedUpdateHelper {
   constructor(cacheDir) {
     this.cacheDir = cacheDir;
@@ -70721,8 +68254,8 @@ var ElectronAppAdapter$1 = {};
 var AppAdapter = {};
 Object.defineProperty(AppAdapter, "__esModule", { value: true });
 AppAdapter.getAppCacheDir = getAppCacheDir;
-const path$7 = require$$1$2;
-const os_1$1 = require$$1$3;
+const path$7 = require$$1$3;
+const os_1$1 = require$$1$4;
 function getAppCacheDir() {
   const homedir2 = (0, os_1$1.homedir)();
   let result;
@@ -70737,7 +68270,7 @@ function getAppCacheDir() {
 }
 Object.defineProperty(ElectronAppAdapter$1, "__esModule", { value: true });
 ElectronAppAdapter$1.ElectronAppAdapter = void 0;
-const path$6 = require$$1$2;
+const path$6 = require$$1$3;
 const AppAdapter_1 = AppAdapter;
 class ElectronAppAdapter {
   constructor(app2 = require$$1$6.app) {
@@ -70853,7 +68386,7 @@ Object.defineProperty(util, "__esModule", { value: true });
 util.newBaseUrl = newBaseUrl;
 util.newUrlFromBase = newUrlFromBase;
 util.getChannelFilename = getChannelFilename;
-const url_1$6 = require$$0$8;
+const url_1$6 = require$$0$4;
 function newBaseUrl(url2) {
   const result = new url_1$6.URL(url2);
   if (!result.pathname.endsWith("/")) {
@@ -70916,7 +68449,7 @@ Provider$1.getFileList = getFileList;
 Provider$1.resolveFiles = resolveFiles;
 const builder_util_runtime_1$f = out;
 const js_yaml_1$2 = jsYaml;
-const url_1$5 = require$$0$8;
+const url_1$5 = require$$0$4;
 const util_1$6 = util;
 const escapeRegExp$1 = lodash_escaperegexp;
 class Provider {
@@ -71135,7 +68668,7 @@ GitHubProvider$1.GitHubProvider = GitHubProvider$1.BaseGitHubProvider = void 0;
 GitHubProvider$1.computeReleaseNotes = computeReleaseNotes;
 const builder_util_runtime_1$c = out;
 const semver = semver$1;
-const url_1$4 = require$$0$8;
+const url_1$4 = require$$0$4;
 const util_1$3 = util;
 const Provider_1$9 = Provider$1;
 const hrefRegExp = /\/tag\/([^/]+)$/;
@@ -71309,7 +68842,7 @@ var GitLabProvider$1 = {};
 Object.defineProperty(GitLabProvider$1, "__esModule", { value: true });
 GitLabProvider$1.GitLabProvider = void 0;
 const builder_util_runtime_1$b = out;
-const url_1$3 = require$$0$8;
+const url_1$3 = require$$0$4;
 const escapeRegExp = lodash_escaperegexp;
 const util_1$2 = util;
 const Provider_1$8 = Provider$1;
@@ -71592,8 +69125,8 @@ Object.defineProperty(PrivateGitHubProvider$1, "__esModule", { value: true });
 PrivateGitHubProvider$1.PrivateGitHubProvider = void 0;
 const builder_util_runtime_1$9 = out;
 const js_yaml_1$1 = jsYaml;
-const path$5 = require$$1$2;
-const url_1$2 = require$$0$8;
+const path$5 = require$$1$3;
+const url_1$2 = require$$0$4;
 const util_1 = util;
 const GitHubProvider_1$1 = GitHubProvider$1;
 const Provider_1$6 = Provider$1;
@@ -71848,7 +69381,7 @@ Object.defineProperty(DataSplitter$1, "__esModule", { value: true });
 DataSplitter$1.DataSplitter = void 0;
 DataSplitter$1.copyData = copyData;
 const builder_util_runtime_1$7 = out;
-const fs_1$3 = require$$0$2;
+const fs_1$3 = require$$1$2;
 const stream_1$1 = stream;
 const downloadPlanBuilder_1$2 = downloadPlanBuilder;
 const DOUBLE_CRLF = Buffer.from("\r\n\r\n");
@@ -72232,9 +69765,9 @@ Object.defineProperty(DifferentialDownloader$1, "__esModule", { value: true });
 DifferentialDownloader$1.DifferentialDownloader = void 0;
 const builder_util_runtime_1$5 = out;
 const fs_extra_1$5 = lib;
-const fs_1$2 = require$$0$2;
+const fs_1$2 = require$$1$2;
 const DataSplitter_1 = DataSplitter$1;
-const url_1$1 = require$$0$8;
+const url_1$1 = require$$0$4;
 const downloadPlanBuilder_1 = downloadPlanBuilder;
 const multipleRangeDownloader_1 = multipleRangeDownloader;
 const ProgressDifferentialDownloadCallbackTransform_1 = ProgressDifferentialDownloadCallbackTransform$1;
@@ -72519,13 +70052,13 @@ var types = {};
 Object.defineProperty(AppUpdater$1, "__esModule", { value: true });
 AppUpdater$1.NoOpLogger = AppUpdater$1.AppUpdater = void 0;
 const builder_util_runtime_1$4 = out;
-const crypto_1$1 = require$$0$6;
-const os_1 = require$$1$3;
-const events_1 = require$$0$4;
+const crypto_1$1 = require$$0$2;
+const os_1 = require$$1$4;
+const events_1 = require$$5$1;
 const fs_extra_1$4 = lib;
 const js_yaml_1 = jsYaml;
 const lazy_val_1 = main;
-const path$4 = require$$1$2;
+const path$4 = require$$1$3;
 const semver_1 = semver$1;
 const DownloadedUpdateHelper_1 = DownloadedUpdateHelper$1;
 const ElectronAppAdapter_1 = ElectronAppAdapter$1;
@@ -73138,7 +70671,7 @@ class NoOpLogger {
 AppUpdater$1.NoOpLogger = NoOpLogger;
 Object.defineProperty(BaseUpdater$1, "__esModule", { value: true });
 BaseUpdater$1.BaseUpdater = void 0;
-const child_process_1$3 = require$$0$3;
+const child_process_1$3 = require$$1$9;
 const AppUpdater_1$1 = AppUpdater$1;
 class BaseUpdater extends AppUpdater_1$1.AppUpdater {
   constructor(options, app2) {
@@ -73302,10 +70835,10 @@ async function readEmbeddedBlockMapData(file2) {
 Object.defineProperty(AppImageUpdater$1, "__esModule", { value: true });
 AppImageUpdater$1.AppImageUpdater = void 0;
 const builder_util_runtime_1$3 = out;
-const child_process_1$2 = require$$0$3;
+const child_process_1$2 = require$$1$9;
 const fs_extra_1$2 = lib;
-const fs_1$1 = require$$0$2;
-const path$3 = require$$1$2;
+const fs_1$1 = require$$1$2;
+const path$3 = require$$1$3;
 const BaseUpdater_1$2 = BaseUpdater$1;
 const FileWithEmbeddedBlockMapDifferentialDownloader_1$1 = FileWithEmbeddedBlockMapDifferentialDownloader$1;
 const Provider_1$5 = Provider$1;
@@ -73700,13 +71233,13 @@ Object.defineProperty(MacUpdater$1, "__esModule", { value: true });
 MacUpdater$1.MacUpdater = void 0;
 const builder_util_runtime_1$2 = out;
 const fs_extra_1$1 = lib;
-const fs_1 = require$$0$2;
-const path$2 = require$$1$2;
-const http_1 = require$$0$5;
+const fs_1 = require$$1$2;
+const path$2 = require$$1$3;
+const http_1 = require$$3$3;
 const AppUpdater_1 = AppUpdater$1;
 const Provider_1$1 = Provider$1;
-const child_process_1$1 = require$$0$3;
-const crypto_1 = require$$0$6;
+const child_process_1$1 = require$$1$9;
+const crypto_1 = require$$0$2;
 class MacUpdater extends AppUpdater_1.AppUpdater {
   constructor(options, app2) {
     super(options, app2);
@@ -73935,9 +71468,9 @@ var windowsExecutableCodeSignatureVerifier = {};
 Object.defineProperty(windowsExecutableCodeSignatureVerifier, "__esModule", { value: true });
 windowsExecutableCodeSignatureVerifier.verifySignature = verifySignature;
 const builder_util_runtime_1$1 = out;
-const child_process_1 = require$$0$3;
-const os = require$$1$3;
-const path$1 = require$$1$2;
+const child_process_1 = require$$1$9;
+const os = require$$1$4;
+const path$1 = require$$1$3;
 function preparePowerShellExec(command, timeout) {
   const executable = `set "PSModulePath=" & chcp 65001 >NUL & powershell.exe`;
   const args = ["-NoProfile", "-NonInteractive", "-InputFormat", "None", "-Command", command];
@@ -74043,14 +71576,14 @@ function isOldWin6() {
 Object.defineProperty(NsisUpdater$1, "__esModule", { value: true });
 NsisUpdater$1.NsisUpdater = void 0;
 const builder_util_runtime_1 = out;
-const path = require$$1$2;
+const path = require$$1$3;
 const BaseUpdater_1 = BaseUpdater$1;
 const FileWithEmbeddedBlockMapDifferentialDownloader_1 = FileWithEmbeddedBlockMapDifferentialDownloader$1;
 const types_1 = types;
 const Provider_1 = Provider$1;
 const fs_extra_1 = lib;
 const windowsExecutableCodeSignatureVerifier_1 = windowsExecutableCodeSignatureVerifier;
-const url_1 = require$$0$8;
+const url_1 = require$$0$4;
 class NsisUpdater extends BaseUpdater_1.BaseUpdater {
   constructor(options, app2) {
     super(options, app2);
@@ -74218,7 +71751,7 @@ NsisUpdater$1.NsisUpdater = NsisUpdater;
   Object.defineProperty(exports$1, "__esModule", { value: true });
   exports$1.NsisUpdater = exports$1.MacUpdater = exports$1.RpmUpdater = exports$1.PacmanUpdater = exports$1.DebUpdater = exports$1.AppImageUpdater = exports$1.Provider = exports$1.NoOpLogger = exports$1.AppUpdater = exports$1.BaseUpdater = void 0;
   const fs_extra_12 = lib;
-  const path2 = require$$1$2;
+  const path2 = require$$1$3;
   var BaseUpdater_12 = BaseUpdater$1;
   Object.defineProperty(exports$1, "BaseUpdater", { enumerable: true, get: function() {
     return BaseUpdater_12.BaseUpdater;
@@ -74316,6 +71849,10 @@ class UpdateService {
     main$1.autoUpdater.quitAndInstall();
   }
 }
+if (process.env.NODE_ENV === "development" || !app$1.isPackaged) {
+  app$1.commandLine.appendSwitch("remote-debugging-port", "9222");
+  app$1.commandLine.appendSwitch("remote-allow-origins", "*");
+}
 const APP_NAME = "Anime1 Desktop";
 const APP_VERSION = "2.0.0";
 let windowManager = null;
@@ -74324,9 +71861,7 @@ let animeService = null;
 let crawlerService = null;
 let downloadService = null;
 let updateService = null;
-log.initialize();
-log.transports.file.level = "info";
-log.transports.console.level = "debug";
+console.log("[Main] Log disabled for preload testing");
 async function initializeServices() {
   log.info("[Main] Initializing services...");
   databaseService = new DatabaseService();

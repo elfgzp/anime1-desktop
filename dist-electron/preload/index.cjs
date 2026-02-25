@@ -2,9 +2,9 @@ var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
-import { contextBridge, ipcRenderer } from "electron";
 var require_index = __commonJS({
   "index.cjs"() {
+    const { contextBridge, ipcRenderer } = require("electron");
     const validChannels = [
       // 窗口
       "window:minimize",
@@ -125,5 +125,5 @@ var require_index = __commonJS({
     }
   }
 });
-export default require_index();
+module.exports = require_index();
 //# sourceMappingURL=index.cjs.map

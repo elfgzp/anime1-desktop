@@ -71,14 +71,21 @@ export class AnimeService extends EventEmitter {
 
   /**
    * 后台加载封面缓存
+   * 对应原项目: src/services/anime_cache_service.py - _fetch_anime_details
    */
   private async loadCoverCachesInBackground(): Promise<void> {
     const animeList = Array.from(this.animeCache.values())
+    log.info(`[AnimeService] Loading cover caches for ${animeList.length} anime...`)
+    
+    let cachedCount = 0
+    let fetchedCount = 0
+    let failedCount = 0
     
     // 分批处理，避免阻塞
     const batchSize = 5
     for (let i = 0; i < animeList.length; i += batchSize) {
       const batch = animeList.slice(i, i + batchSize)
+      log.debug(`[AnimeService] Processing batch ${i/batchSize + 1}/${Math.ceil(animeList.length/batchSize)}`)
       
       await Promise.all(
         batch.map(async (anime) => {
@@ -87,15 +94,32 @@ export class AnimeService extends EventEmitter {
             const cached = this.databaseService.getCoverCache(anime.id)
             
             if (cached) {
+              log.debug(`[AnimeService] Cache hit for ${anime.id}: coverUrl=${cached.coverUrl ? 'present' : 'missing'}`)
               // 更新 anime 对象
               anime.coverUrl = cached.coverUrl
-              anime.year = cached.year
-              anime.season = cached.season
-              anime.subtitleGroup = cached.subtitleGroup
+              anime.year = cached.year || anime.year
+              anime.season = cached.season || anime.season
+              anime.subtitleGroup = cached.subtitleGroup || anime.subtitleGroup
+              cachedCount++
               return
             }
             
-            // 获取 Bangumi 信息
+            // 1. 先从 anime1.me 详情页获取信息（年份、季度、字幕组）
+            if (anime.detailUrl && !anime.detailUrl.startsWith('http')) {
+              try {
+                log.debug(`[AnimeService] Fetching detail for ${anime.id} from ${anime.detailUrl}`)
+                const detailInfo = await this.crawlerService.fetchAnimeDetail(anime.detailUrl)
+                if (detailInfo.year) anime.year = detailInfo.year
+                if (detailInfo.season) anime.season = detailInfo.season
+                if (detailInfo.subtitleGroup) anime.subtitleGroup = detailInfo.subtitleGroup
+                log.debug(`[AnimeService] Got detail for ${anime.id}: year=${anime.year}, season=${anime.season}`)
+              } catch (e) {
+                log.debug(`[AnimeService] Failed to fetch detail for ${anime.id}:`, e)
+              }
+            }
+            
+            // 2. 从 Bangumi 获取封面
+            log.debug(`[AnimeService] Searching Bangumi for ${anime.id}: ${anime.title}`)
             const bangumiResult = await this.crawlerService.findBangumiInfo(
               anime.title,
               anime.year,
@@ -103,9 +127,11 @@ export class AnimeService extends EventEmitter {
             )
             
             if (bangumiResult) {
+              log.info(`[AnimeService] Got Bangumi cover for ${anime.id}: ${bangumiResult.info.coverUrl?.substring(0, 50)}...`)
               anime.coverUrl = bangumiResult.info.coverUrl || ''
               anime.matchScore = bangumiResult.score
               anime.matchSource = 'Bangumi'
+              fetchedCount++
               
               // 保存到数据库
               this.databaseService.setCoverCache(anime.id, {
@@ -116,9 +142,13 @@ export class AnimeService extends EventEmitter {
                 subtitleGroup: anime.subtitleGroup,
                 episode: anime.episode
               }, bangumiResult.info)
+            } else {
+              log.debug(`[AnimeService] No Bangumi result for ${anime.id}: ${anime.title}`)
+              failedCount++
             }
           } catch (error) {
             log.warn(`[AnimeService] Failed to load cover for ${anime.id}:`, error)
+            failedCount++
           }
         })
       )
@@ -126,6 +156,8 @@ export class AnimeService extends EventEmitter {
       // 延迟，避免请求过快
       await this.sleep(1000)
     }
+    
+    log.info(`[AnimeService] Cover cache loading complete: ${cachedCount} cached, ${fetchedCount} fetched, ${failedCount} failed`)
   }
 
   /**

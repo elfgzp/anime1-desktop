@@ -8,7 +8,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-// CSS 在 index.html 中引入
+import 'element-plus/dist/index.css'
 
 import App from './App.vue'
 import router from './router'

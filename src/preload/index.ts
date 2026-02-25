@@ -4,7 +4,7 @@
  * 职责: 安全地暴露主进程 API 到渲染进程
  */
 
-import { contextBridge, ipcRenderer } from 'electron'
+const { contextBridge, ipcRenderer } = require('electron')
 
 // IPC 频道白名单
 const validChannels = [

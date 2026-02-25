@@ -10,6 +10,12 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import log from 'electron-log'
 
+// 启用远程调试（开发模式）
+if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+  app.commandLine.appendSwitch('remote-allow-origins', '*')
+}
+
 // 服务导入
 import { WindowManager } from './window'
 import { registerIPCHandlers } from './ipc'
@@ -31,10 +37,11 @@ let crawlerService: CrawlerService | null = null
 let downloadService: DownloadService | null = null
 let updateService: UpdateService | null = null
 
-// 日志配置
-log.initialize()
-log.transports.file.level = 'info'
-log.transports.console.level = 'debug'
+// 日志配置 - 暂时禁用 electron-log 以测试 preload 问题
+// log.initialize({ preload: false })
+// log.transports.file.level = 'info'
+// log.transports.console.level = 'debug'
+console.log('[Main] Log disabled for preload testing')
 
 /**
  * 初始化服务

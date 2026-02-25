@@ -56,7 +56,7 @@ export class WindowManager {
     // 加载保存的窗口状态
     const windowState = this.loadWindowState()
 
-    // 计算 preload 路径 - 使用绝对路径
+    // 计算 preload 路径 - 使用相对路径
     const preloadPath = join(__dirname, '../preload/index.cjs')
     const absolutePreloadPath = resolve(preloadPath)
     console.log(`[Window] Preload path: ${preloadPath}`)
@@ -87,7 +87,8 @@ export class WindowManager {
         preload: preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: false,
+        allowRunningInsecureContent: true
       },
       icon: join(__dirname, '../../../resources/icon.png')
     })
@@ -140,6 +141,20 @@ export class WindowManager {
    */
   private setupWindowEvents(): void {
     if (!this.mainWindow) return
+
+    // 监听 preload 错误
+    this.mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+      log.error('[Window] Preload error:', preloadPath, error)
+    })
+    
+    // 监听 console-message (Electron 40+ 新 API)
+    this.mainWindow.webContents.on('console-message', (event: any) => {
+      const message = event.message || ''
+      log.info('[Window] Console:', message)
+      if (message.includes('[Preload]')) {
+        log.info('[Window] Preload console:', message)
+      }
+    })
 
     // 保存窗口状态
     const saveState = () => {

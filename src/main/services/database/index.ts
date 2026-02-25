@@ -323,14 +323,38 @@ export class DatabaseService {
     const stmt = this.db.prepare('SELECT * FROM cover_cache WHERE anime_id = ?')
     const row = stmt.get(animeId) as any
     
-    if (!row) return null
+    if (!row) {
+      log.debug(`[Database] No cover cache found for ${animeId}`)
+      return null
+    }
+    
+    // 从 cover_data 中提取 coverUrl（数据库列可能为空）
+    let coverUrl = row.cover_url
+    if (!coverUrl && row.cover_data) {
+      try {
+        const coverData = JSON.parse(row.cover_data)
+        coverUrl = coverData.coverUrl || coverData.imageUrl
+        // 修复格式错误的 URL (https:http:// -> https://)
+        if (coverUrl && coverUrl.startsWith('https:http://')) {
+          coverUrl = coverUrl.replace('https:http://', 'https://')
+        }
+        if (coverUrl && coverUrl.startsWith('https:https://')) {
+          coverUrl = coverUrl.replace('https:https://', 'https://')
+        }
+        log.debug(`[Database] Extracted coverUrl from cover_data for ${animeId}: ${coverUrl ? 'success' : 'failed'}`)
+      } catch (e) {
+        log.warn(`[Database] Failed to parse cover_data for ${animeId}:`, e)
+      }
+    }
+    
+    log.debug(`[Database] Got cover cache for ${animeId}: coverUrl=${coverUrl ? 'present' : 'missing'}`)
     
     return {
       animeId: row.anime_id,
       title: row.title,
       year: row.year,
       season: row.season,
-      coverUrl: row.cover_url,
+      coverUrl: coverUrl,
       episode: row.episode,
       coverData: JSON.parse(row.cover_data),
       bangumiInfo: row.bangumi_info ? JSON.parse(row.bangumi_info) : undefined,
@@ -354,12 +378,30 @@ export class DatabaseService {
     
     const result: Record<string, CoverCache> = {}
     for (const row of rows) {
+      // 从 cover_data 中提取 coverUrl（数据库列可能为空）
+      let coverUrl = row.cover_url
+      if (!coverUrl && row.cover_data) {
+        try {
+          const coverData = JSON.parse(row.cover_data)
+          coverUrl = coverData.coverUrl || coverData.imageUrl
+          // 修复格式错误的 URL
+          if (coverUrl && coverUrl.startsWith('https:http://')) {
+            coverUrl = coverUrl.replace('https:http://', 'https://')
+          }
+          if (coverUrl && coverUrl.startsWith('https:https://')) {
+            coverUrl = coverUrl.replace('https:https://', 'https://')
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+      }
+      
       result[row.anime_id] = {
         animeId: row.anime_id,
         title: row.title,
         year: row.year,
         season: row.season,
-        coverUrl: row.cover_url,
+        coverUrl: coverUrl,
         episode: row.episode,
         coverData: JSON.parse(row.cover_data),
         bangumiInfo: row.bangumi_info ? JSON.parse(row.bangumi_info) : undefined,
