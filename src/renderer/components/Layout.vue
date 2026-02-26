@@ -1,84 +1,87 @@
 <template>
-  <div class="layout-container" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
-    <!-- 侧边栏 -->
-    <el-aside :width="sidebarCollapsed ? '64px' : '240px'" class="sidebar">
-      <div class="sidebar-header">
-        <h1 v-if="!sidebarCollapsed" class="sidebar-title">Anime1</h1>
-        <span v-else class="sidebar-logo">A1</span>
+  <div class="layout-container">
+    <!-- 顶部标题栏（最外层，全宽） -->
+    <div class="custom-titlebar">
+      <div class="window-controls">
+        <button class="window-btn close" @click="closeWindow" title="关闭">
+          <el-icon><Close /></el-icon>
+        </button>
+        <button class="window-btn minimize" @click="minimizeWindow" title="最小化">
+          <el-icon><Minus /></el-icon>
+        </button>
+        <button class="window-btn maximize" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
+          <el-icon><FullScreen v-if="!isMaximized" /><CopyDocument v-else /></el-icon>
+        </button>
       </div>
+      <div class="titlebar-drag-area"></div>
+    </div>
 
-      <el-menu
-        :default-active="activeMenu"
-        :collapse="sidebarCollapsed"
-        :collapse-transition="false"
-        router
-        class="sidebar-menu"
-      >
-        <el-menu-item index="/" data-testid="menu-home">
-          <el-icon><VideoPlay /></el-icon>
-          <template #title>最新番剧</template>
-        </el-menu-item>
-
-        <el-menu-item index="/favorites" data-testid="menu-favorites">
-          <el-icon><Star /></el-icon>
-          <template #title>我的追番</template>
-          <el-badge
-            v-if="favoritesStore.hasUpdates"
-            :value="''"
-            class="sidebar-badge"
-            :hidden="!favoritesStore.hasUpdates"
-          />
-        </el-menu-item>
-
-        <el-menu-item index="/history" data-testid="menu-history">
-          <el-icon><Clock /></el-icon>
-          <template #title>观看历史</template>
-        </el-menu-item>
-
-        <el-menu-item index="/downloads" data-testid="menu-downloads">
-          <el-icon><Download /></el-icon>
-          <template #title>下载管理</template>
-        </el-menu-item>
-
-        <el-menu-item index="/settings" data-testid="menu-settings">
-          <el-icon><Setting /></el-icon>
-          <template #title>设置</template>
-        </el-menu-item>
-      </el-menu>
-
-      <div class="sidebar-footer">
-        <el-button
-          :icon="sidebarCollapsed ? Expand : Fold"
-          circle
-          size="small"
-          @click="toggleSidebar"
-          class="collapse-btn"
-        />
-      </div>
-    </el-aside>
-
-    <!-- 主内容区 -->
-    <el-container class="main-container">
-      <!-- 自定义标题栏 -->
-      <div class="custom-titlebar">
-        <div class="window-controls">
-          <button class="window-btn close" @click="closeWindow" title="关闭">
-            <el-icon><Close /></el-icon>
-          </button>
-          <button class="window-btn minimize" @click="minimizeWindow" title="最小化">
-            <el-icon><Minus /></el-icon>
-          </button>
-          <button class="window-btn maximize" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
-            <el-icon><FullScreen v-if="!isMaximized" /><CopyDocument v-else /></el-icon>
-          </button>
+    <!-- 内容区：侧边栏 + 主内容 -->
+    <div class="content-wrapper" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+      <!-- 侧边栏 -->
+      <el-aside :width="sidebarCollapsed ? '64px' : '240px'" class="sidebar">
+        <div class="sidebar-header">
+          <h1 v-if="!sidebarCollapsed" class="sidebar-title">Anime1</h1>
+          <span v-else class="sidebar-logo">A1</span>
         </div>
-        <div class="titlebar-drag-area"></div>
-      </div>
-      
-      <el-main class="main-content">
-        <router-view />
-      </el-main>
-    </el-container>
+
+        <el-menu
+          :default-active="activeMenu"
+          :collapse="sidebarCollapsed"
+          :collapse-transition="false"
+          router
+          class="sidebar-menu"
+        >
+          <el-menu-item index="/" data-testid="menu-home">
+            <el-icon><VideoPlay /></el-icon>
+            <template #title>最新番剧</template>
+          </el-menu-item>
+
+          <el-menu-item index="/favorites" data-testid="menu-favorites">
+            <el-icon><Star /></el-icon>
+            <template #title>我的追番</template>
+            <el-badge
+              v-if="favoritesStore.hasUpdates"
+              :value="''"
+              class="sidebar-badge"
+              :hidden="!favoritesStore.hasUpdates"
+            />
+          </el-menu-item>
+
+          <el-menu-item index="/history" data-testid="menu-history">
+            <el-icon><Clock /></el-icon>
+            <template #title>观看历史</template>
+          </el-menu-item>
+
+          <el-menu-item index="/downloads" data-testid="menu-downloads">
+            <el-icon><Download /></el-icon>
+            <template #title>下载管理</template>
+          </el-menu-item>
+
+          <el-menu-item index="/settings" data-testid="menu-settings">
+            <el-icon><Setting /></el-icon>
+            <template #title>设置</template>
+          </el-menu-item>
+        </el-menu>
+
+        <div class="sidebar-footer">
+          <el-button
+            :icon="sidebarCollapsed ? Expand : Fold"
+            circle
+            size="small"
+            @click="toggleSidebar"
+            class="collapse-btn"
+          />
+        </div>
+      </el-aside>
+
+      <!-- 主内容区 -->
+      <el-container class="main-container">
+        <el-main class="main-content">
+          <router-view />
+        </el-main>
+      </el-container>
+    </div>
 
     <!-- 更新弹窗 -->
     <el-dialog
@@ -112,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { VideoPlay, Star, Clock, Setting, Expand, Fold, CircleCheckFilled, Download, Close, Minus, FullScreen, CopyDocument } from '@element-plus/icons-vue'
 import { useFavoritesStore } from '../stores'
@@ -134,7 +137,6 @@ const minimizeWindow = () => {
 
 const toggleMaximize = async () => {
   await window.api.window.maximize()
-  // 更新状态
   const state = await window.api.window.getState()
   isMaximized.value = state.maximized
 }
@@ -154,7 +156,6 @@ const updateInfo = ref({
 // 当前激活的菜单
 const activeMenu = computed(() => {
   const path = route.path
-  // 番剧详情页高亮首页
   if (path.startsWith('/anime/')) {
     return '/'
   }
@@ -170,25 +171,13 @@ const toggleSidebar = () => {
 // 格式化发布说明
 const formatReleaseNotes = (notes: string) => {
   if (!notes) return '暂无更新说明'
-  // 将换行符转换为 <br>
   return notes.replace(/\n/g, '<br>')
 }
 
 // 检查更新
 const checkUpdate = async () => {
   try {
-    // 跳过更新检查（如果需要可以取消注释）
-    // const result = await window.api.update.check()
-    // if (result.success && result.data?.hasUpdate) {
-    //   updateInfo.value = {
-    //     latestVersion: result.data.latestVersion,
-    //     currentVersion: result.data.currentVersion,
-    //     downloadUrl: result.data.downloadUrl || '',
-    //     releaseNotes: result.data.releaseNotes || '',
-    //     isPrelease: result.data.isPrelease || false
-    //   }
-    //   updateDialogVisible.value = true
-    // }
+    // 跳过更新检查
   } catch (error) {
     console.log('[更新检查] 失败:', error)
   }
@@ -214,16 +203,12 @@ const handleDownloadUpdate = async () => {
 }
 
 onMounted(() => {
-  // 恢复侧边栏状态
   const saved = localStorage.getItem('sidebar-collapsed')
   if (saved !== null) {
     sidebarCollapsed.value = saved === 'true'
   }
   
-  // 检查更新
   checkUpdate()
-  
-  // 加载收藏（检查更新徽章）
   favoritesStore.loadFavorites()
 })
 </script>
@@ -231,8 +216,75 @@ onMounted(() => {
 <style scoped>
 .layout-container {
   display: flex;
-  min-height: 100vh;
+  flex-direction: column;
+  height: 100vh;
   background: var(--el-bg-color-page);
+  overflow: hidden;
+}
+
+/* 顶部标题栏（全宽） */
+.custom-titlebar {
+  height: 38px;
+  background: var(--el-bg-color-page);
+  border-bottom: 1px solid var(--el-border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  z-index: 1000;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.window-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+  font-size: 8px;
+  color: transparent;
+}
+
+.window-btn:hover {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.window-btn.close { background: #ff5f57; }
+.window-btn.close:hover { background: #ff5f57; }
+.window-btn.minimize { background: #febc2e; }
+.window-btn.minimize:hover { background: #febc2e; }
+.window-btn.maximize { background: #28c840; }
+.window-btn.maximize:hover { background: #28c840; }
+
+.window-btn .el-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-drag-area {
+  flex: 1;
+  height: 100%;
+}
+
+/* 内容区（侧边栏 + 主内容） */
+.content-wrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -306,80 +358,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* 自定义标题栏 */
-.custom-titlebar {
-  height: 38px;
-  background: var(--el-bg-color-page);
-  border-bottom: 1px solid var(--el-border-color);
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  -webkit-app-region: drag; /* 允许拖拽窗口 */
-  flex-shrink: 0;
-}
-
-.window-controls {
-  display: flex;
-  gap: 8px;
-  -webkit-app-region: no-drag; /* 按钮区域不可拖拽 */
-}
-
-.window-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: all 0.2s;
-  font-size: 8px;
-  color: transparent;
-}
-
-.window-btn:hover {
-  color: rgba(0, 0, 0, 0.6);
-}
-
-.window-btn.close {
-  background: #ff5f57;
-}
-
-.window-btn.close:hover {
-  background: #ff5f57;
-}
-
-.window-btn.minimize {
-  background: #febc2e;
-}
-
-.window-btn.minimize:hover {
-  background: #febc2e;
-}
-
-.window-btn.maximize {
-  background: #28c840;
-}
-
-.window-btn.maximize:hover {
-  background: #28c840;
-}
-
-.window-btn .el-icon {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.titlebar-drag-area {
-  flex: 1;
-  height: 100%;
-}
-
 .main-content {
   flex: 1;
   padding: 20px;
@@ -391,7 +369,7 @@ onMounted(() => {
   .sidebar {
     position: fixed;
     left: 0;
-    top: 0;
+    top: 38px;
     bottom: 0;
     z-index: 1000;
     transform: translateX(-100%);
@@ -399,10 +377,6 @@ onMounted(() => {
   
   .sidebar-collapsed .sidebar {
     transform: translateX(0);
-  }
-  
-  .main-container {
-    margin-left: 0;
   }
 }
 
