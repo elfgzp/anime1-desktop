@@ -1,108 +1,129 @@
-# Anime1 Desktop
+# Anime1 Desktop (Electron 重构版)
 
-从 [Anime1.me](https://anime1.me) 浏览和观看番剧的桌面客户端，支持 Windows、macOS 和 Linux。
+使用 Electron + Vue 3 + TypeScript 重构的 Anime1 Desktop 应用。
 
-## 功能特性
+## 📁 项目结构
 
-- 🎬 浏览 Anime1.me 上的所有番剧
-- 📺 在线观看高清视频
-- 🔍 快速搜索番剧
-- 💾 收藏喜欢的番剧
-- ⬇️ 自动下载番剧（支持按年份、季节过滤）
-- 🖥️ 原生桌面应用体验
-- 🐳 支持 Docker/NAS 部署（群晖、威联通等）
-- 🎨 现代化 Vue 3 前端界面
-- 🌙 支持暗黑模式
-
-## 预览
-
-![Anime1 Desktop](screenshots/home-page.png)
-
-查看 [产品功能介绍](docs/FEATURES.md) 了解更多功能。
-
-## 下载安装
-
-### Windows
-
-1. 从 [GitHub Releases](https://github.com/elfgzp/anime1-desktop/releases) 下载 `anime1-windows-x64.zip`
-2. 解压 zip 文件
-3. 双击运行 `Anime1.exe`
-
-### macOS
-
-#### Homebrew 安装（推荐）
-
-```bash
-# 添加 tap
-brew tap elfgzp/homebrew-tap
-
-# 安装 anime1
-brew install --cask anime1
+```
+├── src/
+│   ├── main/                    # Electron 主进程
+│   │   ├── index.ts             # 入口
+│   │   ├── window.ts            # 窗口管理
+│   │   ├── ipc/                 # IPC 处理器
+│   │   └── services/            # 核心服务
+│   │       ├── anime/           # 番剧服务
+│   │       ├── crawler/         # 爬虫服务 (axios + cheerio)
+│   │       ├── database/        # 数据库 (better-sqlite3)
+│   │       ├── download/        # 下载服务
+│   │       └── update/          # 更新服务
+│   │
+│   ├── preload/                 # Preload 脚本
+│   │   └── index.ts             # IPC API 暴露
+│   │
+│   ├── renderer/                # 渲染进程 (Vue 3)
+│   │   ├── main.ts              # Vue 入口
+│   │   ├── App.vue              # 根组件
+│   │   ├── views/               # 页面视图
+│   │   ├── router/              # 路由
+│   │   └── stores/              # Pinia Store
+│   │
+│   └── shared/                  # 共享代码
+│       └── types/               # TypeScript 类型
+│
+├── docs/                        # 文档
+│   ├── ELECTRON_REFACTOR_TECH_SPEC.md   # 技术方案
+│   ├── ELECTRON_REFACTOR_TODO.md        # 任务清单
+│   └── WORKTREE_GUIDE.md                # Worktree 使用指南
+│
+├── resources/                   # 资源文件
+└── build/                       # 构建配置
 ```
 
-#### 手动安装
+## 🚀 开发指南
 
-1. 从 [GitHub Releases](https://github.com/elfgzp/anime1-desktop/releases) 下载 `anime1-macos-{version}.dmg`
-2. 双击 DMG 文件挂载
-3. 将 `Anime1.app` 拖拽到应用程序文件夹
-4. 在启动台或应用程序文件夹中打开应用
-
-> 💡 **提示**：首次打开时如果遇到安全提示，请右键点击应用选择"打开"，或在"系统设置 → 隐私与安全性"中允许运行。
-
-### Linux
-
-1. 从 [GitHub Releases](https://github.com/elfgzp/anime1-desktop/releases) 下载对应版本：
-   - **x64**: `anime1-linux-x64.tar.gz`
-   - **ARM64**: `anime1-linux-arm64.tar.gz`
-2. 解压并运行：
-   ```bash
-   tar -xzf anime1-linux-*.tar.gz
-   chmod +x Anime1
-   ./Anime1
-   ```
-
-### Docker / NAS 部署
-
-支持在群晖、威联通等 NAS 或 Linux 服务器上通过 Docker 部署：
+### 环境准备
 
 ```bash
-# 快速开始
-docker run -d \
-  --name anime1 \
-  -p 5172:5172 \
-  -v anime1_data:/app/data \
-  ghcr.io/elfgzp/anime1-desktop:latest
-```
+# 安装 Node.js 20+
+nvm use 20
 
-详细配置（数据持久化、自动下载、更新策略等）请参考 [Docker 部署指南](docs/DOCKER.md)。
-
-## 使用说明
-
-1. 启动应用后，浏览番剧列表
-2. 点击番剧查看详情和集数
-3. 选择集数开始观看
-4. 使用收藏功能保存喜欢的番剧
-
-## 开发
-
-### 快速开始
-
-```bash
 # 安装依赖
-make install
-
-# 启动开发服务器（同时启动 Flask + Vite）
-make dev-server
-
-# 访问 http://localhost:5173
+pnpm install
+# 或
+npm install
 ```
 
-更多开发信息请查看 [DEVELOPMENT.md](DEVELOPMENT.md)
+### 开发模式
 
-## 反馈与支持
+```bash
+# 同时启动 Electron 和 Vite 开发服务器
+pnpm dev
+```
 
-如有问题或建议，欢迎在 [GitHub Issues](https://github.com/elfgzp/anime1-desktop/issues) 中反馈。
+### 构建
 
----
+```bash
+# 构建所有平台
+pnpm build
 
-**开发者文档**：查看 [DEVELOPMENT.md](DEVELOPMENT.md) 了解开发、构建和部署相关信息。
+# 构建特定平台
+pnpm build:mac
+pnpm build:win
+pnpm build:linux
+```
+
+## 📋 开发任务
+
+详见 [ELECTRON_REFACTOR_TODO.md](./docs/ELECTRON_REFACTOR_TODO.md)
+
+## 🔧 与原项目的对应关系
+
+| 原项目 (Python/Flask) | 新项目 (Electron/TS) | 说明 |
+|---------------------|---------------------|------|
+| `src/app.py` | `src/main/index.ts` | 应用入口 |
+| `src/desktop.py` | `src/main/window.ts` | 窗口管理 |
+| `src/routes/*.py` | `src/main/ipc/*.ts` | API 接口 |
+| `src/models/*.py` | `src/shared/types/*.ts` | 数据模型 |
+| `src/parser/*.py` | `src/main/services/crawler/*.ts` | 爬虫 |
+| `src/services/*.py` | `src/main/services/*/*.ts` | 服务层 |
+| `frontend/src/*.vue` | `src/renderer/*.vue` | 前端组件 |
+
+## 📚 相关文档
+
+- [技术方案文档](./docs/ELECTRON_REFACTOR_TECH_SPEC.md) - 详细的技术架构设计
+- [Worktree 使用指南](./docs/WORKTREE_GUIDE.md) - 如何与原项目对比开发
+
+## 🔄 Worktree 开发工作流
+
+本项目使用 Git Worktree 与原项目并行开发：
+
+```bash
+# 原项目（参考用）
+~/Github/anime1-desktop              # main 分支
+
+# 新项目（开发用）  
+~/Github/anime1-desktop-electron     # feature/electron-refactor 分支
+```
+
+同时打开两个目录进行对比开发：
+
+```bash
+# 终端 1: 原项目（启动旧版本参考）
+cd ~/Github/anime1-desktop
+make dev
+
+# 终端 2: 新项目（开发新版本）
+cd ~/Github/anime1-desktop-electron
+pnpm dev
+```
+
+## 📝 注意事项
+
+1. **类型安全**: 使用 TypeScript 严格模式，确保类型安全
+2. **IPC 安全**: 所有 IPC 通信通过 Preload 脚本白名单控制
+3. **数据库迁移**: 自动迁移原项目 SQLite 数据
+4. **依赖管理**: 使用 pnpm 进行依赖管理
+
+## 📄 License
+
+MIT

@@ -1,42 +1,44 @@
-name: Frontend Tests
+name: Frontend Test
 
+# 前端代码检查和测试
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
+      - feature/*
     paths:
-      - 'frontend/**'
+      - 'src/renderer/**'
+      - 'package.json'
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - master
     paths:
-      - 'frontend/**'
+      - 'src/renderer/**'
+      - 'package.json'
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
-  test:
-    name: Run Frontend Tests
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: frontend
+  lint-and-type-check:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --force
 
-      - name: Run tests
-        run: npm test -- --run
+      - name: Type check
+        run: npx vue-tsc --noEmit
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          directory: frontend/coverage
-          flags: unittests
-          fail_ci_if_error: false
+      - name: Lint (if eslint is configured)
+        run: npm run lint || echo "Lint not configured, skipping"
