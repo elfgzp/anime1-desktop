@@ -15569,7 +15569,7 @@ function registerIPCHandlers(services) {
         success: true,
         data: {
           ...result,
-          list: animeListWithProgress
+          animeList: animeListWithProgress
         }
       };
     } catch (error2) {
@@ -15622,7 +15622,7 @@ function registerIPCHandlers(services) {
         success: true,
         data: {
           ...result,
-          list: animeListWithProgress
+          animeList: animeListWithProgress
         }
       };
     } catch (error2) {

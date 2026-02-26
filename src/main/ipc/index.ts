@@ -86,7 +86,7 @@ export function registerIPCHandlers(services: Services): void {
         success: true, 
         data: {
           ...result,
-          list: animeListWithProgress
+          animeList: animeListWithProgress
         }
       }
     } catch (error) {
@@ -152,7 +152,7 @@ export function registerIPCHandlers(services: Services): void {
         success: true, 
         data: {
           ...result,
-          list: animeListWithProgress
+          animeList: animeListWithProgress
         }
       }
     } catch (error) {
