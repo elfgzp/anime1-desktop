@@ -38,7 +38,4 @@ export default defineConfig({
   expect: {
     timeout: 10000,
   },
-  // 测试前准备和测试后清理
-  globalSetup: resolve(__dirname, './e2e/global-setup.ts'),
-  globalTeardown: resolve(__dirname, './e2e/global-teardown.ts'),
 })

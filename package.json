@@ -8,7 +8,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/verify-preload.cjs && vite",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
     "build:fast": "vite build && electron-builder",
     "build:mac": "vue-tsc --noEmit && vite build && electron-builder --mac",

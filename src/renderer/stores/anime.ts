@@ -6,16 +6,23 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { Anime, AnimePage, Episode } from '@shared/types'
 
+// 扩展的 Anime 类型，包含 UI 状态
+interface AnimeWithUIState extends Anime {
+  coverLoaded?: boolean
+  coverError?: boolean
+}
+
 export const useAnimeStore = defineStore('anime', () => {
   // State
-  const animeList = ref<Anime[]>([])
-  const currentAnime = ref<Anime | null>(null)
+  const animeList = ref<AnimeWithUIState[]>([])
+  const currentAnime = ref<AnimeWithUIState | null>(null)
   const episodes = ref<Episode[]>([])
   const currentPage = ref(1)
   const totalPages = ref(1)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const initialized = ref(false)
+  let coverRefreshTimer: ReturnType<typeof setInterval> | null = null
 
   // Getters
   const getAnimeById = computed(() => (id: string) => {
@@ -27,13 +34,27 @@ export const useAnimeStore = defineStore('anime', () => {
     loading.value = true
     error.value = null
     
+    // 清除之前的定时器
+    if (coverRefreshTimer) {
+      clearInterval(coverRefreshTimer)
+      coverRefreshTimer = null
+    }
+    
     try {
       const result = await window.api.anime.getList({ page })
       
       if (result.success && result.data) {
-        animeList.value = result.data.animeList
+        // 初始化 UI 状态
+        animeList.value = result.data.animeList.map((anime: Anime) => ({
+          ...anime,
+          coverLoaded: false,
+          coverError: false
+        }))
         currentPage.value = result.data.currentPage
         totalPages.value = result.data.totalPages
+        
+        // 启动封面刷新定时器，检查后台加载的封面
+        startCoverRefreshTimer()
       } else {
         error.value = result.error?.message || 'Failed to fetch anime list'
       }
@@ -41,6 +62,60 @@ export const useAnimeStore = defineStore('anime', () => {
       error.value = String(e)
     } finally {
       loading.value = false
+    }
+  }
+  
+  // 启动封面刷新定时器
+  function startCoverRefreshTimer() {
+    // 清除之前的定时器
+    if (coverRefreshTimer) {
+      clearInterval(coverRefreshTimer)
+    }
+    
+    // 立即刷新一次
+    refreshCovers()
+    
+    // 每 3 秒刷新一次，最多刷新 10 次（30秒）
+    let refreshCount = 0
+    coverRefreshTimer = setInterval(() => {
+      refreshCount++
+      refreshCovers()
+      
+      // 如果所有封面都已加载或超过最大刷新次数，停止定时器
+      const allLoaded = animeList.value.every(a => a.coverUrl || a.coverError)
+      if (allLoaded || refreshCount >= 10) {
+        if (coverRefreshTimer) {
+          clearInterval(coverRefreshTimer)
+          coverRefreshTimer = null
+        }
+      }
+    }, 3000)
+  }
+  
+  // 刷新封面数据
+  async function refreshCovers() {
+    if (animeList.value.length === 0) return
+    
+    try {
+      // 获取当前页的最新数据（只刷新封面）
+      const result = await window.api.anime.getList({ page: currentPage.value })
+      
+      if (result.success && result.data) {
+        // 更新封面 URL，保留 UI 状态
+        const freshData = result.data.animeList
+        for (const freshAnime of freshData) {
+          const existing = animeList.value.find(a => a.id === freshAnime.id)
+          if (existing && freshAnime.coverUrl && !existing.coverUrl) {
+            existing.coverUrl = freshAnime.coverUrl
+            existing.year = freshAnime.year
+            existing.season = freshAnime.season
+            existing.subtitleGroup = freshAnime.subtitleGroup
+          }
+        }
+      }
+    } catch (e) {
+      // 静默处理刷新错误
+      console.debug('Failed to refresh covers:', e)
     }
   }
 
@@ -52,7 +127,11 @@ export const useAnimeStore = defineStore('anime', () => {
       const result = await window.api.anime.getDetail({ id })
       
       if (result.success && result.data) {
-        currentAnime.value = result.data
+        currentAnime.value = {
+          ...result.data,
+          coverLoaded: false,
+          coverError: false
+        }
       } else {
         error.value = result.error?.message || 'Failed to fetch anime detail'
       }
@@ -72,7 +151,11 @@ export const useAnimeStore = defineStore('anime', () => {
       
       if (result.success && result.data) {
         episodes.value = result.data.episodes
-        currentAnime.value = result.data.anime
+        currentAnime.value = {
+          ...result.data.anime,
+          coverLoaded: false,
+          coverError: false
+        }
       } else {
         error.value = result.error?.message || 'Failed to fetch episodes'
       }
@@ -87,13 +170,27 @@ export const useAnimeStore = defineStore('anime', () => {
     loading.value = true
     error.value = null
     
+    // 清除之前的定时器
+    if (coverRefreshTimer) {
+      clearInterval(coverRefreshTimer)
+      coverRefreshTimer = null
+    }
+    
     try {
       const result = await window.api.anime.search({ keyword, page })
       
       if (result.success && result.data) {
-        animeList.value = result.data.animeList
+        // 初始化 UI 状态
+        animeList.value = result.data.animeList.map((anime: Anime) => ({
+          ...anime,
+          coverLoaded: false,
+          coverError: false
+        }))
         currentPage.value = result.data.currentPage
         totalPages.value = result.data.totalPages
+        
+        // 启动封面刷新定时器
+        startCoverRefreshTimer()
       } else {
         error.value = result.error?.message || 'Search failed'
       }
@@ -109,6 +206,14 @@ export const useAnimeStore = defineStore('anime', () => {
       await window.api.anime.refreshCache()
     } catch (e) {
       error.value = String(e)
+    }
+  }
+
+  // 清理函数
+  function cleanup() {
+    if (coverRefreshTimer) {
+      clearInterval(coverRefreshTimer)
+      coverRefreshTimer = null
     }
   }
 
@@ -129,6 +234,8 @@ export const useAnimeStore = defineStore('anime', () => {
     fetchAnimeDetail,
     fetchEpisodes,
     search,
-    refreshCache
+    refreshCache,
+    refreshCovers,
+    cleanup
   }
 })

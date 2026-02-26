@@ -328,12 +328,12 @@ export class DatabaseService {
       return null
     }
     
-    // 从 cover_data 中提取 coverUrl（数据库列可能为空）
-    let coverUrl = row.cover_url
-    if (!coverUrl && row.cover_data) {
+    // 优先从 cover_data JSON 中提取 coverUrl（包含高清化后的 URL）
+    let coverUrl = ''
+    if (row.cover_data) {
       try {
         const coverData = JSON.parse(row.cover_data)
-        coverUrl = coverData.coverUrl || coverData.imageUrl
+        coverUrl = coverData.coverUrl || coverData.imageUrl || ''
         // 修复格式错误的 URL (https:http:// -> https://)
         if (coverUrl && coverUrl.startsWith('https:http://')) {
           coverUrl = coverUrl.replace('https:http://', 'https://')
@@ -341,10 +341,15 @@ export class DatabaseService {
         if (coverUrl && coverUrl.startsWith('https:https://')) {
           coverUrl = coverUrl.replace('https:https://', 'https://')
         }
-        log.debug(`[Database] Extracted coverUrl from cover_data for ${animeId}: ${coverUrl ? 'success' : 'failed'}`)
+        log.debug(`[Database] Extracted coverUrl from cover_data for ${animeId}: ${coverUrl.substring(0, 50)}...`)
       } catch (e) {
         log.warn(`[Database] Failed to parse cover_data for ${animeId}:`, e)
       }
+    }
+    // 如果 cover_data 中没有，再回退到 cover_url 列
+    if (!coverUrl && row.cover_url) {
+      coverUrl = row.cover_url
+      log.debug(`[Database] Using cover_url column for ${animeId}: ${coverUrl.substring(0, 50)}...`)
     }
     
     log.debug(`[Database] Got cover cache for ${animeId}: coverUrl=${coverUrl ? 'present' : 'missing'}`)
@@ -378,12 +383,12 @@ export class DatabaseService {
     
     const result: Record<string, CoverCache> = {}
     for (const row of rows) {
-      // 从 cover_data 中提取 coverUrl（数据库列可能为空）
-      let coverUrl = row.cover_url
-      if (!coverUrl && row.cover_data) {
+      // 优先从 cover_data JSON 中提取 coverUrl（包含高清化后的 URL）
+      let coverUrl = ''
+      if (row.cover_data) {
         try {
           const coverData = JSON.parse(row.cover_data)
-          coverUrl = coverData.coverUrl || coverData.imageUrl
+          coverUrl = coverData.coverUrl || coverData.imageUrl || ''
           // 修复格式错误的 URL
           if (coverUrl && coverUrl.startsWith('https:http://')) {
             coverUrl = coverUrl.replace('https:http://', 'https://')
@@ -394,6 +399,10 @@ export class DatabaseService {
         } catch (e) {
           // 忽略解析错误
         }
+      }
+      // 如果 cover_data 中没有，再回退到 cover_url 列
+      if (!coverUrl && row.cover_url) {
+        coverUrl = row.cover_url
       }
       
       result[row.anime_id] = {

@@ -45,16 +45,19 @@ export const HEADERS = {
   CONTENT_TYPE: 'Content-Type',
   REFERER: 'Referer',
   ORIGIN: 'Origin',
-  RANGE: 'Range'
+  RANGE: 'Range',
+  CONNECTION: 'Connection'
 } as const
 
 export const HEADER_VALUES = {
   USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   ACCEPT_HTML: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
   ACCEPT_JSON: 'application/json',
-  ACCEPT_LANGUAGE: 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+  // 必须与 Python 版本一致：zh-CN 优先（Bangumi 使用简体中文）
+  ACCEPT_LANGUAGE: 'zh-CN,zh;q=0.9,en;q=0.8',
   CONTENT_TYPE_FORM: 'application/x-www-form-urlencoded',
-  CONTENT_TYPE_JSON: 'application/json'
+  CONTENT_TYPE_JSON: 'application/json',
+  CONNECTION: 'keep-alive'
 } as const
 
 // ==========================================
@@ -65,7 +68,8 @@ export const REQUEST_HEADERS = {
   DEFAULT: {
     [HEADERS.USER_AGENT]: HEADER_VALUES.USER_AGENT,
     [HEADERS.ACCEPT]: HEADER_VALUES.ACCEPT_HTML,
-    [HEADERS.ACCEPT_LANGUAGE]: HEADER_VALUES.ACCEPT_LANGUAGE
+    [HEADERS.ACCEPT_LANGUAGE]: HEADER_VALUES.ACCEPT_LANGUAGE,
+    [HEADERS.CONNECTION]: HEADER_VALUES.CONNECTION
   },
   
   API: {

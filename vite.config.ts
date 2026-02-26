@@ -3,62 +3,33 @@ import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, existsSync, rmSync } from 'fs'
 
-// 修复 preload 文件：将 ES Module 语法转换为 CommonJS
-import { writeFileSync as writeFile, existsSync as exists, readFileSync as readFile } from 'fs'
-
-function fixPreloadFile() {
-  const preloadPath = resolve(__dirname, 'dist-electron/preload/index.cjs')
-  const lockPath = resolve(__dirname, 'dist-electron/preload/.fixed')
-  
-  if (!exists(preloadPath)) {
-    console.log('[fixPreload] File not found:', preloadPath)
-    return
-  }
-  
-  // 使用文件锁防止重复处理
-  if (exists(lockPath)) {
-    console.log('[fixPreload] Already fixed (lock file exists)')
-    return
-  }
-  
-  try {
-    let content = readFile(preloadPath, 'utf8')
+// 复制 preload 文件插件 - 直接复制不编译
+const copyPreloadPlugin = () => ({
+  name: 'copy-preload',
+  writeBundle() {
+    const src = resolve(__dirname, 'src/preload/index.cjs')
+    const dest = resolve(__dirname, 'dist-electron/preload/index.cjs')
+    const wrongFile = resolve(__dirname, 'dist-electron/preload/index.js')
     
-    // 检查是否已经修复过（避免重复追加）
-    if (content.includes('module.exports = require_index()')) {
-      console.log('[fixPreload] Already fixed (module.exports found)')
-      // 创建锁文件
-      writeFile(lockPath, 'fixed', 'utf8')
-      return
-    }
-    
-    // 检查是否需要修复
-    if (!content.includes('export default require_index()')) {
-      console.log('[fixPreload] No fix needed (already CommonJS or different format)')
-      // 创建锁文件
-      writeFile(lockPath, 'fixed', 'utf8')
-      return
-    }
-    
-    // 替换 export default 为 module.exports
-    content = content.replace(/export\s+default\s+require_index\(\);/, 'module.exports = require_index();')
-    writeFile(preloadPath, content, 'utf8')
-    // 创建锁文件
-    writeFile(lockPath, 'fixed', 'utf8')
-    console.log('[fixPreload] Fixed preload file:', preloadPath)
-  } catch (e: any) {
-    console.error('[fixPreload] Error:', e.message)
-  }
-}
-
-// Vite 插件：在构建完成后修复 preload 文件
-const fixPreloadPlugin = () => ({
-  name: 'fix-preload',
-  writeBundle(options: any) {
-    if (options.dir?.includes('preload') || options.fileName?.includes('preload')) {
-      fixPreloadFile()
+    try {
+      // 确保目录存在
+      if (!existsSync(resolve(__dirname, 'dist-electron/preload'))) {
+        mkdirSync(resolve(__dirname, 'dist-electron/preload'), { recursive: true })
+      }
+      
+      // 直接复制文件
+      copyFileSync(src, dest)
+      console.log('[copyPreload] Copied:', src, '->', dest)
+      
+      // 删除 vite 生成的错误文件（如果存在）
+      if (existsSync(wrongFile)) {
+        rmSync(wrongFile)
+        console.log('[copyPreload] Removed wrong file:', wrongFile)
+      }
+    } catch (e: any) {
+      console.error('[copyPreload] Error:', e.message)
     }
   }
 })
@@ -97,33 +68,18 @@ export default defineConfig({
         }
       },
       {
-        // Preload script entry
-        entry: resolve(__dirname, 'src/preload/index.ts'),
+        // Preload script - 使用虚拟入口，实际通过插件复制
+        entry: resolve(__dirname, 'src/main/index.ts'), // 虚拟入口，不会实际使用
         onstart({ reload }) {
           reload()
         },
         vite: {
-          plugins: [fixPreloadPlugin()],
-          resolve: {
-            alias: {
-              '@': resolve(__dirname, 'src'),
-              '@main': resolve(__dirname, 'src/main'),
-              '@preload': resolve(__dirname, 'src/preload'),
-              '@renderer': resolve(__dirname, 'src/renderer'),
-              '@shared': resolve(__dirname, 'src/shared')
-            }
-          },
+          plugins: [copyPreloadPlugin()],
           build: {
-            sourcemap: true,
-            minify: false,
+            // 不实际构建 preload，只是触发 copy 插件
             outDir: resolve(__dirname, 'dist-electron/preload'),
-            lib: {
-              entry: resolve(__dirname, 'src/preload/index.ts'),
-              formats: ['cjs'],
-              fileName: () => 'index.cjs'
-            },
             rollupOptions: {
-              external: ['electron']
+              input: resolve(__dirname, 'src/preload/index.cjs')
             }
           }
         }

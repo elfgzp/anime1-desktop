@@ -50,15 +50,25 @@
           @click="goToDetail(anime.id)"
         >
           <div class="anime-cover">
+            <!-- 封面图片 -->
             <img
-              v-if="anime.coverUrl"
+              v-if="anime.coverUrl && !anime.coverError"
               :src="anime.coverUrl"
               :alt="anime.title"
               class="cover-image"
+              :class="{ 'image-loaded': anime.coverLoaded }"
+              @load="handleImageLoad(anime)"
               @error="handleImageError(anime)"
             />
+            <!-- 加载中状态 -->
+            <div v-else-if="!anime.coverUrl && !anime.coverError" class="image-loading">
+              <el-icon class="loading-icon"><Loading /></el-icon>
+              <span class="loading-text">加载中...</span>
+            </div>
+            <!-- 加载失败/无封面状态 -->
             <div v-else class="image-error">
               <el-icon><Picture /></el-icon>
+              <span class="error-text">暂无封面</span>
             </div>
             <span v-if="anime.episode > 0" class="episode-badge">
               更新至 {{ anime.episode }} 集
@@ -89,9 +99,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Picture } from '@element-plus/icons-vue'
+import { Search, Picture, Loading } from '@element-plus/icons-vue'
 import { useAnimeStore, useFavoritesStore } from '../stores'
 
 const router = useRouter()
@@ -101,14 +111,17 @@ const favoritesStore = useFavoritesStore()
 const searchQuery = ref('')
 const currentPage = ref(1)
 
-const defaultCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="300"%3E%3Crect fill="%23f0f0f0" width="200" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy=".3em" text-anchor="middle" x="100" y="150"%3E暂无封面%3C/text%3E%3C/svg%3E'
-
 onMounted(() => {
   // 加载番剧列表
   animeStore.fetchAnimeList(1)
   
   // 加载收藏
   favoritesStore.loadFavorites()
+})
+
+onUnmounted(() => {
+  // 清理定时器
+  animeStore.cleanup()
 })
 
 function handleSearch() {
@@ -129,8 +142,13 @@ function goToDetail(id: string) {
   router.push(`/anime/${id}`)
 }
 
+function handleImageLoad(anime: any) {
+  anime.coverLoaded = true
+}
+
 function handleImageError(anime: any) {
-  // 图片加载失败时清空 coverUrl，显示默认错误图标
+  // 图片加载失败时标记错误，显示默认错误图标
+  anime.coverError = true
   anime.coverUrl = ''
 }
 </script>
@@ -199,15 +217,53 @@ function handleImageError(anime: any) {
   display: block;
 }
 
+.image-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  gap: 8px;
+}
+
+.loading-icon {
+  font-size: 28px;
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 .image-error {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   font-size: 32px;
+  gap: 8px;
+}
+
+.error-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .episode-badge {
