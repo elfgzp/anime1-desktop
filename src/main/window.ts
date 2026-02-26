@@ -90,7 +90,7 @@ export class WindowManager {
         sandbox: false,
         allowRunningInsecureContent: true
       },
-      icon: join(__dirname, '../../../resources/icon.png')
+      icon: this.getAppIcon()
     })
 
     // 恢复窗口状态
@@ -206,16 +206,65 @@ export class WindowManager {
   }
 
   /**
+   * 获取应用图标路径
+   */
+  private getAppIcon(): string {
+    const resourcesPath = join(__dirname, '../../../resources')
+    
+    // 根据平台选择正确的图标格式
+    if (process.platform === 'darwin') {
+      // macOS 使用 .icns
+      return join(resourcesPath, 'icon.icns')
+    } else if (process.platform === 'win32') {
+      // Windows 使用 .ico
+      return join(resourcesPath, 'icon.ico')
+    } else {
+      // Linux 使用 .png
+      return join(resourcesPath, 'icon.png')
+    }
+  }
+
+  /**
+   * 获取托盘图标
+   */
+  private getTrayIcon(): Electron.NativeImage {
+    const resourcesPath = join(__dirname, '../../../resources')
+    let iconPath: string
+    
+    // 托盘图标使用 PNG（所有平台都支持）
+    iconPath = join(resourcesPath, 'icon.png')
+    
+    // 如果 PNG 不存在，回退到平台特定图标
+    if (!existsSync(iconPath)) {
+      iconPath = this.getAppIcon()
+    }
+    
+    const icon = nativeImage.createFromPath(iconPath)
+    
+    // macOS 需要模板图标（黑白）
+    if (process.platform === 'darwin') {
+      icon.setTemplateImage(true)
+      return icon.resize({ width: 16, height: 16 })
+    }
+    
+    return icon.resize({ width: 16, height: 16 })
+  }
+
+  /**
    * 创建系统托盘
    */
   private createTray(): void {
     try {
       // 使用原生图标创建 tray
-      const iconPath = join(__dirname, '../../../resources/icon.png')
-      const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+      const trayIcon = this.getTrayIcon()
       
       this.tray = new Tray(trayIcon)
       this.tray.setToolTip('Anime1 Desktop')
+      
+      // macOS 托盘图标需要设置按下状态
+      if (process.platform === 'darwin') {
+        this.tray.setPressedImage(trayIcon)
+      }
 
       const contextMenu = Menu.buildFromTemplate([
         {

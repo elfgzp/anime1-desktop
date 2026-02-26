@@ -7,7 +7,7 @@
 import * as cheerio from 'cheerio'
 import log from 'electron-log'
 import type { Anime, Episode } from '@shared/types'
-import { URLS, PATTERNS, VIDEO_API, DOMAINS } from '@shared/constants'
+import { URLS, PATTERNS, VIDEO_API, DOMAINS, ADULT_CONTENT } from '@shared/constants'
 import { HttpClient, createAnime1HttpClient } from './http-client'
 
 export class Anime1Crawler {
@@ -81,6 +81,9 @@ export class Anime1Crawler {
           detailUrl = `${URLS.ANIME1_BASE}/?cat=${catId}`
         }
 
+        // 检测是否为成人内容
+        const isAdult = this.checkIsAdult(title, detailUrl)
+        
         animeList.push({
           id: uniqueId,
           title,
@@ -91,7 +94,8 @@ export class Anime1Crawler {
           subtitleGroup,
           coverUrl: '',
           matchScore: 0,
-          matchSource: ''
+          matchSource: '',
+          isAdult
         })
       }
     } catch (error) {
@@ -552,6 +556,31 @@ export class Anime1Crawler {
     }
     
     throw new Error('未能从 API 响应中提取视频 URL')
+  }
+
+  /**
+   * 检测是否为成人内容
+   */
+  private checkIsAdult(title: string, detailUrl: string): boolean {
+    // 检查标题中是否包含 🔞 标记
+    if (title.includes(ADULT_CONTENT.MARKER)) {
+      return true
+    }
+    
+    // 检查是否为 anime1.pw 域名
+    if (ADULT_CONTENT.DOMAINS.some(domain => detailUrl.includes(domain))) {
+      return true
+    }
+    
+    // 检查关键词
+    const titleLower = title.toLowerCase()
+    if (ADULT_CONTENT.KEYWORDS.some(keyword => 
+      titleLower.includes(keyword.toLowerCase())
+    )) {
+      return true
+    }
+    
+    return false
   }
 
   /**

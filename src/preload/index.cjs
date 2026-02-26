@@ -41,6 +41,7 @@ const validChannels = [
   'anime:video:proxy',
   'anime:cache:status',
   'anime:cache:refresh',
+  'anime:pwEpisodes',
   
   // 收藏
   'favorite:list',
@@ -54,6 +55,9 @@ const validChannels = [
   'history:save',
   'history:progress',
   'history:clear',
+  'history:delete',
+  'history:byAnime',
+  'history:batchProgress',
   
   // 设置
   'settings:get',
@@ -66,6 +70,14 @@ const validChannels = [
   'download:pause',
   'download:resume',
   'download:cancel',
+  
+  // 自动下载
+  'autoDownload:getConfig',
+  'autoDownload:updateConfig',
+  'autoDownload:getStatus',
+  'autoDownload:getHistory',
+  'autoDownload:previewFilter',
+  'autoDownload:runCheck',
   
   // 系统
   'system:showItemInFolder',
@@ -113,7 +125,8 @@ const api = {
     extractVideo: (params) => invoke('anime:video', params),
     getVideoProxyUrl: (params) => invoke('anime:video:proxy', params),
     getCacheStatus: () => invoke('anime:cache:status'),
-    refreshCache: () => invoke('anime:cache:refresh')
+    refreshCache: () => invoke('anime:cache:refresh'),
+    parsePwEpisodes: (params) => invoke('anime:pwEpisodes', params)
   },
   
   favorite: {
@@ -128,7 +141,10 @@ const api = {
     getList: (params) => invoke('history:list', params),
     save: (params) => invoke('history:save', params),
     getProgress: (params) => invoke('history:progress', params),
-    clear: () => invoke('history:clear')
+    clear: () => invoke('history:clear'),
+    delete: (params) => invoke('history:delete', params),
+    getByAnime: (params) => invoke('history:byAnime', params),
+    batchProgress: (params) => invoke('history:batchProgress', params)
   },
   
   settings: {
@@ -144,6 +160,15 @@ const api = {
     resume: (params) => invoke('download:resume', params),
     cancel: (params) => invoke('download:cancel', params),
     onProgress: (callback) => on('download:progress', callback)
+  },
+  
+  autoDownload: {
+    getConfig: () => invoke('autoDownload:getConfig'),
+    updateConfig: (params) => invoke('autoDownload:updateConfig', params),
+    getStatus: () => invoke('autoDownload:getStatus'),
+    getHistory: (params) => invoke('autoDownload:getHistory', params),
+    previewFilter: (params) => invoke('autoDownload:previewFilter', params),
+    runCheck: () => invoke('autoDownload:runCheck')
   },
   
   system: {

@@ -1,5 +1,6 @@
 {
   "name": "anime1-desktop-electron",
+  "productName": "Anime1 Desktop",
   "version": "2.0.0",
   "description": "Anime1 Desktop - Electron + TypeScript 重构版",
   "main": "dist-electron/main/index.js",

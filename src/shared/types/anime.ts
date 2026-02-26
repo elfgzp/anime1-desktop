@@ -27,6 +27,8 @@ export interface Anime {
   subtitleGroup?: string
   matchScore?: number
   matchSource?: string
+  /** 是否为成人内容 (R-18) */
+  isAdult?: boolean
 }
 
 /**
@@ -306,18 +308,107 @@ export interface PlayerState {
 }
 
 // ==========================================
-// 设置类型 (基础定义，详细在 settings.ts)
+// 自动下载类型
 // ==========================================
+
+/**
+ * 下载记录状态
+ */
+export enum DownloadRecordStatus {
+  PENDING = 'pending',
+  DOWNLOADING = 'downloading',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  SKIPPED = 'skipped'
+}
+
+/**
+ * 下载筛选条件
+ */
+export interface DownloadFilter {
+  /** 最小年份 */
+  minYear?: number
+  /** 最大年份 */
+  maxYear?: number
+  /** 特定年份列表 */
+  specificYears: number[]
+  /** 季度筛选 ["冬季", "春季", "夏季", "秋季"] */
+  seasons: string[]
+  /** 最少集数 */
+  minEpisodes?: number
+  /** 包含正则 */
+  includePatterns: string[]
+  /** 排除正则 */
+  excludePatterns: string[]
+}
 
 /**
  * 自动下载配置
  */
 export interface AutoDownloadConfig {
+  /** 是否启用 */
   enabled: boolean
+  /** 下载路径 */
   downloadPath: string
-  filters: {
-    years: string[]
-    seasons: string[]
+  /** 检查间隔（小时） */
+  checkIntervalHours: number
+  /** 最大并发下载数 */
+  maxConcurrentDownloads: number
+  /** 筛选条件 */
+  filters: DownloadFilter
+  /** 自动下载新番 */
+  autoDownloadNew: boolean
+  /** 自动下载追番 */
+  autoDownloadFavorites: boolean
+}
+
+/**
+ * 下载记录
+ */
+export interface DownloadRecord {
+  /** 番剧ID */
+  animeId: string
+  /** 番剧标题 */
+  animeTitle: string
+  /** 剧集ID */
+  episodeId: string
+  /** 集数 */
+  episodeNum: string
+  /** 状态 */
+  status: DownloadRecordStatus
+  /** 创建时间 */
+  createdAt: number
+  /** 完成时间 */
+  completedAt?: number
+  /** 错误信息 */
+  errorMessage?: string
+  /** 文件路径 */
+  filePath?: string
+}
+
+/**
+ * 自动下载状态
+ */
+export interface AutoDownloadStatus {
+  /** 是否启用 */
+  enabled: boolean
+  /** 是否运行中 */
+  running: boolean
+  /** 下载路径 */
+  downloadPath: string
+  /** 检查间隔 */
+  checkIntervalHours: number
+  /** 筛选条件 */
+  filters: DownloadFilter
+  /** 最近下载 */
+  recentDownloads: DownloadRecord[]
+  /** 状态统计 */
+  statusCounts: {
+    pending: number
+    downloading: number
+    completed: number
+    failed: number
+    skipped: number
   }
 }
 

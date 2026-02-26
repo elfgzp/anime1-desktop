@@ -5,7 +5,7 @@ import require$$1$6, { app as app$1, BrowserWindow, shell as shell$1, nativeImag
 import log from "electron-log";
 import require$$1$3, { join, dirname, resolve as resolve$5 } from "path";
 import require$$0$4, { fileURLToPath } from "url";
-import require$$1$2, { existsSync, mkdirSync, statSync, createWriteStream } from "fs";
+import require$$1$2, { existsSync, mkdirSync, statSync, createWriteStream, readFileSync as readFileSync$2, writeFileSync as writeFileSync$2 } from "fs";
 import require$$1$5 from "util";
 import require$$0$2 from "crypto";
 import require$$4$1 from "assert";
@@ -14936,6 +14936,14 @@ class ElectronStore extends Conf {
 }
 var electronStore = ElectronStore;
 const Store = /* @__PURE__ */ getDefaultExportFromCjs(electronStore);
+var DownloadRecordStatus = /* @__PURE__ */ ((DownloadRecordStatus2) => {
+  DownloadRecordStatus2["PENDING"] = "pending";
+  DownloadRecordStatus2["DOWNLOADING"] = "downloading";
+  DownloadRecordStatus2["COMPLETED"] = "completed";
+  DownloadRecordStatus2["FAILED"] = "failed";
+  DownloadRecordStatus2["SKIPPED"] = "skipped";
+  return DownloadRecordStatus2;
+})(DownloadRecordStatus || {});
 const DEFAULT_WINDOW_SETTINGS = {
   width: 1280,
   height: 800,
@@ -15049,6 +15057,11 @@ const VIDEO_API = {
 const DOMAINS = {
   ANIME1_PW: "anime1.pw"
 };
+const ADULT_CONTENT = {
+  MARKER: "🔞",
+  DOMAINS: ["anime1.pw"],
+  KEYWORDS: ["R-18", "18禁", "成人", "Hentai", "裏番"]
+};
 let store = null;
 function getStore() {
   if (!store) {
@@ -15160,7 +15173,7 @@ class WindowManager {
         sandbox: false,
         allowRunningInsecureContent: true
       },
-      icon: join(__dirname$1, "../../../resources/icon.png")
+      icon: this.getAppIcon()
     });
     if (windowState.maximized) {
       this.mainWindow.maximize();
@@ -15238,14 +15251,46 @@ class WindowManager {
     });
   }
   /**
+   * 获取应用图标路径
+   */
+  getAppIcon() {
+    const resourcesPath = join(__dirname$1, "../../../resources");
+    if (process.platform === "darwin") {
+      return join(resourcesPath, "icon.icns");
+    } else if (process.platform === "win32") {
+      return join(resourcesPath, "icon.ico");
+    } else {
+      return join(resourcesPath, "icon.png");
+    }
+  }
+  /**
+   * 获取托盘图标
+   */
+  getTrayIcon() {
+    const resourcesPath = join(__dirname$1, "../../../resources");
+    let iconPath;
+    iconPath = join(resourcesPath, "icon.png");
+    if (!existsSync(iconPath)) {
+      iconPath = this.getAppIcon();
+    }
+    const icon = nativeImage.createFromPath(iconPath);
+    if (process.platform === "darwin") {
+      icon.setTemplateImage(true);
+      return icon.resize({ width: 16, height: 16 });
+    }
+    return icon.resize({ width: 16, height: 16 });
+  }
+  /**
    * 创建系统托盘
    */
   createTray() {
     try {
-      const iconPath = join(__dirname$1, "../../../resources/icon.png");
-      const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+      const trayIcon = this.getTrayIcon();
       this.tray = new Tray(trayIcon);
       this.tray.setToolTip("Anime1 Desktop");
+      if (process.platform === "darwin") {
+        this.tray.setPressedImage(trayIcon);
+      }
       const contextMenu = Menu.buildFromTemplate([
         {
           label: "显示窗口",
@@ -15538,7 +15583,7 @@ function formatDuration(seconds) {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 function registerIPCHandlers(services) {
-  const { databaseService: databaseService2, animeService: animeService2, crawlerService: crawlerService2, downloadService: downloadService2, updateService: updateService2 } = services;
+  const { databaseService: databaseService2, animeService: animeService2, crawlerService: crawlerService2, downloadService: downloadService2, updateService: updateService2, autoDownloadService: autoDownloadService2 } = services;
   ipcMain$1.handle("anime:list", async (_, params) => {
     try {
       const result = await animeService2.getList(params.page, params.pageSize || 24);
@@ -15641,6 +15686,31 @@ function registerIPCHandlers(services) {
     try {
       const result = await crawlerService2.extractVideoUrl(params.episodeUrl);
       return { success: true, data: result };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("anime:pwEpisodes", async (_, params) => {
+    try {
+      const { Anime1Crawler: Anime1Crawler2 } = await Promise.resolve().then(() => anime1);
+      const crawler = new Anime1Crawler2();
+      const episodes = crawler.extractEpisodes(params.html);
+      const animeMap = animeService2.getAnimeMap();
+      const anime = animeMap.get(params.animeId);
+      episodes.sort((a, b) => {
+        const numA = parseFloat(a.episode) || 0;
+        const numB = parseFloat(b.episode) || 0;
+        return numB - numA;
+      });
+      return {
+        success: true,
+        data: {
+          anime: anime ? { ...anime, isAdult: true } : null,
+          episodes,
+          totalEpisodes: episodes.length,
+          requiresFrontendFetch: false
+        }
+      };
     } catch (error2) {
       return { success: false, error: { message: String(error2) } };
     }
@@ -15812,6 +15882,30 @@ function registerIPCHandlers(services) {
       return { success: false, error: { message: String(error2) } };
     }
   });
+  ipcMain$1.handle("history:delete", async (_, params) => {
+    try {
+      databaseService2.deletePlaybackHistory(params.animeId, params.episodeId);
+      return { success: true };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("history:byAnime", async (_, params) => {
+    try {
+      const result = databaseService2.getPlaybackHistoryByAnime(params.animeId);
+      return { success: true, data: result };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("history:batchProgress", async (_, params) => {
+    try {
+      const result = databaseService2.getBatchPlaybackProgress(params.ids);
+      return { success: true, data: result };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
   ipcMain$1.handle("download:list", async () => {
     try {
       const result = await downloadService2.getTasks();
@@ -15855,6 +15949,61 @@ function registerIPCHandlers(services) {
     try {
       await downloadService2.cancelTask(params.taskId);
       return { success: true };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:getConfig", async () => {
+    try {
+      const config2 = autoDownloadService2.getConfig();
+      return { success: true, data: config2 };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:updateConfig", async (_, params) => {
+    try {
+      const success = autoDownloadService2.updateConfig(params.config);
+      return { success };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:getStatus", async () => {
+    try {
+      const status = autoDownloadService2.getStatus();
+      return { success: true, data: status };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:getHistory", async (_, params) => {
+    try {
+      const history = autoDownloadService2.getHistory(
+        params.limit || 100,
+        params.status
+      );
+      return { success: true, data: history };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:previewFilter", async (_, params) => {
+    try {
+      const allAnime = await animeService2.getList(1, 9999);
+      const result = autoDownloadService2.previewFilter(
+        allAnime.animeList,
+        params.filters
+      );
+      return { success: true, data: result };
+    } catch (error2) {
+      return { success: false, error: { message: String(error2) } };
+    }
+  });
+  ipcMain$1.handle("autoDownload:runCheck", async () => {
+    try {
+      const result = await autoDownloadService2.runCheckNow();
+      return { success: true, data: result };
     } catch (error2) {
       return { success: false, error: { message: String(error2) } };
     }
@@ -16663,6 +16812,70 @@ class DatabaseService {
   clearPlaybackHistory() {
     if (!this.db) throw new Error("Database not connected");
     this.db.exec("DELETE FROM playback_history");
+  }
+  /**
+   * 删除单条播放历史
+   */
+  deletePlaybackHistory(animeId, episodeId) {
+    if (!this.db) throw new Error("Database not connected");
+    if (episodeId) {
+      const id2 = `${animeId}_${episodeId}`;
+      const stmt = this.db.prepare("DELETE FROM playback_history WHERE id = ?");
+      stmt.run(id2);
+    } else {
+      const stmt = this.db.prepare("DELETE FROM playback_history WHERE anime_id = ?");
+      stmt.run(animeId);
+    }
+  }
+  /**
+   * 获取番剧的所有播放历史
+   */
+  getPlaybackHistoryByAnime(animeId) {
+    if (!this.db) throw new Error("Database not connected");
+    const stmt = this.db.prepare(`
+      SELECT * FROM playback_history 
+      WHERE anime_id = ?
+      ORDER BY episode_num DESC
+    `);
+    const rows = stmt.all(animeId);
+    return rows.map((row) => ({
+      id: row.id,
+      animeId: row.anime_id,
+      animeTitle: row.anime_title,
+      episodeId: row.episode_id,
+      episodeNum: row.episode_num,
+      positionSeconds: row.position_seconds,
+      totalSeconds: row.total_seconds,
+      lastWatchedAt: row.last_watched_at,
+      coverUrl: row.cover_url
+    }));
+  }
+  /**
+   * 批量获取播放进度
+   */
+  getBatchPlaybackProgress(ids) {
+    if (!this.db) throw new Error("Database not connected");
+    const result = {};
+    for (const id2 of ids) {
+      const stmt = this.db.prepare("SELECT * FROM playback_history WHERE id = ?");
+      const row = stmt.get(id2);
+      if (row) {
+        result[id2] = {
+          id: row.id,
+          animeId: row.anime_id,
+          animeTitle: row.anime_title,
+          episodeId: row.episode_id,
+          episodeNum: row.episode_num,
+          positionSeconds: row.position_seconds,
+          totalSeconds: row.total_seconds,
+          lastWatchedAt: row.last_watched_at,
+          coverUrl: row.cover_url
+        };
+      } else {
+        result[id2] = null;
+      }
+    }
+    return result;
   }
   /**
    * 获取番剧的最新播放记录
@@ -59401,6 +59614,7 @@ class Anime1Crawler {
         } else {
           detailUrl = `${URLS.ANIME1_BASE}/?cat=${catId}`;
         }
+        const isAdult = this.checkIsAdult(title2, detailUrl);
         animeList.push({
           id: uniqueId,
           title: title2,
@@ -59411,7 +59625,8 @@ class Anime1Crawler {
           subtitleGroup,
           coverUrl: "",
           matchScore: 0,
-          matchSource: ""
+          matchSource: "",
+          isAdult
         });
       }
     } catch (error2) {
@@ -59764,6 +59979,24 @@ class Anime1Crawler {
     throw new Error("未能从 API 响应中提取视频 URL");
   }
   /**
+   * 检测是否为成人内容
+   */
+  checkIsAdult(title2, detailUrl) {
+    if (title2.includes(ADULT_CONTENT.MARKER)) {
+      return true;
+    }
+    if (ADULT_CONTENT.DOMAINS.some((domain) => detailUrl.includes(domain))) {
+      return true;
+    }
+    const titleLower = title2.toLowerCase();
+    if (ADULT_CONTENT.KEYWORDS.some(
+      (keyword2) => titleLower.includes(keyword2.toLowerCase())
+    )) {
+      return true;
+    }
+    return false;
+  }
+  /**
    * 关闭爬虫
    */
   close() {
@@ -59771,6 +60004,10 @@ class Anime1Crawler {
     log.info("[Anime1] Crawler closed");
   }
 }
+const anime1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  Anime1Crawler
+}, Symbol.toStringTag, { value: "Module" }));
 class Trie {
   // 使用 Map 實作 Trie 樹
   // Trie 的每個節點為一個 Map 物件
@@ -72417,19 +72654,562 @@ NsisUpdater$1.NsisUpdater = NsisUpdater;
     }
   });
 })(main$1);
-class UpdateService {
+class UpdateService extends EventEmitter {
   constructor() {
+    super();
+    __publicField(this, "currentUpdateInfo", null);
+    __publicField(this, "isDownloading", false);
+    __publicField(this, "downloadProgress", null);
+    __publicField(this, "updateChannel", "stable");
+    __publicField(this, "autoCheckEnabled", true);
+    this.setupAutoUpdater();
+    this.loadSettings();
+  }
+  /**
+   * 配置自动更新
+   * 
+   * electron-updater 配置:
+   * - autoDownload: false (让用户选择是否下载)
+   * - autoInstallOnAppQuit: true (退出时自动安装)
+   * - allowPrerelease: 根据 updateChannel 决定
+   */
+  setupAutoUpdater() {
     main$1.autoUpdater.logger = log;
     main$1.autoUpdater.autoDownload = false;
     main$1.autoUpdater.autoInstallOnAppQuit = true;
+    main$1.autoUpdater.allowDowngrade = true;
+    main$1.autoUpdater.on("update-available", (info) => {
+      log.info("[UpdateService] Update available:", info);
+      this.currentUpdateInfo = info;
+      this.emit("update-available", this.formatUpdateInfo(info, true));
+    });
+    main$1.autoUpdater.on("update-not-available", (info) => {
+      log.info("[UpdateService] No updates available, current version:", info.version);
+      this.emit("update-not-available", this.formatUpdateInfo(info, false));
+    });
+    main$1.autoUpdater.on("download-progress", (progress) => {
+      this.downloadProgress = progress;
+      this.emit("download-progress", progress);
+    });
+    main$1.autoUpdater.on("update-downloaded", (info) => {
+      log.info("[UpdateService] Update downloaded:", info);
+      this.isDownloading = false;
+      this.emit("update-downloaded", info);
+    });
+    main$1.autoUpdater.on("error", (error2) => {
+      log.error("[UpdateService] Update error:", error2);
+      this.isDownloading = false;
+      this.emit("error", error2);
+    });
   }
-  async checkForUpdates() {
-    return null;
+  /**
+   * 加载设置
+   */
+  loadSettings() {
+    try {
+      const channel = process.env.UPDATE_CHANNEL;
+      if (channel === "beta") {
+        this.updateChannel = "beta";
+      }
+      main$1.autoUpdater.allowPrerelease = this.updateChannel === "beta";
+      log.info("[UpdateService] Loaded settings:", {
+        channel: this.updateChannel,
+        allowPrerelease: main$1.autoUpdater.allowPrerelease
+      });
+    } catch (error2) {
+      log.error("[UpdateService] Failed to load settings:", error2);
+    }
   }
+  /**
+   * 格式化更新信息
+   */
+  formatUpdateInfo(info, hasUpdate) {
+    const result = {
+      hasUpdate,
+      currentVersion: app$1.getVersion(),
+      latestVersion: info.version,
+      isPrerelease: this.updateChannel === "beta",
+      releaseNotes: Array.isArray(info.releaseNotes) ? info.releaseNotes.map((n) => typeof n === "string" ? n : n.note).join("\n") : info.releaseNotes || "",
+      publishedAt: info.releaseDate || (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const files = info.files || [];
+    if (files.length > 0) {
+      const platformFile = this.getPlatformFile(files);
+      if (platformFile) {
+        result.assetName = platformFile.name;
+        result.downloadSize = platformFile.size;
+        result.downloadUrl = platformFile.url;
+      }
+    }
+    return result;
+  }
+  /**
+   * 获取当前平台的更新文件
+   */
+  getPlatformFile(files) {
+    const platform2 = process.platform;
+    const platformMapping = {
+      darwin: ["mac", "dmg", "zip"],
+      win32: ["win", "exe", "nsis"],
+      linux: ["linux", "AppImage", "deb", "rpm"]
+    };
+    const platformKeywords = platformMapping[platform2] || [];
+    return files.find((file2) => {
+      var _a2;
+      const name = ((_a2 = file2.name) == null ? void 0 : _a2.toLowerCase()) || "";
+      return platformKeywords.some(
+        (keyword2) => name.includes(keyword2.toLowerCase())
+      );
+    }) || files[0];
+  }
+  /**
+   * 检查更新
+   * 
+   * @param silent 是否为静默检查（不显示错误提示）
+   * @returns 更新检查结果
+   */
+  async checkForUpdates(silent = false) {
+    try {
+      log.info("[UpdateService] Checking for updates...");
+      if (process.env.NODE_ENV === "development" && !process.env.FORCE_UPDATE_CHECK) {
+        log.info("[UpdateService] Development mode, returning mock data");
+        return {
+          hasUpdate: false,
+          currentVersion: app$1.getVersion(),
+          latestVersion: app$1.getVersion(),
+          releaseNotes: "Development mode - no updates available"
+        };
+      }
+      const result = await main$1.autoUpdater.checkForUpdates();
+      if (result == null ? void 0 : result.updateInfo) {
+        const currentVersion = app$1.getVersion();
+        const latestVersion = result.updateInfo.version;
+        const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
+        return this.formatUpdateInfo(result.updateInfo, hasUpdate);
+      }
+      return {
+        hasUpdate: false,
+        currentVersion: app$1.getVersion()
+      };
+    } catch (error2) {
+      log.error("[UpdateService] Failed to check for updates:", error2);
+      if (!silent) {
+        return {
+          hasUpdate: false,
+          currentVersion: app$1.getVersion(),
+          error: error2 instanceof Error ? error2.message : "Unknown error"
+        };
+      }
+      return {
+        hasUpdate: false,
+        currentVersion: app$1.getVersion()
+      };
+    }
+  }
+  /**
+   * 版本号比较
+   * @returns 1: v1 > v2, 0: v1 === v2, -1: v1 < v2
+   */
+  compareVersions(v1, v2) {
+    const parts1 = v1.replace(/^v/, "").split(".").map(Number);
+    const parts2 = v2.replace(/^v/, "").split(".").map(Number);
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
+  }
+  /**
+   * 下载更新
+   */
   async downloadUpdate() {
+    if (this.isDownloading) {
+      throw new Error("Update is already being downloaded");
+    }
+    try {
+      this.isDownloading = true;
+      this.downloadProgress = null;
+      log.info("[UpdateService] Starting update download...");
+      await main$1.autoUpdater.downloadUpdate();
+    } catch (error2) {
+      this.isDownloading = false;
+      log.error("[UpdateService] Failed to download update:", error2);
+      throw error2;
+    }
   }
+  /**
+   * 安装更新
+   * 
+   * 注意：调用后会退出应用
+   */
   installUpdate() {
+    log.info("[UpdateService] Installing update and restarting...");
     main$1.autoUpdater.quitAndInstall();
+  }
+  /**
+   * 设置更新通道
+   */
+  setChannel(channel) {
+    this.updateChannel = channel;
+    main$1.autoUpdater.allowPrerelease = channel === "beta";
+    try {
+      log.info("[UpdateService] Channel set to:", channel);
+    } catch (error2) {
+      log.error("[UpdateService] Failed to save channel setting:", error2);
+    }
+  }
+  /**
+   * 获取更新通道
+   */
+  getChannel() {
+    return this.updateChannel;
+  }
+  /**
+   * 设置自动检查
+   */
+  setAutoCheck(enabled) {
+    this.autoCheckEnabled = enabled;
+    log.info("[UpdateService] Auto check set to:", enabled);
+  }
+  /**
+   * 是否启用自动检查
+   */
+  isAutoCheckEnabled() {
+    return this.autoCheckEnabled;
+  }
+  /**
+   * 获取当前更新信息
+   */
+  getCurrentUpdateInfo() {
+    return this.currentUpdateInfo;
+  }
+  /**
+   * 获取下载进度
+   */
+  getDownloadProgress() {
+    return this.downloadProgress;
+  }
+  /**
+   * 是否正在下载
+   */
+  isUpdateDownloading() {
+    return this.isDownloading;
+  }
+  /**
+   * 获取应用信息
+   */
+  getAppInfo() {
+    return {
+      version: app$1.getVersion(),
+      name: app$1.getName(),
+      channel: this.updateChannel,
+      platform: process.platform,
+      arch: process.arch
+    };
+  }
+}
+const CONFIG_FILE_NAME = "auto_download_config.json";
+const DOWNLOAD_HISTORY_FILE_NAME = "auto_download_history.json";
+const DEFAULT_CONFIG = {
+  enabled: false,
+  downloadPath: "",
+  checkIntervalHours: 24,
+  maxConcurrentDownloads: 2,
+  filters: {
+    specificYears: [],
+    seasons: [],
+    includePatterns: [],
+    excludePatterns: []
+  },
+  autoDownloadNew: true,
+  autoDownloadFavorites: false
+};
+class AutoDownloadService extends EventEmitter {
+  constructor() {
+    super();
+    __publicField(this, "configPath");
+    __publicField(this, "historyPath");
+    __publicField(this, "config", null);
+    __publicField(this, "running", false);
+    __publicField(this, "schedulerTimer", null);
+    this.configPath = join(PATHS.USER_DATA, CONFIG_FILE_NAME);
+    this.historyPath = join(PATHS.USER_DATA, DOWNLOAD_HISTORY_FILE_NAME);
+    this.ensureFilesExist();
+  }
+  /** 确保配置文件存在 */
+  ensureFilesExist() {
+    if (!existsSync(this.configPath)) {
+      this.saveConfig(DEFAULT_CONFIG);
+    }
+    if (!existsSync(this.historyPath)) {
+      this.saveHistory([]);
+    }
+  }
+  /** 加载配置 */
+  loadConfig() {
+    try {
+      if (existsSync(this.configPath)) {
+        const data2 = readFileSync$2(this.configPath, "utf-8");
+        const parsed = JSON.parse(data2);
+        return { ...DEFAULT_CONFIG, ...parsed };
+      }
+    } catch (error2) {
+      console.error("[AutoDownload] Error loading config:", error2);
+    }
+    return DEFAULT_CONFIG;
+  }
+  /** 保存配置 */
+  saveConfig(config2) {
+    try {
+      const dir = join(this.configPath, "..");
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync$2(this.configPath, JSON.stringify(config2, null, 2), "utf-8");
+    } catch (error2) {
+      console.error("[AutoDownload] Error saving config:", error2);
+      throw error2;
+    }
+  }
+  /** 加载历史记录 */
+  loadHistory() {
+    try {
+      if (existsSync(this.historyPath)) {
+        const data2 = readFileSync$2(this.historyPath, "utf-8");
+        return JSON.parse(data2);
+      }
+    } catch (error2) {
+      console.error("[AutoDownload] Error loading history:", error2);
+    }
+    return [];
+  }
+  /** 保存历史记录 */
+  saveHistory(history) {
+    try {
+      const dir = join(this.historyPath, "..");
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync$2(this.historyPath, JSON.stringify(history, null, 2), "utf-8");
+    } catch (error2) {
+      console.error("[AutoDownload] Error saving history:", error2);
+      throw error2;
+    }
+  }
+  /** 获取配置 */
+  getConfig() {
+    if (!this.config) {
+      this.config = this.loadConfig();
+    }
+    return this.config;
+  }
+  /** 更新配置 */
+  updateConfig(config2) {
+    try {
+      this.saveConfig(config2);
+      this.config = config2;
+      if (config2.enabled && !this.running) {
+        this.startScheduler();
+      } else if (!config2.enabled && this.running) {
+        this.stopScheduler();
+      }
+      this.emit("configUpdated", config2);
+      console.log("[AutoDownload] Config updated");
+      return true;
+    } catch (error2) {
+      console.error("[AutoDownload] Failed to update config:", error2);
+      return false;
+    }
+  }
+  /** 获取下载路径 */
+  getDownloadPath() {
+    const config2 = this.getConfig();
+    if (config2.downloadPath && existsSync(config2.downloadPath)) {
+      return config2.downloadPath;
+    }
+    return PATHS.DEFAULT_DOWNLOAD_DIR;
+  }
+  /** 获取下载历史 */
+  getHistory(limit2 = 100, status) {
+    const history = this.loadHistory();
+    let filtered = history;
+    if (status) {
+      filtered = history.filter((r) => r.status === status);
+    }
+    return filtered.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit2);
+  }
+  /** 添加下载记录 */
+  addDownloadRecord(record) {
+    const history = this.loadHistory();
+    history.push(record);
+    this.saveHistory(history);
+    this.emit("recordAdded", record);
+  }
+  /** 更新下载记录 */
+  updateDownloadRecord(record) {
+    const history = this.loadHistory();
+    const index2 = history.findIndex((r) => r.episodeId === record.episodeId);
+    if (index2 !== -1) {
+      history[index2] = { ...history[index2], ...record };
+      this.saveHistory(history);
+      this.emit("recordUpdated", history[index2]);
+    }
+  }
+  /** 检查剧集是否已下载 */
+  isEpisodeDownloaded(episodeId) {
+    const history = this.loadHistory();
+    return history.some(
+      (r) => r.episodeId === episodeId && (r.status === DownloadRecordStatus.COMPLETED || r.status === DownloadRecordStatus.DOWNLOADING)
+    );
+  }
+  /** 筛选番剧 */
+  filterAnime(animeList) {
+    const config2 = this.getConfig();
+    return animeList.filter((anime) => this.matchesFilter(anime, config2.filters));
+  }
+  /** 检查番剧是否匹配筛选条件 */
+  matchesFilter(anime, filter3) {
+    const yearStr = anime.year || "";
+    if (yearStr) {
+      const year = parseInt(yearStr, 10);
+      if (!isNaN(year)) {
+        if (filter3.minYear !== void 0 && year < filter3.minYear) return false;
+        if (filter3.maxYear !== void 0 && year > filter3.maxYear) return false;
+        if (filter3.specificYears.length > 0 && !filter3.specificYears.includes(year)) return false;
+      }
+    }
+    if (filter3.seasons.length > 0) {
+      const season = anime.season || "";
+      if (season && !filter3.seasons.includes(season)) return false;
+    }
+    if (filter3.minEpisodes !== void 0) {
+      const episode = anime.episode || 0;
+      if (typeof episode === "number" && episode < filter3.minEpisodes) return false;
+    }
+    const title2 = anime.title || "";
+    if (filter3.includePatterns.length > 0) {
+      let matched = false;
+      for (const pattern2 of filter3.includePatterns) {
+        try {
+          const regex = new RegExp(pattern2, "i");
+          if (regex.test(title2)) {
+            matched = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      if (!matched) return false;
+    }
+    if (filter3.excludePatterns.length > 0) {
+      for (const pattern2 of filter3.excludePatterns) {
+        try {
+          const regex = new RegExp(pattern2, "i");
+          if (regex.test(title2)) return false;
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    return true;
+  }
+  /** 启动调度器 */
+  startScheduler() {
+    if (this.running) {
+      console.log("[AutoDownload] Scheduler already running");
+      return;
+    }
+    const config2 = this.getConfig();
+    if (!config2.enabled) {
+      console.log("[AutoDownload] Disabled, not starting scheduler");
+      return;
+    }
+    this.running = true;
+    this.scheduleNextCheck();
+    console.log("[AutoDownload] Scheduler started");
+    this.emit("schedulerStarted");
+  }
+  /** 停止调度器 */
+  stopScheduler() {
+    if (!this.running) return;
+    if (this.schedulerTimer) {
+      clearTimeout(this.schedulerTimer);
+      this.schedulerTimer = null;
+    }
+    this.running = false;
+    console.log("[AutoDownload] Scheduler stopped");
+    this.emit("schedulerStopped");
+  }
+  /** 调度下次检查 */
+  scheduleNextCheck() {
+    if (!this.running) return;
+    const config2 = this.getConfig();
+    const intervalMs = config2.checkIntervalHours * 60 * 60 * 1e3;
+    this.schedulerTimer = setTimeout(() => {
+      this.checkAndDownload();
+      this.scheduleNextCheck();
+    }, intervalMs);
+    console.log(`[AutoDownload] Next check in ${config2.checkIntervalHours} hours`);
+  }
+  /** 检查并下载 */
+  async checkAndDownload() {
+    if (!this.running) return;
+    console.log("[AutoDownload] Running auto download check...");
+    this.emit("checkStarted");
+    try {
+      this.emit("checkCompleted", { checked: 0, downloaded: 0 });
+    } catch (error2) {
+      console.error("[AutoDownload] Check error:", error2);
+      this.emit("checkError", error2);
+    }
+  }
+  /** 立即执行检查 */
+  async runCheckNow() {
+    console.log("[AutoDownload] Manual check triggered");
+    this.emit("checkStarted");
+    const result = { checked: 0, downloaded: 0 };
+    this.emit("checkCompleted", result);
+    return result;
+  }
+  /** 获取状态 */
+  getStatus() {
+    const config2 = this.getConfig();
+    const history = this.getHistory(10);
+    const allHistory = this.getHistory(1e4);
+    const statusCounts = {
+      pending: 0,
+      downloading: 0,
+      completed: 0,
+      failed: 0,
+      skipped: 0
+    };
+    for (const record of allHistory) {
+      statusCounts[record.status]++;
+    }
+    return {
+      enabled: config2.enabled,
+      running: this.running,
+      downloadPath: this.getDownloadPath(),
+      checkIntervalHours: config2.checkIntervalHours,
+      filters: config2.filters,
+      recentDownloads: history,
+      statusCounts
+    };
+  }
+  /** 预览筛选结果 */
+  previewFilter(animeList, tempFilter) {
+    const config2 = this.getConfig();
+    const filter3 = tempFilter || config2.filters;
+    const filtered = animeList.filter((anime) => this.matchesFilter(anime, filter3));
+    return {
+      totalAnime: animeList.length,
+      matchedCount: filtered.length,
+      matchedAnime: filtered.slice(0, 50)
+      // 限制预览数量
+    };
   }
 }
 if (process.env.NODE_ENV === "development" || !app$1.isPackaged) {
@@ -72444,6 +73224,7 @@ let animeService = null;
 let crawlerService = null;
 let downloadService = null;
 let updateService = null;
+let autoDownloadService = null;
 process.stdout.on("error", (err) => {
   if (err.code === "EPIPE") {
     return;
@@ -72474,12 +73255,16 @@ async function initializeServices() {
   log.info("[Main] Download service initialized");
   updateService = new UpdateService();
   log.info("[Main] Update service initialized");
+  autoDownloadService = new AutoDownloadService();
+  autoDownloadService.startScheduler();
+  log.info("[Main] Auto download service initialized");
   registerIPCHandlers({
     databaseService,
     animeService,
     crawlerService,
     downloadService,
-    updateService
+    updateService,
+    autoDownloadService
   });
   log.info("[Main] IPC handlers registered");
 }

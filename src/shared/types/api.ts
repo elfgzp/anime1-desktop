@@ -15,6 +15,13 @@ import type {
   DownloadTask,
   CreateDownloadTaskParams
 } from './anime'
+import type {
+  AutoDownloadConfig,
+  DownloadFilter,
+  DownloadRecord,
+  DownloadRecordStatus,
+  AutoDownloadStatus
+} from './anime'
 
 // ==========================================
 // 基础 API 类型
@@ -205,6 +212,55 @@ export type AddPlaybackHistoryResponse = APIResponse<void>
  */
 export type ClearPlaybackHistoryResponse = APIResponse<void>
 
+/**
+ * 删除播放历史
+ * IPC: history:delete
+ */
+export interface DeletePlaybackHistoryRequest {
+  animeId: string
+  episodeId?: string
+}
+
+export type DeletePlaybackHistoryResponse = APIResponse<void>
+
+/**
+ * 获取番剧播放历史
+ * IPC: history:byAnime
+ */
+export interface GetPlaybackHistoryByAnimeRequest {
+  animeId: string
+}
+
+export type GetPlaybackHistoryByAnimeResponse = APIResponse<PlaybackHistory[]>
+
+/**
+ * 批量获取播放进度
+ * IPC: history:batchProgress
+ */
+export interface GetBatchPlaybackProgressRequest {
+  ids: string[]
+}
+
+export type GetBatchPlaybackProgressResponse = APIResponse<Record<string, PlaybackHistory | null>>
+
+/**
+ * 解析 anime1.pw 剧集
+ * IPC: anime:pwEpisodes
+ */
+export interface ParsePwEpisodesRequest {
+  html: string
+  animeId: string
+}
+
+export interface ParsePwEpisodesResponseData {
+  anime: Anime | null
+  episodes: Episode[]
+  totalEpisodes: number
+  requiresFrontendFetch: boolean
+}
+
+export type ParsePwEpisodesResponse = APIResponse<ParsePwEpisodesResponseData>
+
 // ==========================================
 // 下载相关 API
 // ==========================================
@@ -262,6 +318,70 @@ export interface RemoveDownloadRequest {
 }
 
 export type RemoveDownloadResponse = APIResponse<void>
+
+// ==========================================
+// 自动下载相关 API
+// ==========================================
+
+/**
+ * 获取自动下载配置
+ * IPC: autoDownload:getConfig
+ */
+export type GetAutoDownloadConfigResponse = APIResponse<AutoDownloadConfig>
+
+/**
+ * 更新自动下载配置
+ * IPC: autoDownload:updateConfig
+ */
+export interface UpdateAutoDownloadConfigRequest {
+  config: AutoDownloadConfig
+}
+
+export type UpdateAutoDownloadConfigResponse = APIResponse<boolean>
+
+/**
+ * 获取自动下载状态
+ * IPC: autoDownload:getStatus
+ */
+export type GetAutoDownloadStatusResponse = APIResponse<AutoDownloadStatus>
+
+/**
+ * 获取下载历史
+ * IPC: autoDownload:getHistory
+ */
+export interface GetAutoDownloadHistoryRequest {
+  limit?: number
+  status?: DownloadRecordStatus
+}
+
+export type GetAutoDownloadHistoryResponse = APIResponse<DownloadRecord[]>
+
+/**
+ * 预览筛选结果
+ * IPC: autoDownload:previewFilter
+ */
+export interface PreviewAutoDownloadFilterRequest {
+  filters?: DownloadFilter
+}
+
+export interface PreviewAutoDownloadFilterResponseData {
+  totalAnime: number
+  matchedCount: number
+  matchedAnime: Anime[]
+}
+
+export type PreviewAutoDownloadFilterResponse = APIResponse<PreviewAutoDownloadFilterResponseData>
+
+/**
+ * 手动执行检查
+ * IPC: autoDownload:runCheck
+ */
+export interface RunAutoDownloadCheckResponseData {
+  checked: number
+  downloaded: number
+}
+
+export type RunAutoDownloadCheckResponse = APIResponse<RunAutoDownloadCheckResponseData>
 
 // ==========================================
 // 设置相关 API

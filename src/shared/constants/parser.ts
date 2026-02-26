@@ -108,3 +108,13 @@ export const DOMAINS = {
   ANIME1_ME: 'anime1.me',
   ANIME1_PW: 'anime1.pw'
 } as const
+
+// ==========================================
+// 成人内容配置
+// ==========================================
+
+export const ADULT_CONTENT = {
+  MARKER: '🔞',
+  DOMAINS: ['anime1.pw'],
+  KEYWORDS: ['R-18', '18禁', '成人', 'Hentai', '裏番']
+} as const

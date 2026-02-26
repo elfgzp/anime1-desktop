@@ -11,6 +11,7 @@ import type { AnimeService } from '../services/anime'
 import type { CrawlerService } from '../services/crawler'
 import type { DownloadService } from '../services/download'
 import type { UpdateService } from '../services/update'
+import type { AutoDownloadService } from '../services/autoDownload'
 import { videoProxyService } from '../services/video-proxy'
 
 // 服务容器接口
@@ -20,6 +21,7 @@ interface Services {
   crawlerService: CrawlerService
   downloadService: DownloadService
   updateService: UpdateService
+  autoDownloadService: AutoDownloadService
 }
 
 /**
@@ -42,7 +44,7 @@ function formatDuration(seconds: number): string {
  * 注册所有 IPC 处理器
  */
 export function registerIPCHandlers(services: Services): void {
-  const { databaseService, animeService, crawlerService, downloadService, updateService } = services
+  const { databaseService, animeService, crawlerService, downloadService, updateService, autoDownloadService } = services
 
   // ==========================================
   // 番剧相关 IPC
@@ -175,6 +177,41 @@ export function registerIPCHandlers(services: Services): void {
     try {
       const result = await crawlerService.extractVideoUrl(params.episodeUrl)
       return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 解析 anime1.pw 剧集（从 HTML 内容解析）
+  ipcMain.handle('anime:pwEpisodes', async (_, params: { html: string; animeId: string }) => {
+    try {
+      // 从爬虫服务获取解析器
+      const { Anime1Crawler } = await import('../services/crawler/anime1')
+      const crawler = new Anime1Crawler()
+      
+      // 使用私有方法解析剧集（需要临时转换）
+      const episodes = (crawler as any).extractEpisodes(params.html)
+      
+      // 获取番剧信息
+      const animeMap = animeService.getAnimeMap()
+      const anime = animeMap.get(params.animeId)
+      
+      // 按集数降序排列
+      episodes.sort((a: any, b: any) => {
+        const numA = parseFloat(a.episode) || 0
+        const numB = parseFloat(b.episode) || 0
+        return numB - numA
+      })
+      
+      return { 
+        success: true, 
+        data: {
+          anime: anime ? { ...anime, isAdult: true } : null,
+          episodes,
+          totalEpisodes: episodes.length,
+          requiresFrontendFetch: false
+        }
+      }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }
@@ -417,6 +454,36 @@ export function registerIPCHandlers(services: Services): void {
     }
   })
 
+  // 删除播放历史
+  ipcMain.handle('history:delete', async (_, params: { animeId: string; episodeId?: string }) => {
+    try {
+      databaseService.deletePlaybackHistory(params.animeId, params.episodeId)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 获取番剧的所有播放历史
+  ipcMain.handle('history:byAnime', async (_, params: { animeId: string }) => {
+    try {
+      const result = databaseService.getPlaybackHistoryByAnime(params.animeId)
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 批量获取播放进度
+  ipcMain.handle('history:batchProgress', async (_, params: { ids: string[] }) => {
+    try {
+      const result = databaseService.getBatchPlaybackProgress(params.ids)
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
   // ==========================================
   // 下载相关 IPC
   // ==========================================
@@ -473,6 +540,78 @@ export function registerIPCHandlers(services: Services): void {
     try {
       await downloadService.cancelTask(params.taskId)
       return { success: true }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // ==========================================
+  // 自动下载相关 IPC
+  // ==========================================
+
+  // 获取自动下载配置
+  ipcMain.handle('autoDownload:getConfig', async () => {
+    try {
+      const config = autoDownloadService.getConfig()
+      return { success: true, data: config }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 更新自动下载配置
+  ipcMain.handle('autoDownload:updateConfig', async (_, params: { config: any }) => {
+    try {
+      const success = autoDownloadService.updateConfig(params.config)
+      return { success }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 获取自动下载状态
+  ipcMain.handle('autoDownload:getStatus', async () => {
+    try {
+      const status = autoDownloadService.getStatus()
+      return { success: true, data: status }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 获取下载历史
+  ipcMain.handle('autoDownload:getHistory', async (_, params: { limit?: number; status?: string }) => {
+    try {
+      const history = autoDownloadService.getHistory(
+        params.limit || 100,
+        params.status as any
+      )
+      return { success: true, data: history }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 预览筛选结果
+  ipcMain.handle('autoDownload:previewFilter', async (_, params: { filters?: any }) => {
+    try {
+      // 获取所有番剧
+      const allAnime = await animeService.getList(1, 9999)
+      const result = autoDownloadService.previewFilter(
+        allAnime.animeList,
+        params.filters
+      )
+      return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 手动执行检查
+  ipcMain.handle('autoDownload:runCheck', async () => {
+    try {
+      const result = await autoDownloadService.runCheckNow()
+      return { success: true, data: result }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }

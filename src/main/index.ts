@@ -22,6 +22,7 @@ import { AnimeService } from './services/anime'
 import { CrawlerService } from './services/crawler'
 import { DownloadService } from './services/download'
 import { UpdateService } from './services/update'
+import { AutoDownloadService } from './services/autoDownload'
 import { videoProxyService } from './services/video-proxy'
 
 // 配置
@@ -35,6 +36,7 @@ let animeService: AnimeService | null = null
 let crawlerService: CrawlerService | null = null
 let downloadService: DownloadService | null = null
 let updateService: UpdateService | null = null
+let autoDownloadService: AutoDownloadService | null = null
 
 // 日志配置
 // 处理 EPIPE 错误：当 npm run dev 的管道关闭时，忽略写入错误
@@ -88,13 +90,19 @@ async function initializeServices(): Promise<void> {
   updateService = new UpdateService()
   log.info('[Main] Update service initialized')
   
+  // 6. 自动下载服务
+  autoDownloadService = new AutoDownloadService()
+  autoDownloadService.startScheduler()
+  log.info('[Main] Auto download service initialized')
+  
   // 注册 IPC 处理器
   registerIPCHandlers({
     databaseService,
     animeService,
     crawlerService,
     downloadService,
-    updateService
+    updateService,
+    autoDownloadService
   })
   log.info('[Main] IPC handlers registered')
 }

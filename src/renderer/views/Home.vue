@@ -58,9 +58,13 @@
             @click.stop="toggleFavorite(anime)"
           />
           <div class="anime-cover">
+            <!-- 成人内容标记 -->
+            <div v-if="anime.isAdult" class="adult-mark">
+              <span>🔞</span>
+            </div>
             <!-- 封面图片 -->
             <img
-              v-if="anime.coverUrl && !anime.coverError"
+              v-else-if="anime.coverUrl && !anime.coverError"
               :src="anime.coverUrl"
               :alt="anime.title"
               class="cover-image"
@@ -94,6 +98,10 @@
               <span class="progress-text">看到第{{ anime.playbackProgress.episodeNum }}集 {{ anime.playbackProgress.positionFormatted }}</span>
               <el-progress :percentage="anime.playbackProgress.progressPercent" :show-text="false" :stroke-width="3" />
             </div>
+            <!-- 调试: 显示哪些番剧有播放进度 -->
+            <div v-else-if="anime.playbackProgress" style="font-size: 10px; color: orange;">
+              进度0%: {{ anime.playbackProgress.episodeNum }}
+            </div>
           </div>
         </el-card>
       </div>
@@ -112,7 +120,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Picture, Loading, Star, StarFilled } from '@element-plus/icons-vue'
 import { useAnimeStore, useFavoritesStore } from '../stores'
@@ -125,17 +133,78 @@ const favoritesStore = useFavoritesStore()
 const searchQuery = ref('')
 const currentPage = ref(1)
 
-onMounted(() => {
-  // 加载番剧列表（带播放进度）
-  animeStore.fetchAnimeList(1, true)
+// 滚动位置存储键
+const SCROLL_POSITION_KEY = 'home_scroll_position'
+
+// 保存滚动位置
+const saveScrollPosition = () => {
+  sessionStorage.setItem(SCROLL_POSITION_KEY, JSON.stringify({
+    scrollY: window.scrollY,
+    page: currentPage.value,
+    search: searchQuery.value
+  }))
+}
+
+// 恢复滚动位置
+const restoreScrollPosition = async () => {
+  const saved = sessionStorage.getItem(SCROLL_POSITION_KEY)
+  if (saved) {
+    try {
+      const { scrollY, page, search } = JSON.parse(saved)
+      
+      // 恢复搜索状态
+      if (search) {
+        searchQuery.value = search
+      }
+      
+      // 恢复页码
+      if (page && page > 1) {
+        currentPage.value = page
+      }
+      
+      // 等待数据加载完成后恢复滚动位置
+      await nextTick()
+      setTimeout(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' })
+      }, 100)
+      
+      // 清除保存的位置
+      sessionStorage.removeItem(SCROLL_POSITION_KEY)
+      return true
+    } catch (e) {
+      console.error('[Home] 恢复滚动位置失败:', e)
+    }
+  }
+  return false
+}
+
+onMounted(async () => {
+  // 尝试恢复滚动位置
+  const restored = await restoreScrollPosition()
+  
+  if (!restored) {
+    // 没有保存的位置，正常加载
+    await animeStore.fetchAnimeList(1, true)
+  } else {
+    // 恢复搜索状态后加载对应数据
+    if (searchQuery.value) {
+      await animeStore.search(searchQuery.value, currentPage.value, true)
+    } else {
+      await animeStore.fetchAnimeList(currentPage.value, true)
+    }
+  }
   
   // 加载收藏列表
   favoritesStore.loadFavorites()
+  
+  // 监听页面离开事件保存滚动位置
+  window.addEventListener('beforeunload', saveScrollPosition)
 })
 
 onUnmounted(() => {
   // 清理定时器
   animeStore.cleanup()
+  window.removeEventListener('beforeunload', saveScrollPosition)
 })
 
 function handleSearch() {
@@ -153,6 +222,7 @@ function handlePageChange(page: number) {
 }
 
 function goToDetail(id: string) {
+  saveScrollPosition()
   router.push(`/anime/${id}`)
 }
 
@@ -382,6 +452,21 @@ async function toggleFavorite(anime: any) {
   color: var(--el-text-color-secondary);
   display: block;
   margin-bottom: 4px;
+}
+
+.adult-mark {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #252542 0%, #1a1a2e 100%);
+  font-size: 40px;
+}
+
+.adult-mark span {
+  filter: grayscale(100%);
+  opacity: 0.8;
 }
 
 .pagination {

@@ -703,6 +703,82 @@ export class DatabaseService {
   }
 
   /**
+   * 删除单条播放历史
+   */
+  deletePlaybackHistory(animeId: string, episodeId?: string): void {
+    if (!this.db) throw new Error('Database not connected')
+    
+    if (episodeId) {
+      // 删除特定剧集的历史
+      const id = `${animeId}_${episodeId}`
+      const stmt = this.db.prepare('DELETE FROM playback_history WHERE id = ?')
+      stmt.run(id)
+    } else {
+      // 删除整个番剧的历史
+      const stmt = this.db.prepare('DELETE FROM playback_history WHERE anime_id = ?')
+      stmt.run(animeId)
+    }
+  }
+
+  /**
+   * 获取番剧的所有播放历史
+   */
+  getPlaybackHistoryByAnime(animeId: string): PlaybackHistory[] {
+    if (!this.db) throw new Error('Database not connected')
+    
+    const stmt = this.db.prepare(`
+      SELECT * FROM playback_history 
+      WHERE anime_id = ?
+      ORDER BY episode_num DESC
+    `)
+    const rows = stmt.all(animeId) as any[]
+    
+    return rows.map(row => ({
+      id: row.id,
+      animeId: row.anime_id,
+      animeTitle: row.anime_title,
+      episodeId: row.episode_id,
+      episodeNum: row.episode_num,
+      positionSeconds: row.position_seconds,
+      totalSeconds: row.total_seconds,
+      lastWatchedAt: row.last_watched_at,
+      coverUrl: row.cover_url
+    }))
+  }
+
+  /**
+   * 批量获取播放进度
+   */
+  getBatchPlaybackProgress(ids: string[]): Record<string, PlaybackHistory | null> {
+    if (!this.db) throw new Error('Database not connected')
+    
+    const result: Record<string, PlaybackHistory | null> = {}
+    
+    for (const id of ids) {
+      const stmt = this.db.prepare('SELECT * FROM playback_history WHERE id = ?')
+      const row = stmt.get(id) as any | undefined
+      
+      if (row) {
+        result[id] = {
+          id: row.id,
+          animeId: row.anime_id,
+          animeTitle: row.anime_title,
+          episodeId: row.episode_id,
+          episodeNum: row.episode_num,
+          positionSeconds: row.position_seconds,
+          totalSeconds: row.total_seconds,
+          lastWatchedAt: row.last_watched_at,
+          coverUrl: row.cover_url
+        }
+      } else {
+        result[id] = null
+      }
+    }
+    
+    return result
+  }
+
+  /**
    * 获取番剧的最新播放记录
    */
   getLatestPlaybackForAnime(animeId: string): PlaybackHistory | null {
