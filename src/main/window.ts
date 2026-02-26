@@ -113,8 +113,6 @@ export class WindowManager {
       log.info(`[Window] Loading production build: ${indexPath}`)
       await this.mainWindow.loadFile(indexPath)
     }
-    this.mainWindow.webContents.openDevTools()
-
     // 显示窗口 - 使用 setTimeout 确保即使 ready-to-show 不触发也能显示
     const showWindow = () => {
       if (this.mainWindow && !this.mainWindow.isVisible()) {
@@ -262,6 +260,18 @@ export class WindowManager {
         this.hide()
       } else {
         this.show()
+      }
+    })
+
+    // F12: 打开/关闭开发者工具
+    globalShortcut.register('F12', () => {
+      if (this.mainWindow) {
+        const wc = this.mainWindow.webContents
+        if (wc.isDevToolsOpened()) {
+          wc.closeDevTools()
+        } else {
+          wc.openDevTools()
+        }
       }
     })
 

@@ -49,6 +49,14 @@
           shadow="hover"
           @click="goToDetail(anime.id)"
         >
+          <!-- 收藏按钮 -->
+          <el-button
+            :icon="favoritesStore.isFavorite(anime.id) ? StarFilled : Star"
+            circle
+            class="favorite-btn"
+            :class="{ active: favoritesStore.isFavorite(anime.id) }"
+            @click.stop="toggleFavorite(anime.id)"
+          />
           <div class="anime-cover">
             <!-- 封面图片 -->
             <img
@@ -99,10 +107,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Picture, Loading } from '@element-plus/icons-vue'
+import { Search, Picture, Loading, Star, StarFilled } from '@element-plus/icons-vue'
 import { useAnimeStore, useFavoritesStore } from '../stores'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const animeStore = useAnimeStore()
@@ -151,6 +160,20 @@ function handleImageError(anime: any) {
   anime.coverError = true
   anime.coverUrl = ''
 }
+
+async function toggleFavorite(animeId: string) {
+  try {
+    if (favoritesStore.isFavorite(animeId)) {
+      await favoritesStore.removeFavorite(animeId)
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoritesStore.addFavorite(animeId)
+      ElMessage.success('已添加到收藏')
+    }
+  } catch (error) {
+    ElMessage.error('操作失败')
+  }
+}
 </script>
 
 <style scoped>
@@ -196,11 +219,37 @@ function handleImageError(anime: any) {
 .anime-card {
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
 }
 
 .anime-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.favorite-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.anime-card:hover .favorite-btn {
+  opacity: 1;
+}
+
+.favorite-btn.active {
+  opacity: 1;
+  color: #f7ba2a;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.favorite-btn:hover {
+  transform: scale(1.1);
 }
 
 .anime-cover {

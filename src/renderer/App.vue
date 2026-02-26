@@ -7,13 +7,16 @@
 <script setup lang="ts">
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { onMounted } from 'vue'
+import { useSettingsStore } from './stores'
 
-// 应用默认亮色主题
-onMounted(() => {
-  const html = document.documentElement
-  if (!html.classList.contains('dark') && !html.classList.contains('light')) {
-    html.classList.add('light')
-  }
+const settingsStore = useSettingsStore()
+
+// 初始化主题
+onMounted(async () => {
+  // 先加载设置
+  await settingsStore.loadSettings()
+  // 应用主题
+  settingsStore.applyTheme(settingsStore.theme)
 })
 </script>
 
