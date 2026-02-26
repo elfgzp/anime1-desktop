@@ -108,3 +108,19 @@ scripts/test-docker-quick.sh
 # Test data
 tmp/
 *.tar.gz
+
+# Electron build outputs
+dist-electron/
+
+# Test results
+test-results/
+screenshots/
+e2e-report/
+
+# Temporary test files
+e2e/video-test.spec.ts
+e2e/debug-*.spec.ts
+e2e/test-*.spec.ts
+
+# Playwright
+playwright/.cache/
