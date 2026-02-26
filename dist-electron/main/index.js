@@ -2,9 +2,9 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key2, value) => key2 in obj ? __defProp(obj, key2, { enumerable: true, configurable: true, writable: true, value }) : obj[key2] = value;
 var __publicField = (obj, key2, value) => __defNormalProp(obj, typeof key2 !== "symbol" ? key2 + "" : key2, value);
 import require$$1$6, { app as app$1, BrowserWindow, shell as shell$1, nativeImage, Tray, Menu, globalShortcut, ipcMain as ipcMain$1, screen, protocol } from "electron";
-import log from "electron-log";
 import require$$1$3, { join, dirname, resolve as resolve$5 } from "path";
 import require$$0$4, { fileURLToPath } from "url";
+import log from "electron-log";
 import require$$1$2, { existsSync, mkdirSync, statSync, createWriteStream, readFileSync as readFileSync$2, writeFileSync as writeFileSync$2 } from "fs";
 import require$$1$5 from "util";
 import require$$0$2 from "crypto";
@@ -15124,8 +15124,8 @@ const PATHS = {
     return config.download.downloadPath || this.DOWNLOADS;
   }
 };
-const __filename$1 = fileURLToPath(import.meta.url);
-const __dirname$1 = dirname(__filename$1);
+const __filename$2 = fileURLToPath(import.meta.url);
+const __dirname$2 = dirname(__filename$2);
 const DEFAULT_WINDOW_STATE = {
   width: WINDOW_CONFIG.DEFAULT_WIDTH,
   height: WINDOW_CONFIG.DEFAULT_HEIGHT,
@@ -15143,7 +15143,7 @@ class WindowManager {
    */
   async createMainWindow() {
     const windowState = this.loadWindowState();
-    const preloadPath = join(__dirname$1, "../preload/index.cjs");
+    const preloadPath = join(__dirname$2, "../preload/index.cjs");
     const absolutePreloadPath = resolve$5(preloadPath);
     console.log(`[Window] Preload path: ${preloadPath}`);
     console.log(`[Window] Preload absolute path: ${absolutePreloadPath}`);
@@ -15185,7 +15185,7 @@ class WindowManager {
       log.info(`[Window] Loading dev server: ${process.env.VITE_DEV_SERVER_URL}`);
       await this.mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     } else {
-      const indexPath = join(__dirname$1, "../../dist/index.html");
+      const indexPath = join(__dirname$2, "../../dist/index.html");
       log.info(`[Window] Loading production build: ${indexPath}`);
       await this.mainWindow.loadFile(indexPath);
     }
@@ -15254,7 +15254,7 @@ class WindowManager {
    * 获取应用图标路径
    */
   getAppIcon() {
-    const resourcesPath = join(__dirname$1, "../../../resources");
+    const resourcesPath = join(__dirname$2, "../../../resources");
     if (process.platform === "darwin") {
       return join(resourcesPath, "icon.icns");
     } else if (process.platform === "win32") {
@@ -15267,7 +15267,7 @@ class WindowManager {
    * 获取托盘图标
    */
   getTrayIcon() {
-    const resourcesPath = join(__dirname$1, "../../../resources");
+    const resourcesPath = join(__dirname$2, "../../../resources");
     let iconPath;
     iconPath = join(resourcesPath, "icon.png");
     if (!existsSync(iconPath)) {
@@ -54088,7 +54088,14 @@ var _eval = EvalError;
 var range = RangeError;
 var ref = ReferenceError;
 var syntax = SyntaxError;
-var type$1 = TypeError;
+var type$1;
+var hasRequiredType;
+function requireType() {
+  if (hasRequiredType) return type$1;
+  hasRequiredType = 1;
+  type$1 = TypeError;
+  return type$1;
+}
 var uri = URIError;
 var abs$1 = Math.abs;
 var floor$1 = Math.floor;
@@ -54334,7 +54341,7 @@ function requireCallBindApplyHelpers() {
   if (hasRequiredCallBindApplyHelpers) return callBindApplyHelpers;
   hasRequiredCallBindApplyHelpers = 1;
   var bind3 = functionBind;
-  var $TypeError2 = type$1;
+  var $TypeError2 = requireType();
   var $call2 = requireFunctionCall();
   var $actualApply = requireActualApply();
   callBindApplyHelpers = function callBindBasic(args) {
@@ -54407,7 +54414,7 @@ var $EvalError = _eval;
 var $RangeError = range;
 var $ReferenceError = ref;
 var $SyntaxError = syntax;
-var $TypeError$1 = type$1;
+var $TypeError$1 = requireType();
 var $URIError = uri;
 var abs = abs$1;
 var floor = floor$1;
@@ -54738,7 +54745,7 @@ var GetIntrinsic2 = getIntrinsic;
 var $defineProperty = GetIntrinsic2("%Object.defineProperty%", true);
 var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
-var $TypeError = type$1;
+var $TypeError = requireType();
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
 var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
@@ -73210,6 +73217,19 @@ class AutoDownloadService extends EventEmitter {
       matchedAnime: filtered.slice(0, 50)
       // 限制预览数量
     };
+  }
+}
+const __filename$1 = fileURLToPath(import.meta.url);
+const __dirname$1 = dirname(__filename$1);
+app$1.setName("Anime1 Desktop");
+if (process.platform === "darwin") {
+  const iconPath = join(__dirname$1, "../../../resources/icon.png");
+  try {
+    const dockIcon = nativeImage.createFromPath(iconPath);
+    app$1.dock.setIcon(dockIcon);
+    console.log("[Main] Dock icon set successfully");
+  } catch (error2) {
+    console.error("[Main] Failed to set dock icon:", error2);
   }
 }
 if (process.env.NODE_ENV === "development" || !app$1.isPackaged) {

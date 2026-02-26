@@ -5,8 +5,29 @@
  * 职责: 应用程序入口、窗口管理、服务初始化
  */
 
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, nativeImage } from 'electron'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import log from 'electron-log'
+
+// 获取 __dirname 等效（ES 模块）
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// 设置应用名称（必须在应用ready之前）
+app.setName('Anime1 Desktop')
+
+// 设置 Dock 图标（macOS）
+if (process.platform === 'darwin') {
+  const iconPath = join(__dirname, '../../../resources/icon.png')
+  try {
+    const dockIcon = nativeImage.createFromPath(iconPath)
+    app.dock.setIcon(dockIcon)
+    console.log('[Main] Dock icon set successfully')
+  } catch (error) {
+    console.error('[Main] Failed to set dock icon:', error)
+  }
+}
 
 // 启用远程调试（开发模式）
 if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
