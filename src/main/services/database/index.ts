@@ -5,7 +5,6 @@
  * 技术栈: better-sqlite3 (替代 Peewee)
  */
 
-import type { Database as DatabaseType } from 'libsql'
 import { app } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
@@ -17,10 +16,10 @@ import { migrateData, needsMigration, isMigrationCompleted, markMigrationComplet
 const DB_FILE_NAME = 'anime1.db'
 
 // 动态导入 libsql 避免打包问题
-let Database: typeof DatabaseType.Database
+let DatabaseClass: any = null
 
 export class DatabaseService {
-  private db: DatabaseType | null = null
+  private db: any = null
   private dbPath: string
 
   constructor() {
@@ -31,12 +30,13 @@ export class DatabaseService {
     mkdirSync(userDataPath, { recursive: true })
   }
 
-  private async loadDatabase(): Promise<typeof DatabaseType> {
-    if (!Database) {
+  private async loadDatabase(): Promise<any> {
+    if (!DatabaseClass) {
       // libsql 默认导出 Database 类
-      Database = await import('libsql').then(m => m.default || m)
+      const libsql = await import('libsql')
+      DatabaseClass = libsql.default || libsql
     }
-    return Database
+    return DatabaseClass
   }
 
   /**
@@ -48,8 +48,8 @@ export class DatabaseService {
       this.db = new DatabaseClass(this.dbPath)
       
       // 启用 WAL 模式，提高并发性能
-      this.db.pragma('journal_mode = WAL')
-      this.db.pragma('foreign_keys = ON')
+      this.db.pragma('journal_mode = WAL' as never)
+      this.db.pragma('foreign_keys = ON' as never)
       
       // 初始化表
       this.initTables()
@@ -93,7 +93,7 @@ export class DatabaseService {
   /**
    * 获取数据库实例
    */
-  getDatabase(): Database.Database {
+  getDatabase(): any {
     if (!this.db) {
       throw new Error('Database not connected')
     }
@@ -700,6 +700,35 @@ export class DatabaseService {
   clearPlaybackHistory(): void {
     if (!this.db) throw new Error('Database not connected')
     this.db.exec('DELETE FROM playback_history')
+  }
+
+  /**
+   * 获取番剧的最新播放记录
+   */
+  getLatestPlaybackForAnime(animeId: string): PlaybackHistory | null {
+    if (!this.db) throw new Error('Database not connected')
+    
+    const stmt = this.db.prepare(`
+      SELECT * FROM playback_history 
+      WHERE anime_id = ?
+      ORDER BY last_watched_at DESC 
+      LIMIT 1
+    `)
+    const row = stmt.get(animeId) as any | undefined
+    
+    if (!row) return null
+    
+    return {
+      id: row.id,
+      animeId: row.anime_id,
+      animeTitle: row.anime_title,
+      episodeId: row.episode_id,
+      episodeNum: row.episode_num,
+      positionSeconds: row.position_seconds,
+      totalSeconds: row.total_seconds,
+      lastWatchedAt: row.last_watched_at,
+      coverUrl: row.cover_url
+    }
   }
 
   // ==========================================

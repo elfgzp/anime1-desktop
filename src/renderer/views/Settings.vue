@@ -178,12 +178,24 @@ const loadSettings = async () => {
   try {
     const result = await window.api.settings.getAll()
     if (result.success && result.data) {
-      settings.value = { ...defaultSettings, ...result.data }
+      // 解析 JSON 格式的设置值
+      const parsedSettings: Partial<AppSettings> = {}
+      for (const [key, value] of Object.entries(result.data)) {
+        try {
+          parsedSettings[key as keyof AppSettings] = JSON.parse(value as string)
+        } catch {
+          parsedSettings[key as keyof AppSettings] = value as any
+        }
+      }
+      settings.value = { ...defaultSettings, ...parsedSettings }
+      // 立即应用主题
+      applyTheme(settings.value.theme)
     }
   } catch (err) {
     console.error('[Settings] 加载设置失败:', err)
     // 使用默认设置
     settings.value = { ...defaultSettings }
+    applyTheme(settings.value.theme)
   }
 }
 

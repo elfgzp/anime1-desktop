@@ -72,23 +72,23 @@ export function resetSettings(): void {
 export const config = {
   // 窗口
   get window() { return getSetting('window') },
-  set window(value) { setSetting('window', value) },
+  set window(value: { width: number; height: number; x?: number; y?: number; maximized: boolean }) { setSetting('window', value) },
   
   // 主题
   get theme() { return getSetting('theme') },
-  set theme(value) { setSetting('theme', value) },
+  set theme(value: 'light' | 'dark' | 'system') { setSetting('theme', value) },
   
   // 下载
   get download() { return getSetting('download') },
-  set download(value) { setSetting('download', value) },
+  set download(value: { downloadPath: string; autoDownloadEnabled: boolean; filters: { years: string[]; seasons: string[] }; maxConcurrentDownloads: number }) { setSetting('download', value) },
   
   // 播放
   get playback() { return getSetting('playback') },
-  set playback(value) { setSetting('playback', value) },
+  set playback(value: { autoPlayNext: boolean; rememberPlaybackPosition: boolean; defaultVolume: number; defaultQuality?: string }) { setSetting('playback', value) },
   
   // 更新
   get update() { return getSetting('update') },
-  set update(value) { setSetting('update', value) }
+  set update(value: { channel: 'stable' | 'test'; autoCheck: boolean }) { setSetting('update', value) }
 }
 
 // ==========================================

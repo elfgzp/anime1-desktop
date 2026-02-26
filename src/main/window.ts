@@ -48,7 +48,6 @@ export class WindowManager {
   private mainWindow: BrowserWindow | null = null
   private tray: Tray | null = null
   private isQuitting = false
-  private normalBounds: { width: number; height: number; x: number; y: number } | null = null
 
   /**
    * 创建主窗口
@@ -153,7 +152,7 @@ export class WindowManager {
     if (!this.mainWindow) return
 
     // 监听 preload 错误
-    this.mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+    this.mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
       log.error('[Window] Preload error:', preloadPath, error)
     })
     
@@ -287,43 +286,30 @@ export class WindowManager {
       this.mainWindow?.minimize()
     })
 
-    // 最大化/恢复（使用自定义实现，适配无边框窗口）
+    // 最大化/恢复
     ipcMain.handle('window:maximize', () => {
       const win = this.mainWindow
       if (!win) return { success: false, maximized: false }
       
-      // 检查是否已经是最大化状态（通过比较窗口大小和屏幕大小）
-      const bounds = win.getBounds()
-      const screenBounds = screen.getPrimaryDisplay().workAreaSize
-      const isMaximized = bounds.width >= screenBounds.width && bounds.height >= screenBounds.height
+      const isFullScreen = win.isFullScreen()
       
-      log.info(`[Window] Maximize toggled, current size: ${bounds.width}x${bounds.height}, screen: ${screenBounds.width}x${screenBounds.height}`)
-      
-      if (isMaximized) {
-        // 恢复之前的大小
-        if (this.normalBounds) {
-          win.setBounds(this.normalBounds)
-          log.info('[Window] Window restored to:', this.normalBounds)
-        } else {
-          // 使用默认大小
-          const defaultSize = { width: WINDOW_CONFIG.DEFAULT_WIDTH, height: WINDOW_CONFIG.DEFAULT_HEIGHT }
-          win.setSize(defaultSize.width, defaultSize.height)
-          win.center()
-          log.info('[Window] Window restored to default size')
-        }
+      if (process.platform === 'darwin') {
+        // macOS: 使用原生全屏（进入独立 Space）
+        win.setFullScreen(!isFullScreen)
+        log.info(`[Window] macOS fullScreen toggled: ${!isFullScreen}`)
+        return { success: true, maximized: !isFullScreen }
       } else {
-        // 保存当前大小和位置，然后最大化
-        this.normalBounds = { ...bounds }
-        win.setBounds({
-          x: 0,
-          y: 0,
-          width: screenBounds.width,
-          height: screenBounds.height
-        })
-        log.info('[Window] Window maximized')
+        // Windows/Linux: 使用普通最大化
+        if (win.isMaximized()) {
+          win.unmaximize()
+          log.info('[Window] Window unmaximized')
+          return { success: true, maximized: false }
+        } else {
+          win.maximize()
+          log.info('[Window] Window maximized')
+          return { success: true, maximized: true }
+        }
       }
-      
-      return { success: true, maximized: !isMaximized }
     })
 
     // 关闭窗口
@@ -338,11 +324,21 @@ export class WindowManager {
 
     // 获取窗口状态
     ipcMain.handle('window:getState', () => {
+      const win = this.mainWindow
+      if (!win) {
+        return { maximized: false, minimized: false, fullscreen: false, focused: false }
+      }
+      
+      // macOS 上全屏状态用 isFullScreen，其他平台用 isMaximized
+      const isMaximized = process.platform === 'darwin' 
+        ? win.isFullScreen() 
+        : win.isMaximized()
+      
       const state = {
-        maximized: this.mainWindow?.isMaximized() ?? false,
-        minimized: this.mainWindow?.isMinimized() ?? false,
-        fullscreen: this.mainWindow?.isFullScreen() ?? false,
-        focused: this.mainWindow?.isFocused() ?? false
+        maximized: isMaximized,
+        minimized: win.isMinimized(),
+        fullscreen: win.isFullScreen(),
+        focused: win.isFocused()
       }
       log.info('[Window] getState called:', state)
       return state

@@ -15,8 +15,7 @@ const settingsStore = useSettingsStore()
 onMounted(async () => {
   // 先加载设置
   await settingsStore.loadSettings()
-  // 应用主题
-  settingsStore.applyTheme(settingsStore.theme)
+  // 应用主题（主题会在 loadSettings 中自动应用）
 })
 </script>
 

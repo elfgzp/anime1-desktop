@@ -51,11 +51,11 @@
         >
           <!-- 收藏按钮 -->
           <el-button
-            :icon="favoritesStore.isFavorite(anime.id) ? StarFilled : Star"
+            :icon="isAnimeFavorite(anime.id) ? StarFilled : Star"
             circle
             class="favorite-btn"
-            :class="{ active: favoritesStore.isFavorite(anime.id) }"
-            @click.stop="toggleFavorite(anime.id)"
+            :class="{ active: isAnimeFavorite(anime.id) }"
+            @click.stop="toggleFavorite(anime)"
           />
           <div class="anime-cover">
             <!-- 封面图片 -->
@@ -89,6 +89,11 @@
               <el-tag v-if="anime.season" size="small" type="success">{{ anime.season }}</el-tag>
               <el-tag v-if="anime.subtitleGroup" size="small" type="info">{{ anime.subtitleGroup }}</el-tag>
             </div>
+            <!-- 播放进度 -->
+            <div v-if="anime.playbackProgress && anime.playbackProgress.progressPercent > 0" class="progress-info">
+              <span class="progress-text">看到第{{ anime.playbackProgress.episodeNum }}集 {{ anime.playbackProgress.positionFormatted }}</span>
+              <el-progress :percentage="anime.playbackProgress.progressPercent" :show-text="false" :stroke-width="3" />
+            </div>
           </div>
         </el-card>
       </div>
@@ -107,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Picture, Loading, Star, StarFilled } from '@element-plus/icons-vue'
 import { useAnimeStore, useFavoritesStore } from '../stores'
@@ -121,10 +126,10 @@ const searchQuery = ref('')
 const currentPage = ref(1)
 
 onMounted(() => {
-  // 加载番剧列表
-  animeStore.fetchAnimeList(1)
+  // 加载番剧列表（带播放进度）
+  animeStore.fetchAnimeList(1, true)
   
-  // 加载收藏
+  // 加载收藏列表
   favoritesStore.loadFavorites()
 })
 
@@ -135,14 +140,14 @@ onUnmounted(() => {
 
 function handleSearch() {
   if (searchQuery.value.trim()) {
-    animeStore.search(searchQuery.value.trim())
+    animeStore.search(searchQuery.value.trim(), 1, true)
   } else {
-    animeStore.fetchAnimeList(1)
+    animeStore.fetchAnimeList(1, true)
   }
 }
 
 function handlePageChange(page: number) {
-  animeStore.fetchAnimeList(page)
+  animeStore.fetchAnimeList(page, true)
   // 滚动到顶部
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -161,13 +166,31 @@ function handleImageError(anime: any) {
   anime.coverUrl = ''
 }
 
-async function toggleFavorite(animeId: string) {
+// 检查是否已收藏
+function isAnimeFavorite(animeId: string): boolean {
   try {
-    if (favoritesStore.isFavorite(animeId)) {
-      await favoritesStore.removeFavorite(animeId)
+    return favoritesStore.isFavorite(animeId)
+  } catch {
+    return false
+  }
+}
+
+async function toggleFavorite(anime: any) {
+  try {
+    if (isAnimeFavorite(anime.id)) {
+      await favoritesStore.removeFavorite(anime.id)
       ElMessage.success('已取消收藏')
     } else {
-      await favoritesStore.addFavorite(animeId)
+      // 构造收藏需要的完整对象
+      await favoritesStore.addFavorite({
+        animeId: anime.id,
+        title: anime.title,
+        coverUrl: anime.coverUrl,
+        detailUrl: anime.detailUrl || `/anime/${anime.id}`, // 使用详情页路径
+        year: anime.year,
+        season: anime.season,
+        subtitleGroup: anime.subtitleGroup
+      })
       ElMessage.success('已添加到收藏')
     }
   } catch (error) {
@@ -346,6 +369,19 @@ async function toggleFavorite(animeId: string) {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.progress-info {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  display: block;
+  margin-bottom: 4px;
 }
 
 .pagination {

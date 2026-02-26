@@ -5,9 +5,7 @@
  * 职责: 应用程序入口、窗口管理、服务初始化
  */
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { app, BrowserWindow, shell } from 'electron'
 import log from 'electron-log'
 
 // 启用远程调试（开发模式）
@@ -83,7 +81,7 @@ async function initializeServices(): Promise<void> {
   log.info('[Main] Anime service initialized')
   
   // 4. 下载服务
-  downloadService = new DownloadService(databaseService)
+  downloadService = new DownloadService()
   log.info('[Main] Download service initialized')
   
   // 5. 更新服务
@@ -182,9 +180,9 @@ app.on('before-quit', async () => {
  * 安全策略：阻止新窗口创建
  */
 app.on('web-contents-created', (_, contents) => {
-  contents.on('new-window', (event, url) => {
-    event.preventDefault()
+  contents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
+    return { action: 'deny' }
   })
 })
 

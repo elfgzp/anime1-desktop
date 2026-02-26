@@ -52,10 +52,9 @@ export class CrawlerService {
    */
   async findBangumiInfo(
     title: string,
-    year?: string,
-    season?: string
+    year?: string
   ): Promise<{ info: BangumiInfo; score: number } | null> {
-    return this.bangumi.findBestMatch(title, year, season)
+    return this.bangumi.findBestMatch(title, year)
   }
 
   /**

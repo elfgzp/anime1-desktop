@@ -2,6 +2,9 @@
 /**
  * 验证 preload 文件是否正确
  * 在应用启动前运行，确保 window.api 可用
+ * 
+ * ⚠️ 重要: 此脚本会检查是否存在重复的 TypeScript preload 文件
+ * 唯一真相源是 src/preload/index.cjs，不要创建 index.ts！
  */
 
 const fs = require('fs')
@@ -9,9 +12,20 @@ const path = require('path')
 
 const PRELOAD_SRC = path.resolve(__dirname, '../src/preload/index.cjs')
 const PRELOAD_DEST = path.resolve(__dirname, '../dist-electron/preload/index.cjs')
+const PRELOAD_TS = path.resolve(__dirname, '../src/preload/index.ts')
 
 function verifyPreload() {
   console.log('[verify-preload] Checking preload files...')
+  
+  // ⚠️ 检查是否存在错误的 TypeScript 文件
+  if (fs.existsSync(PRELOAD_TS)) {
+    console.error('\n[verify-preload] ⚠️⚠️⚠️ 严重警告 ⚠️⚠️⚠️')
+    console.error('[verify-preload] 发现 src/preload/index.ts 文件！')
+    console.error('[verify-preload] 唯一真相源是 src/preload/index.cjs')
+    console.error('[verify-preload] 请不要创建 .ts 文件，所有修改请在 .cjs 文件中进行')
+    console.error('[verify-preload] 如需类型定义，请在 src/shared/types/api.ts 中添加\n')
+    process.exit(1)
+  }
   
   // 检查源文件
   if (!fs.existsSync(PRELOAD_SRC)) {

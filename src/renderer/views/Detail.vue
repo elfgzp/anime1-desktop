@@ -191,10 +191,15 @@
               :key="ep.id"
               class="episode-card"
               :class="{ active: currentEpisodeIndex === idx }"
+              :style="getEpisodeProgress(ep.id) ? { '--progress-percent': `${getEpisodeProgress(ep.id)!.percent}%` } : {}"
               @click="playEpisode(idx)"
             >
               <div class="episode-num">第{{ ep.episode }}集</div>
               <div class="episode-date">{{ ep.date }}</div>
+              <!-- 播放进度条 -->
+              <div v-if="getEpisodeProgress(ep.id)" class="episode-progress-bar">
+                <div class="episode-progress-fill" :style="{ width: `${getEpisodeProgress(ep.id)!.percent}%` }"></div>
+              </div>
             </div>
           </div>
 
@@ -211,13 +216,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Star, StarFilled, Picture, Loading, Warning, VideoPlay } from '@element-plus/icons-vue'
-import { useAnimeStore, useFavoritesStore } from '../stores'
+import { useFavoritesStore } from '../stores'
 import type { Anime, Episode, BangumiInfo } from '../../shared/types'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
-const animeStore = useAnimeStore()
 const favoritesStore = useFavoritesStore()
 
 const animeId = computed(() => route.params.id as string)
@@ -244,6 +248,15 @@ const favoriteLoading = ref(false)
 
 // UI
 const summaryExpanded = ref(false)
+
+// 播放进度
+interface EpisodeProgress {
+  position: number
+  total: number
+  percent: number
+}
+const episodeProgressMap = ref<Record<string, EpisodeProgress>>({})
+const episodeProgressLoading = ref(false)
 
 const defaultCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="300"%3E%3Crect fill="%23f0f0f0" width="200" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy=".3em" text-anchor="middle" x="100" y="150"%3E暂无封面%3C/text%3E%3C/svg%3E'
 
@@ -288,6 +301,9 @@ const loadData = async () => {
     // 加载 Bangumi 信息（异步）
     loadBangumiInfo()
     
+    // 加载各剧集播放进度
+    await loadEpisodeProgress()
+    
     // 自动播放第一集
     if (episodes.value.length > 0) {
       playEpisode(0)
@@ -315,6 +331,46 @@ const loadBangumiInfo = async () => {
   } finally {
     bangumiLoading.value = false
   }
+}
+
+// 加载各剧集播放进度
+const loadEpisodeProgress = async () => {
+  if (episodes.value.length === 0) return
+  
+  episodeProgressLoading.value = true
+  try {
+    const progressMap: Record<string, EpisodeProgress> = {}
+    
+    // 并行获取所有剧集的播放进度
+    await Promise.all(
+      episodes.value.map(async (ep) => {
+        try {
+          const result = await window.api.history.getProgress({ 
+            animeId: animeId.value, 
+            episodeId: ep.id 
+          })
+          if (result.success && result.data) {
+            const { position, total } = result.data
+            const percent = total > 0 ? Math.round((position / total) * 100) : 0
+            progressMap[ep.id] = { position, total, percent }
+          }
+        } catch (err) {
+          // 忽略错误，该剧集没有播放进度
+        }
+      })
+    )
+    
+    episodeProgressMap.value = progressMap
+  } catch (err) {
+    console.error('[Detail] 加载播放进度失败:', err)
+  } finally {
+    episodeProgressLoading.value = false
+  }
+}
+
+// 获取剧集进度
+const getEpisodeProgress = (episodeId: string): EpisodeProgress | null => {
+  return episodeProgressMap.value[episodeId] || null
 }
 
 // 检查收藏状态
@@ -461,8 +517,7 @@ const saveProgress = async () => {
   }
 }
 
-const onTimeUpdate = (e: Event) => {
-  const video = e.target as HTMLVideoElement
+const onTimeUpdate = (_e: Event) => {
   // 每 30 秒保存一次（由定时器处理）
 }
 
@@ -742,12 +797,14 @@ onMounted(() => {
 }
 
 .episode-card {
+  position: relative;
   padding: 12px;
   background: var(--el-fill-color-light);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
+  overflow: hidden;
 }
 
 .episode-card:hover {
@@ -758,6 +815,23 @@ onMounted(() => {
 .episode-card.active {
   background: linear-gradient(135deg, rgba(255, 107, 157, 0.15) 0%, rgba(124, 92, 255, 0.15) 100%);
   border: 1px solid #7c5cff;
+}
+
+.episode-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+.episode-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c5cff, #ff6b9d);
+  transition: width 0.3s ease;
 }
 
 .episode-num {

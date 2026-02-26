@@ -5,7 +5,24 @@ import renderer from 'vite-plugin-electron-renderer'
 import { resolve } from 'path'
 import { copyFileSync, mkdirSync, existsSync, rmSync } from 'fs'
 
-// 复制 preload 文件插件 - 直接复制不编译
+/**
+ * ⚠️⚠️⚠️ Preload 构建插件 ⚠️⚠️⚠️
+ * 
+ * 重要提示:
+ * - 唯一真相源: src/preload/index.cjs
+ * - 不要创建 src/preload/index.ts 或其他重复的 preload 文件！
+ * - 此插件直接复制 .cjs 文件，不做任何编译
+ * 
+ * 工作流程:
+ * 1. vite 构建时触发 writeBundle
+ * 2. 将 src/preload/index.cjs 复制到 dist-electron/preload/index.cjs
+ * 3. 删除 vite 可能生成的错误文件 (index.js)
+ * 
+ * 如需修改 preload:
+ * 1. 直接编辑 src/preload/index.cjs
+ * 2. 在 src/shared/types/api.ts 更新类型定义
+ * 3. 在 src/main/ipc/index.ts 添加 IPC 处理程序
+ */
 const copyPreloadPlugin = () => ({
   name: 'copy-preload',
   writeBundle() {
@@ -13,13 +30,20 @@ const copyPreloadPlugin = () => ({
     const dest = resolve(__dirname, 'dist-electron/preload/index.cjs')
     const wrongFile = resolve(__dirname, 'dist-electron/preload/index.js')
     
+    // 检查是否存在错误的 .ts 文件
+    const tsFile = resolve(__dirname, 'src/preload/index.ts')
+    if (existsSync(tsFile)) {
+      console.error('[copyPreload] ⚠️ 警告: 发现 src/preload/index.ts 文件！')
+      console.error('[copyPreload] 请删除此文件，唯一真相源是 src/preload/index.cjs')
+    }
+    
     try {
       // 确保目录存在
       if (!existsSync(resolve(__dirname, 'dist-electron/preload'))) {
         mkdirSync(resolve(__dirname, 'dist-electron/preload'), { recursive: true })
       }
       
-      // 直接复制文件
+      // 直接复制文件（不做编译）
       copyFileSync(src, dest)
       console.log('[copyPreload] Copied:', src, '->', dest)
       

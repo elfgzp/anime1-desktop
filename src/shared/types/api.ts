@@ -13,8 +13,7 @@ import type {
   FavoriteAnime,
   PlaybackHistory,
   DownloadTask,
-  CreateDownloadTaskParams,
-  VideoSource
+  CreateDownloadTaskParams
 } from './anime'
 
 // ==========================================
@@ -52,6 +51,14 @@ export interface PaginationParams {
 export interface GetAnimeListRequest extends PaginationParams {}
 
 export type GetAnimeListResponse = APIResponse<AnimePage>
+
+/**
+ * 获取番剧列表（带播放进度）
+ * IPC: anime:listWithProgress
+ */
+export interface GetAnimeListWithProgressRequest extends PaginationParams {}
+
+export type GetAnimeListWithProgressResponse = APIResponse<import('./anime').AnimePageWithProgress>
 
 /**
  * 获取番剧详情

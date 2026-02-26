@@ -58,7 +58,7 @@ export class BangumiCrawler {
    */
   async findBestMatch(
     title: string,
-    year?: string
+    _year?: string
   ): Promise<{ info: BangumiInfo; score: number } | null> {
     log.info(`[Bangumi] Finding best match for: ${title}`)
 
@@ -184,11 +184,11 @@ export class BangumiCrawler {
   private scoreAllResults(
     originalTitle: string,
     $: cheerio.CheerioAPI,
-    items: cheerio.Cheerio
+    items: any
   ): Array<{ result: BangumiSearchResult; score: number }> {
     const results: Array<{ result: BangumiSearchResult; score: number }> = []
 
-    items.each((_, elem) => {
+    items.each((_index: any, elem: any) => {
       const $elem = $(elem)
 
       // 提取标题（与 Python: name_elem.get_text(strip=True) 一致）
@@ -329,7 +329,7 @@ export class BangumiCrawler {
   /**
    * 从列表项提取封面（与 Python: _extract_cover_from_item 一致）
    */
-  private extractCoverFromItem($elem: cheerio.Cheerio): string | undefined {
+  private extractCoverFromItem($elem: any): string | undefined {
     const coverLink = $elem.find('a.subjectCover')
     if (!coverLink.length) return undefined
 

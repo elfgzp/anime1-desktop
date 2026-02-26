@@ -1,263 +1,491 @@
-# 开发文档
+# Anime1 Desktop Electron 开发指南
+
+## 项目概述
+
+- **技术栈**: Electron 40.4.0 + Vue 3.5.28 + TypeScript 5.9.3 + Vite 5.4.21
+- **状态管理**: Pinia
+- **UI 框架**: Element Plus
+- **数据库**: better-sqlite3
+
+## 快速启动
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式（热重载）
+npm run dev
+
+# 构建
+npm run build
+
+# 仅构建前端
+npm run build:fast
+```
 
 ## 项目结构
 
 ```
-anime1-desktop/
-├── frontend/          # Vue 3 前端应用
-│   ├── src/
-│   │   ├── components/    # Vue 组件
-│   │   ├── views/        # 页面视图
-│   │   ├── router/       # 路由配置
-│   │   ├── utils/        # 工具函数
-│   │   └── composables/  # 组合式函数
-│   └── dist/             # 构建输出
-├── src/              # Python 后端
-│   ├── routes/       # Flask 路由
-│   ├── models/       # 数据模型
-│   └── services/     # 业务逻辑
-└── static/           # 静态资源(构建后)
-    └── dist/         # Vue 构建产物（index.html, assets/）
+/Users/gzp/Github/anime1-desktop-electron/
+├── src/
+│   ├── main/              # Electron 主进程
+│   │   ├── index.ts       # 主入口
+│   │   ├── window.ts      # 窗口管理
+│   │   ├── ipc/           # IPC 通信
+│   │   └── services/      # 业务服务
+│   │       ├── database/  # 数据库操作
+│   │       ├── anime/     # 番剧服务
+│   │       └── ...
+│   ├── renderer/          # 渲染进程 (Vue)
+│   │   ├── main.ts        # 渲染进程入口
+│   │   ├── App.vue        # 根组件
+│   │   ├── views/         # 页面
+│   │   ├── stores/        # Pinia Store
+│   │   └── components/    # 组件
+│   ├── preload/           # 预加载脚本
+│   └── shared/            # 共享类型和常量
+├── resources/             # 应用资源（图标等）
+├── e2e/                   # Playwright 测试
+└── screenshots/           # 调试截图输出
 ```
 
-## 开发环境设置
-
-### 1. 安装依赖
+## 快速开始（推荐）
 
 ```bash
-# 安装 Python 依赖
-pip install -e .
-
-# 安装前端依赖
-cd frontend
-npm install  # 首次安装，会生成 package-lock.json
-# 或使用 npm ci 进行生产构建（更快，需要 package-lock.json）
-cd ..
-```
-
-### 2. 开发模式运行
-
-**使用 make dev（推荐）**
-
-```bash
-make dev
-```
-
-这会同时启动：
-- Flask 后端: `http://localhost:5172`
-- Vite 前端: `http://localhost:5173`
-- 默认在 webview 窗口中打开
-
-**环境变量选项：**
-
-```bash
-# 在浏览器中打开（推荐用于调试视频播放）
-DEV_BROWSER=1 make dev
-
-# 启用 webview 开发者工具（macOS: Option+Cmd+I）
-DEV_DEBUG=1 make dev
-
-# 跳过依赖检查和残留进程清理（加速启动）
-DEV_BROWSER=1 SKIP_CHECK=1 NO_CLEANUP=1 make dev
-
-# 组合使用
-DEV_BROWSER=1 DEV_DEBUG=1 SKIP_CHECK=1 NO_CLEANUP=1 make dev
-```
-
-**直接运行脚本（备用方式）：**
-
-```bash
-# 在浏览器中打开
-python scripts/dev.py --browser --skip-check --no-cleanup
-
-# 在 webview 中打开
-python scripts/dev.py --skip-check --no-cleanup
-
-# 查看所有选项
-python scripts/dev.py --help
-```
-
-**分别启动前后端（手动模式）：**
-
-```bash
-# 终端1: 启动 Flask 后端（端口 5172）
-python -m src.app --debug
-
-# 终端2: 启动 Vite 开发服务器（端口 5173）
-cd frontend
+# 1. 启动应用
 npm run dev
+
+# 2. 运行系统检查（另一个终端）
+./scripts/quick-fix.sh check
+
+# 3. 截图验证
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/" screenshots/test.png
 ```
 
-访问 `http://localhost:5173`，Vite 会自动代理 `/api` 请求到 Flask。
+## 调试方法
 
-**仅启动 Flask（使用构建后的前端）：**
+### 快速修复脚本
 
 ```bash
-# 先构建前端
-cd frontend
-npm run build
-cd ..
+# 系统检查（推荐每次启动后运行）
+./scripts/quick-fix.sh check
 
-# 启动 Flask
-python -m src.app --debug
+# 重置数据库（解决数据问题）
+./scripts/quick-fix.sh db
+
+# 设置暗黑模式
+./scripts/quick-fix.sh theme
+
+# 清理缓存并重启
+./scripts/quick-fix.sh cache
+
+# 一键修复所有问题
+./scripts/quick-fix.sh all
 ```
 
-访问 `http://localhost:5172`
+### 1. 查看 Electron 日志
 
-### 3. 构建生产版本
+日志文件位置:
+- macOS: `~/Library/Application Support/anime1-desktop-electron/logs/main.log`
 
 ```bash
-# 构建前端
-cd frontend
-npm run build
-cd ..
-
-# 构建桌面应用
-python scripts/build.py
+# 实时查看日志
+tail -f ~/Library/Application\ Support/anime1-desktop-electron/logs/main.log
 ```
 
-#### 构建脚本选项
+### 2. 打开 DevTools
+
+- 快捷键: `Cmd/Ctrl + Shift + D`
+- 或通过代码: `mainWindow.webContents.openDevTools()`
+
+### 3. 使用 Playwright 连接调试
 
 ```bash
-python scripts/build.py [选项]
+# 1. 先启动应用
+npm run dev
 
-选项:
-  --clean      清理 dist 文件夹后再构建
-  --onefile    创建单文件可执行程序（默认开启）
-  --debug      调试模式构建（显示更多日志）
-  --remote     构建 CLI 版本（浏览器打开，无窗口）
-  --installer  创建安装包（默认开启）
+# 2. 获取 CDP 连接地址
+curl -s http://localhost:9222/json/list
 
-# 示例
-python scripts/build.py                    # 默认构建（单文件 + 安装包）
-python scripts/build.py --clean            # 清理后构建
-python scripts/build.py --debug            # 调试模式
-python scripts/build.py --remote           # CLI 版本
+# 3. 使用 Playwright 截图验证
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/" screenshots/test.png
 ```
 
-#### 构建产物
+### 4. JavaScript 调试脚本
 
-| 平台 | 输出文件 | 说明 |
-|------|---------|------|
-| Windows | `release/anime1-windows-x64-setup.exe` | NSIS 安装程序 |
-| Windows | `release/anime1-windows-x64.zip` | 便携版（解压即用） |
-| macOS | `release/anime1-macos-{version}.dmg` | DMG 磁盘映像 |
-| Linux | `release/anime1-linux-x64.tar.gz` | 压缩包 |
+创建 `debug.js`:
+```javascript
+const { chromium } = require('playwright-core');
 
-**注意**: Windows 安装程序需要先安装 NSIS:
+(async () => {
+    const browser = await chromium.connectOverCDP('http://localhost:9222');
+    const context = browser.contexts()[0];
+    const page = context.pages()[0];
+    
+    // 截图
+    await page.screenshot({ path: 'screenshots/debug.png', fullPage: true });
+    
+    // 获取页面文本
+    const text = await page.evaluate(() => document.body.innerText);
+    console.log(text.substring(0, 500));
+    
+    // 检查 HTML class
+    const htmlClass = await page.evaluate(() => document.documentElement.className);
+    console.log('HTML class:', htmlClass);
+    
+    await browser.close();
+})();
+```
+
+运行: `node debug.js`
+
+## 常见问题及解决方案
+
+### 1. 暗黑模式不生效或重启后丢失
+
+**原因**: 设置存储格式不一致
+
+**解决**:
+```typescript
+// settings.ts - 保存时使用 JSON.stringify
+async function setTheme(value: ThemeMode) {
+  await window.api.settings.set({
+    key: 'theme',
+    value: JSON.stringify(value)  // 必须序列化
+  })
+  applyTheme(value)
+}
+
+// 加载时解析
+async function loadSettings() {
+  const result = await window.api.settings.getAll()
+  if (result.success && result.data) {
+    // 尝试解析 JSON
+    let theme = result.data.theme
+    try {
+      theme = JSON.parse(theme)
+    } catch {
+      // 已经是字符串，直接使用
+    }
+    applyTheme(theme)
+  }
+}
+```
+
+### 2. 收藏按钮显示异常 / isFavorite 报错
+
+**原因**: Pinia store 的 computed getter 在组件渲染时可能未初始化
+
+**解决**:
+```vue
+<!-- Home.vue -->
+<template>
+  <!-- 使用可选链或函数包装 -->
+  <el-button
+    :icon="isAnimeFavorite(anime.id) ? StarFilled : Star"
+    :class="{ active: isAnimeFavorite(anime.id) }"
+  />
+</template>
+
+<script>
+function isAnimeFavorite(animeId: string): boolean {
+  try {
+    return favoritesStore.isFavorite(animeId)
+  } catch {
+    return false
+  }
+}
+</script>
+```
+
+### 3. macOS 全屏不进入原生全屏
+
+**原因**: 使用了 `setBounds()` 而不是 `setFullScreen()`
+
+**解决**:
+```typescript
+// window.ts
+ipcMain.handle('window:maximize', () => {
+  const win = this.mainWindow
+  if (!win) return { success: false, maximized: false }
+  
+  if (process.platform === 'darwin') {
+    // macOS: 使用原生全屏
+    const isFullScreen = win.isFullScreen()
+    win.setFullScreen(!isFullScreen)
+    return { success: true, maximized: !isFullScreen }
+  } else {
+    // Windows/Linux: 使用普通最大化
+    if (win.isMaximized()) {
+      win.unmaximize()
+      return { success: true, maximized: false }
+    } else {
+      win.maximize()
+      return { success: true, maximized: true }
+    }
+  }
+})
+```
+
+### 4. 收藏日期显示不正确
+
+**原因**: 数据库字段是 `addedAt`，但前端使用了 `createdAt`
+
+**解决**:
+```typescript
+// 统一使用 addedAt
+interface FavoriteAnime {
+  animeId: string
+  title: string
+  addedAt: number      // 不是 createdAt
+  updatedAt: number
+  // ...
+}
+```
+
+### 5. 收藏列表缺少播放进度/更新标记
+
+**原因**: IPC 层没有返回增强数据
+
+**解决**:
+```typescript
+// ipc/index.ts - favorite:list
+ipcMain.handle('favorite:list', async () => {
+  const favorites = await databaseService.getFavorites()
+  const animeMap = animeService.getAnimeMap()  // 需要实现此方法
+  
+  const enhancedFavorites = favorites.map(fav => {
+    // 获取播放进度
+    const playback = databaseService.getLatestPlaybackForAnime(fav.animeId)
+    
+    // 检查更新
+    const currentAnime = animeMap.get(fav.animeId)
+    const currentEpisode = currentAnime?.episode ?? fav.episode ?? 0
+    const hasUpdate = currentEpisode > (fav.lastEpisode ?? 0)
+    
+    return {
+      ...fav,
+      playbackProgress: playback ? {
+        episodeNum: playback.episodeNum,
+        positionFormatted: formatDuration(playback.positionSeconds),
+        progressPercent: calculateProgress(playback)
+      } : null,
+      hasUpdate,
+      newEpisodeCount: hasUpdate ? currentEpisode - fav.lastEpisode : 0
+    }
+  })
+  
+  // 排序: 有更新优先
+  enhancedFavorites.sort((a, b) => {
+    if (a.hasUpdate !== b.hasUpdate) return a.hasUpdate ? -1 : 1
+    return b.newEpisodeCount - a.newEpisodeCount
+  })
+  
+  return { success: true, data: enhancedFavorites }
+})
+```
+
+### 6. 应用图标不显示
+
+**解决**:
 ```bash
-choco install nsis -y
+# 确保 resources 目录有图标
+resources/
+├── icon.icns    # macOS
+├── icon.ico     # Windows
+└── icon.png     # Linux
 ```
 
-## 技术栈
+参考 `electron-builder.yml` 配置。
 
-### 前端
-- **Vue 3** - 渐进式 JavaScript 框架
-- **Vue Router** - 官方路由管理器
-- **Element Plus** - Vue 3 组件库
-- **Vite** - 下一代前端构建工具
-- **Axios** - HTTP 客户端
+## 开发工作流
 
-### 后端
-- **Flask** - Python Web 框架
-- **BeautifulSoup4** - HTML 解析
-- **Requests** - HTTP 库
+### 添加新功能的标准流程
 
-## 主要功能
+1. **定义类型** (`src/shared/types/`)
+```typescript
+// anime.ts
+export interface NewFeature {
+  id: string
+  name: string
+}
+```
 
-### 1. 可折叠侧边栏
-- 点击底部按钮可以折叠/展开侧边栏
-- 折叠后只显示图标
-- 状态保存在 localStorage
+2. **实现 IPC** (`src/main/ipc/index.ts`)
+```typescript
+ipcMain.handle('feature:action', async (_, params) => {
+  try {
+    const result = await service.doSomething(params)
+    return { success: true, data: result }
+  } catch (error) {
+    return { success: false, error: { message: String(error) } }
+  }
+})
+```
 
-### 2. 主题切换
-- 支持暗黑模式、普通模式和跟随系统
-- 使用 Element Plus 的暗色主题
-- 主题设置保存在后端
+3. **更新 Preload** (`src/preload/index.ts`)
+```typescript
+export interface ElectronAPI {
+  feature: {
+    action: (params: any) => Promise<any>
+  }
+}
+```
 
-### 3. 番剧列表
-- 分页浏览
-- 搜索功能
-- 收藏功能
-- 封面图片懒加载
+4. **创建 Store** (`src/renderer/stores/`)
+```typescript
+export const useFeatureStore = defineStore('feature', () => {
+  const items = ref<NewFeature[]>([])
+  
+  async function loadItems() {
+    const result = await window.api.feature.action({})
+    if (result.success) {
+      items.value = result.data
+    }
+  }
+  
+  return { items, loadItems }
+})
+```
 
-### 4. 番剧详情
-- 剧集列表
-- 视频播放
-- 收藏管理
+5. **创建组件** (`src/renderer/views/`)
+```vue
+<template>
+  <div>
+    <div v-for="item in store.items" :key="item.id">
+      {{ item.name }}
+    </div>
+  </div>
+</template>
 
-## API 端点
+<script setup>
+import { useFeatureStore } from '../stores'
+const store = useFeatureStore()
+</script>
+```
 
-所有 API 端点都在 `/api` 前缀下:
+### 调试检查清单
 
-- `GET /api/anime` - 获取番剧列表
-- `GET /api/anime/search` - 搜索番剧
-- `GET /api/anime/:id/episodes` - 获取剧集列表
-- `GET /api/favorite/list` - 获取收藏列表
-- `POST /api/favorite/add` - 添加收藏
-- `POST /api/favorite/remove` - 移除收藏
-- `GET /api/settings/theme` - 获取主题设置
-- `POST /api/settings/theme` - 保存主题设置
+- [ ] 主进程日志是否正常输出
+- [ ] IPC 调用是否成功返回
+- [ ] Store 状态是否正确更新
+- [ ] 组件是否正确响应状态变化
+- [ ] 截图验证 UI 显示是否正确
 
-## 开发注意事项
+### 截图验证命令
 
-1. **路由**: 所有前端路由由 Vue Router 处理,Flask 只提供 API 和 SPA 入口
-2. **主题**: Element Plus 的暗色主题通过 CSS 变量实现,确保在暗色模式下正确显示
-3. **构建**: 生产构建时,Vite 会将前端资源输出到 `static/dist/`,Flask 会从这个目录提供静态文件
-4. **代理**: 开发模式下,Vite 会代理 `/api` 和 `/proxy` 请求到 Flask 后端
+```bash
+# 首页
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/" screenshots/home.png
 
-## 故障排除
+# 收藏页
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/#/favorites" screenshots/favorites.png
 
-### 前端无法连接后端 API
-- 确保 Flask 后端正在运行在 `http://localhost:5172`
-- 检查 Vite 配置中的代理设置（自动从 `FLASK_PORT` 环境变量读取）
+# 设置页
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/#/settings" screenshots/settings.png
+```
 
-### 端口被占用
-- 运行 `make dev` 会自动检测并清理占用端口的残留进程
-- 如果端口被其他应用占用，可以直接指定端口参数：`python scripts/dev.py --flask-port=5180 --vite-port=5181`
+## 数据库操作
 
-### 主题显示不正确
-- 检查 `useTheme.js` 中的主题应用逻辑
-- 确保 Element Plus 的暗色主题 CSS 已正确导入
+```bash
+# 查看收藏
+sqlite3 ~/Library/Application\ Support/anime1-desktop-electron/anime1.db \
+  "SELECT * FROM favorite_anime;"
 
-### 构建失败
-- 确保 Node.js 版本 >= 16
-- 删除 `node_modules` 和 `package-lock.json` 后重新安装
+# 查看设置
+sqlite3 ~/Library/Application\ Support/anime1-desktop-electron/anime1.db \
+  "SELECT * FROM settings;"
 
-## 编码规范
+# 插入测试数据
+sqlite3 ~/Library/Application\ Support/anime1-desktop-electron/anime1.db \
+  "INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', '\"dark\"');"
+```
 
-### Python
+## 测试
 
-1. **不要在函数内部导入模块** - 所有 `import` 和 `from ... import` 语句必须放在文件顶部
-   ```python
-   # 错误示范
-   def func():
-       import os
-       ...
+```bash
+# 运行 E2E 测试
+npm run test:e2e
 
-   # 正确示范
-   import os
+# 调试模式
+npm run test:e2e:debug
+```
 
-   def func():
-       ...
-   ```
+## 性能优化
 
-2. **使用常量代替魔法数字** - 将数字字面量定义为具名常量
-   ```python
-   # 错误示范
-   for i in range(5):
-       ...
+1. **数据库查询**: 使用索引，避免全表扫描
+2. **图片加载**: 使用懒加载，骨架屏占位
+3. **IPC 通信**: 批量请求，减少往返次数
+4. **Store 状态**: 使用 computed 缓存计算结果
 
-   # 正确示范
-   CONCURRENT_WORKERS = 5
-   for i in range(CONCURRENT_WORKERS):
-       ...
-   ```
+## 开发工具
 
-3. **使用常量定义路径和配置** - API 端点、文件路径等应放在 constants 目录
+### 快速修复脚本 (`scripts/quick-fix.sh`)
 
-### JavaScript/Vue
+一键解决常见问题：
 
-1. **使用常量定义 API 端点** - 在 `frontend/src/constants/api.js` 中定义所有 API 路径
-2. **使用 Pinia/Vue 3 Composition API 进行状态管理**
+```bash
+# 系统检查
+./scripts/quick-fix.sh check
 
+# 重置数据库
+./scripts/quick-fix.sh db
+
+# 设置暗黑模式
+./scripts/quick-fix.sh theme
+
+# 清理缓存并重启
+./scripts/quick-fix.sh cache
+
+# 一键修复所有
+./scripts/quick-fix.sh all
+```
+
+### 调试模板 (`scripts/debug-template.js`)
+
+复制并修改此模板来调试：
+
+```bash
+cp scripts/debug-template.js my-debug.js
+# 编辑 my-debug.js 添加调试逻辑
+node my-debug.js
+```
+
+### 常用调试代码片段
+
+```javascript
+// 检查 Pinia Store
+const storeInfo = await page.evaluate(() => {
+    const pinia = window.__pinia;
+    return {
+        stores: Object.keys(pinia.state.value),
+        animeCount: pinia.state.value.anime?.animeList?.length
+    };
+});
+
+// 调用 API
+const result = await page.evaluate(async () => {
+    return await window.api.anime.getList({ page: 1 });
+});
+
+// 截图对比
+await page.screenshot({ path: `screenshots/${Date.now()}.png` });
+```
+
+## 安全注意事项
+
+1. **XSS 防护**: 使用 DOMPurify 净化用户输入
+2. **IPC 安全**: 验证所有 IPC 参数
+3. **CORS**: 视频代理服务处理跨域
+
+## 参考资料
+
+- [Electron 文档](https://www.electronjs.org/docs)
+- [Vue 3 文档](https://vuejs.org/guide/)
+- [Element Plus 文档](https://element-plus.org/)
+- [better-sqlite3 文档](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md)

@@ -27,6 +27,7 @@ export interface WindowSettings {
   x?: number
   y?: number
   maximized: boolean
+  fullscreen?: boolean
 }
 
 // ==========================================

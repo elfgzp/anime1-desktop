@@ -21,7 +21,15 @@ export const useSettingsStore = defineStore('settings', () => {
       if (result.success && result.data) {
         const settings = result.data
         if (settings.theme) {
-          theme.value = settings.theme as ThemeMode
+          try {
+            // 尝试解析 JSON，如果失败则直接使用值
+            const parsed = JSON.parse(settings.theme)
+            theme.value = parsed as ThemeMode
+          } catch {
+            theme.value = settings.theme as ThemeMode
+          }
+          // 立即应用主题
+          applyTheme(theme.value)
         }
       }
     } finally {
@@ -34,7 +42,7 @@ export const useSettingsStore = defineStore('settings', () => {
     
     await window.api.settings.set({
       key: 'theme',
-      value
+      value: JSON.stringify(value)
     })
     
     // 应用主题

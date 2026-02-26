@@ -41,6 +41,36 @@ export interface AnimePage {
   hasPrev: boolean
 }
 
+/**
+ * 番剧播放进度信息
+ */
+export interface AnimePlaybackProgress {
+  /** 集数序号 */
+  episodeNum: number
+  /** 播放位置 (秒) */
+  positionSeconds: number
+  /** 格式化后的播放位置 (MM:SS 或 HH:MM:SS) */
+  positionFormatted: string
+  /** 播放进度百分比 (0-100) */
+  progressPercent: number
+  /** 最后观看时间 (timestamp) */
+  lastWatchedAt: number | null
+}
+
+/**
+ * 番剧（带播放进度）
+ */
+export interface AnimeWithProgress extends Anime {
+  playbackProgress: AnimePlaybackProgress | null
+}
+
+/**
+ * 番剧分页（带播放进度）
+ */
+export interface AnimePageWithProgress extends AnimePage {
+  animeList: AnimeWithProgress[]
+}
+
 // ==========================================
 // 剧集类型
 // ==========================================
@@ -114,7 +144,7 @@ export interface FavoriteAnime {
   title: string
   detailUrl: string
   /** 当前集数 */
-  episode: number
+  episode?: number
   coverUrl?: string
   year?: string
   season?: string
@@ -136,6 +166,7 @@ export interface CoverCache {
   title: string
   year?: string
   season?: string
+  subtitleGroup?: string
   coverUrl?: string
   episode: number
   /** 封面数据 JSON 字符串 */
@@ -290,20 +321,4 @@ export interface AutoDownloadConfig {
   }
 }
 
-/**
- * 应用设置 (基础)
- */
-export interface AppSettings {
-  theme: 'light' | 'dark' | 'system'
-  downloadPath: string
-  autoDownloadEnabled: boolean
-  autoDownloadFilters: {
-    years: string[]
-    seasons: string[]
-  }
-  autoPlayNext: boolean
-  rememberPlaybackPosition: boolean
-  defaultVolume: number
-  updateChannel: 'stable' | 'test'
-  autoCheckUpdates: boolean
-}
+

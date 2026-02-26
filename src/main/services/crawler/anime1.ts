@@ -102,41 +102,6 @@ export class Anime1Crawler {
   }
 
   /**
-   * 从 HTML 解析番剧列表（备用方法）
-   */
-  private parseAnimeListFromHtml(html: string): Anime[] {
-    const $ = cheerio.load(html)
-    const animeList: Anime[] = []
-
-    $('li.item a.subjectCover').each((_, elem) => {
-      const $elem = $(elem)
-      const title = $elem.attr('title') || ''
-      const href = $elem.attr('href') || ''
-      
-      // 提取 ID
-      const idMatch = href.match(/\/?cat=(\d+)/)
-      const id = idMatch ? idMatch[1] : ''
-      
-      if (!id || !title) return
-
-      animeList.push({
-        id,
-        title,
-        detailUrl: href.startsWith('http') ? href : `${URLS.ANIME1_BASE}${href}`,
-        episode: 0,
-        coverUrl: '',
-        year: '',
-        season: '',
-        subtitleGroup: '',
-        matchScore: 0,
-        matchSource: ''
-      })
-    })
-
-    return animeList
-  }
-
-  /**
    * 提取标题（去除 HTML 标签）
    */
   private extractTitle(titleRaw: string): string {

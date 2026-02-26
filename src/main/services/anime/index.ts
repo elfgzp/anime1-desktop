@@ -151,8 +151,7 @@ export class AnimeService extends EventEmitter {
             log.debug(`[AnimeService] Searching Bangumi for ${anime.id}: ${anime.title}`)
             const bangumiResult = await this.crawlerService.findBangumiInfo(
               anime.title,
-              anime.year,
-              anime.season
+              anime.year
             )
             
             if (bangumiResult) {
@@ -220,6 +219,13 @@ export class AnimeService extends EventEmitter {
   }
 
   /**
+   * 获取番剧 Map（用于更新检查）
+   */
+  getAnimeMap(): Map<string, Anime> {
+    return this.animeCache
+  }
+
+  /**
    * 获取番剧列表（分页）
    */
   async getList(page: number, pageSize: number = PAGINATION.DEFAULT_PAGE_SIZE): Promise<AnimePage> {
@@ -269,8 +275,7 @@ export class AnimeService extends EventEmitter {
     if (!anime.coverUrl) {
       const bangumiResult = await this.crawlerService.findBangumiInfo(
         anime.title,
-        anime.year,
-        anime.season
+        anime.year
       )
       
       if (bangumiResult) {

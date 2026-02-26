@@ -5,7 +5,7 @@
  * 通过注册自定义 protocol 来代理视频流
  */
 
-import { protocol, net } from 'electron'
+import { protocol } from 'electron'
 import log from 'electron-log'
 
 const PROXY_PROTOCOL = 'video-proxy'

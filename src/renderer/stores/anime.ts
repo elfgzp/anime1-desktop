@@ -4,12 +4,22 @@
 
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { Anime, AnimePage, Episode } from '@shared/types'
+import type { Anime, Episode, AnimeWithProgress } from '@shared/types'
 
-// 扩展的 Anime 类型，包含 UI 状态
+// 播放进度信息
+interface PlaybackProgressInfo {
+  episodeNum: number
+  positionSeconds: number
+  positionFormatted: string
+  progressPercent: number
+  lastWatchedAt: number | null
+}
+
+// 扩展的 Anime 类型，包含 UI 状态和播放进度
 interface AnimeWithUIState extends Anime {
   coverLoaded?: boolean
   coverError?: boolean
+  playbackProgress?: PlaybackProgressInfo | null
 }
 
 export const useAnimeStore = defineStore('anime', () => {
@@ -30,7 +40,7 @@ export const useAnimeStore = defineStore('anime', () => {
   })
 
   // Actions
-  async function fetchAnimeList(page = 1) {
+  async function fetchAnimeList(page = 1, withProgress = false) {
     loading.value = true
     error.value = null
     
@@ -41,15 +51,25 @@ export const useAnimeStore = defineStore('anime', () => {
     }
     
     try {
-      const result = await window.api.anime.getList({ page })
+      // 如果请求播放进度，使用新的 API
+      const result = withProgress 
+        ? await window.api.anime.getListWithProgress({ page })
+        : await window.api.anime.getList({ page })
       
       if (result.success && result.data) {
         // 初始化 UI 状态
-        animeList.value = result.data.animeList.map((anime: Anime) => ({
-          ...anime,
-          coverLoaded: false,
-          coverError: false
-        }))
+        animeList.value = result.data.animeList.map((anime: Anime | AnimeWithProgress) => {
+          const animeWithState: AnimeWithUIState = {
+            ...anime,
+            coverLoaded: false,
+            coverError: false
+          }
+          // 如果包含播放进度，也添加到状态中
+          if ('playbackProgress' in anime) {
+            animeWithState.playbackProgress = anime.playbackProgress
+          }
+          return animeWithState
+        })
         currentPage.value = result.data.currentPage
         totalPages.value = result.data.totalPages
         
@@ -150,11 +170,13 @@ export const useAnimeStore = defineStore('anime', () => {
       const result = await window.api.anime.getEpisodes({ id })
       
       if (result.success && result.data) {
-        episodes.value = result.data.episodes
-        currentAnime.value = {
-          ...result.data.anime,
-          coverLoaded: false,
-          coverError: false
+        episodes.value = result.data.episodes || []
+        if (result.data.anime) {
+          currentAnime.value = {
+            ...result.data.anime,
+            coverLoaded: false,
+            coverError: false
+          }
         }
       } else {
         error.value = result.error?.message || 'Failed to fetch episodes'
@@ -166,7 +188,7 @@ export const useAnimeStore = defineStore('anime', () => {
     }
   }
 
-  async function search(keyword: string, page = 1) {
+  async function search(keyword: string, page = 1, withProgress = false) {
     loading.value = true
     error.value = null
     
@@ -177,15 +199,25 @@ export const useAnimeStore = defineStore('anime', () => {
     }
     
     try {
-      const result = await window.api.anime.search({ keyword, page })
+      // 如果请求播放进度，使用新的 API
+      const result = withProgress
+        ? await window.api.anime.searchWithProgress({ keyword, page })
+        : await window.api.anime.search({ keyword, page })
       
       if (result.success && result.data) {
         // 初始化 UI 状态
-        animeList.value = result.data.animeList.map((anime: Anime) => ({
-          ...anime,
-          coverLoaded: false,
-          coverError: false
-        }))
+        animeList.value = result.data.animeList.map((anime: Anime | AnimeWithProgress) => {
+          const animeWithState: AnimeWithUIState = {
+            ...anime,
+            coverLoaded: false,
+            coverError: false
+          }
+          // 如果包含播放进度，也添加到状态中
+          if ('playbackProgress' in anime) {
+            animeWithState.playbackProgress = anime.playbackProgress
+          }
+          return animeWithState
+        })
         currentPage.value = result.data.currentPage
         totalPages.value = result.data.totalPages
         

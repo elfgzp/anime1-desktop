@@ -9,20 +9,16 @@ import { EventEmitter } from 'events'
 import { join } from 'path'
 import { createWriteStream, existsSync, mkdirSync, statSync } from 'fs'
 import axios from 'axios'
-import log from 'electron-log'
-import type { DatabaseService } from '../database'
 import type { DownloadTask, CreateDownloadTaskParams } from '@shared/types'
 import { DOWNLOAD_CONFIG } from '@shared/constants'
 import { PATHS } from '../../config'
 
 export class DownloadService extends EventEmitter {
-  private databaseService: DatabaseService
   private tasks: Map<string, DownloadTask> = new Map()
   private activeDownloads: Map<string, AbortController> = new Map()
 
-  constructor(databaseService: DatabaseService) {
+  constructor() {
     super()
-    this.databaseService = databaseService
   }
 
   /**

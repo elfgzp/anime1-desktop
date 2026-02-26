@@ -23,6 +23,22 @@ interface Services {
 }
 
 /**
+ * 格式化时长（秒 -> MM:SS 或 HH:MM:SS）
+ */
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '00:00'
+  
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+  
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+}
+
+/**
  * 注册所有 IPC 处理器
  */
 export function registerIPCHandlers(services: Services): void {
@@ -37,6 +53,42 @@ export function registerIPCHandlers(services: Services): void {
     try {
       const result = await animeService.getList(params.page, params.pageSize || 24)
       return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 获取番剧列表（带播放进度）
+  ipcMain.handle('anime:listWithProgress', async (_, params: { page: number; pageSize?: number }) => {
+    try {
+      const result = await animeService.getList(params.page, params.pageSize || 24)
+      
+      // 为每个番剧获取播放进度
+      const animeListWithProgress = await Promise.all(
+        result.animeList.map(async (anime) => {
+          const playback = databaseService.getLatestPlaybackForAnime(anime.id)
+          return {
+            ...anime,
+            playbackProgress: playback ? {
+              episodeNum: playback.episodeNum,
+              positionSeconds: playback.positionSeconds,
+              positionFormatted: formatDuration(playback.positionSeconds),
+              progressPercent: playback.totalSeconds > 0 
+                ? Math.round((playback.positionSeconds / playback.totalSeconds) * 100) 
+                : 0,
+              lastWatchedAt: playback.lastWatchedAt
+            } : null
+          }
+        })
+      )
+      
+      return { 
+        success: true, 
+        data: {
+          ...result,
+          list: animeListWithProgress
+        }
+      }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }
@@ -67,6 +119,42 @@ export function registerIPCHandlers(services: Services): void {
     try {
       const result = await animeService.search(params.keyword, params.page || 1)
       return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 搜索番剧（带播放进度）
+  ipcMain.handle('anime:searchWithProgress', async (_, params: { keyword: string; page?: number }) => {
+    try {
+      const result = await animeService.search(params.keyword, params.page || 1)
+      
+      // 为每个番剧获取播放进度
+      const animeListWithProgress = await Promise.all(
+        result.animeList.map(async (anime) => {
+          const playback = databaseService.getLatestPlaybackForAnime(anime.id)
+          return {
+            ...anime,
+            playbackProgress: playback ? {
+              episodeNum: playback.episodeNum,
+              positionSeconds: playback.positionSeconds,
+              positionFormatted: formatDuration(playback.positionSeconds),
+              progressPercent: playback.totalSeconds > 0 
+                ? Math.round((playback.positionSeconds / playback.totalSeconds) * 100) 
+                : 0,
+              lastWatchedAt: playback.lastWatchedAt
+            } : null
+          }
+        })
+      )
+      
+      return { 
+        success: true, 
+        data: {
+          ...result,
+          list: animeListWithProgress
+        }
+      }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }
@@ -129,18 +217,89 @@ export function registerIPCHandlers(services: Services): void {
   // 收藏相关 IPC
   // ==========================================
   
-  // 获取收藏列表
+  // 获取收藏列表（带播放进度和更新状态）
   ipcMain.handle('favorite:list', async () => {
     try {
-      const result = await databaseService.getFavorites()
-      return { success: true, data: result }
+      const favorites = await databaseService.getFavorites()
+      const animeMap = animeService.getAnimeMap()
+      
+      // 增强收藏数据
+      const enhancedFavorites = favorites.map(fav => {
+        // 获取播放进度
+        const playback = databaseService.getLatestPlaybackForAnime(fav.animeId)
+        const playbackProgress = playback ? {
+          episodeNum: playback.episodeNum,
+          positionSeconds: playback.positionSeconds,
+          positionFormatted: formatDuration(playback.positionSeconds),
+          progressPercent: playback.totalSeconds > 0 
+            ? Math.round((playback.positionSeconds / playback.totalSeconds) * 100) 
+            : 0,
+          lastWatchedAt: playback.lastWatchedAt
+        } : {
+          episodeNum: 1,
+          positionSeconds: 0,
+          positionFormatted: '00:00',
+          progressPercent: 0,
+          lastWatchedAt: null
+        }
+        
+        // 检查更新
+        const currentAnime = animeMap.get(fav.animeId)
+        const currentEpisode = currentAnime?.episode ?? fav.episode ?? 0
+        const lastEpisode = fav.lastEpisode ?? fav.episode ?? 0
+        const hasUpdate = currentEpisode > lastEpisode
+        const newEpisodeCount = hasUpdate ? currentEpisode - lastEpisode : 0
+        
+        return {
+          ...fav,
+          playbackProgress,
+          hasUpdate,
+          newEpisodeCount,
+          currentEpisode
+        }
+      })
+      
+      // 排序：有更新优先 -> 新集数多的优先 -> 有播放进度的优先 -> 最近观看优先
+      enhancedFavorites.sort((a, b) => {
+        // 有更新优先
+        if (a.hasUpdate !== b.hasUpdate) return a.hasUpdate ? -1 : 1
+        // 新集数多的优先
+        if (a.newEpisodeCount !== b.newEpisodeCount) return b.newEpisodeCount - a.newEpisodeCount
+        // 有播放进度优先
+        const aHasProgress = a.playbackProgress.progressPercent > 0
+        const bHasProgress = b.playbackProgress.progressPercent > 0
+        if (aHasProgress !== bHasProgress) return aHasProgress ? -1 : 1
+        // 最近观看优先
+        const aTime = a.playbackProgress.lastWatchedAt ? new Date(a.playbackProgress.lastWatchedAt).getTime() : 0
+        const bTime = b.playbackProgress.lastWatchedAt ? new Date(b.playbackProgress.lastWatchedAt).getTime() : 0
+        return bTime - aTime
+      })
+      
+      return { success: true, data: enhancedFavorites }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 批量检查收藏状态
+  ipcMain.handle('favorite:batchStatus', async (_, params: { ids: string[] }) => {
+    try {
+      const favorites = await databaseService.getFavorites()
+      const favoriteIds = new Set(favorites.map(f => f.animeId))
+      
+      const statusMap: Record<string, boolean> = {}
+      for (const id of params.ids) {
+        statusMap[id] = favoriteIds.has(id)
+      }
+      
+      return { success: true, data: statusMap }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }
   })
 
   // 添加收藏
-  ipcMain.handle('favorite:add', async (_, params: { animeId: string; title: string; coverUrl?: string; detailUrl: string }) => {
+  ipcMain.handle('favorite:add', async (_, params: { animeId: string; title: string; coverUrl?: string; detailUrl: string; episode?: number; year?: string; season?: string; subtitleGroup?: string }) => {
     try {
       await databaseService.addFavorite(params)
       return { success: true }
@@ -273,9 +432,16 @@ export function registerIPCHandlers(services: Services): void {
   })
 
   // 添加下载任务
-  ipcMain.handle('download:add', async (_, params: { url: string; filename: string }) => {
+  ipcMain.handle('download:add', async (_, params: { url: string; filename: string; animeId?: string; episodeId?: string; title?: string; episodeTitle?: string }) => {
     try {
-      const result = await downloadService.addTask(params.url, params.filename)
+      const result = await downloadService.addTask({
+        url: params.url,
+        filename: params.filename,
+        animeId: params.animeId,
+        episodeId: params.episodeId,
+        title: params.title,
+        episodeTitle: params.episodeTitle
+      })
       return { success: true, data: result }
     } catch (error) {
       return { success: false, error: { message: String(error) } }

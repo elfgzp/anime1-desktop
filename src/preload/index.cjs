@@ -1,8 +1,21 @@
 /**
  * Preload 脚本 - CommonJS 格式
  * 
+ * ⚠️⚠️⚠️ 警告 ⚠️⚠️⚠️
+ * 这是唯一的 preload 文件！不要创建 index.ts 或其他重复的 preload 文件！
+ * 
+ * 构建流程:
+ * 1. vite 构建时会直接复制此文件到 dist-electron/preload/index.cjs
+ * 2. 不会进行任何编译或类型检查
+ * 3. 所有 API 类型定义在 src/shared/types/api.ts 中
+ * 
+ * 如需修改 preload API:
+ * 1. 修改此文件添加/删除 API
+ * 2. 同时在 validChannels 数组中添加/删除 IPC 频道
+ * 3. 在 src/shared/types/api.ts 中更新类型定义
+ * 4. 在 src/main/ipc/index.ts 中添加/删除 IPC 处理程序
+ * 
  * 职责: 安全地暴露主进程 API 到渲染进程
- * 注意: 此文件为纯 JavaScript，vite 会直接复制，不做编译
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
@@ -18,9 +31,11 @@ const validChannels = [
   
   // 番剧
   'anime:list',
+  'anime:listWithProgress',
   'anime:detail',
   'anime:episodes',
   'anime:search',
+  'anime:searchWithProgress',
   'anime:bangumi',
   'anime:video',
   'anime:video:proxy',
@@ -29,6 +44,7 @@ const validChannels = [
   
   // 收藏
   'favorite:list',
+  'favorite:batchStatus',
   'favorite:add',
   'favorite:remove',
   'favorite:check',
@@ -88,9 +104,11 @@ const api = {
   
   anime: {
     getList: (params) => invoke('anime:list', params),
+    getListWithProgress: (params) => invoke('anime:listWithProgress', params),
     getDetail: (params) => invoke('anime:detail', params),
     getEpisodes: (params) => invoke('anime:episodes', params),
     search: (params) => invoke('anime:search', params),
+    searchWithProgress: (params) => invoke('anime:searchWithProgress', params),
     getBangumiInfo: (params) => invoke('anime:bangumi', params),
     extractVideo: (params) => invoke('anime:video', params),
     getVideoProxyUrl: (params) => invoke('anime:video:proxy', params),
@@ -100,6 +118,7 @@ const api = {
   
   favorite: {
     getList: () => invoke('favorite:list'),
+    batchStatus: (params) => invoke('favorite:batchStatus', params),
     add: (params) => invoke('favorite:add', params),
     remove: (params) => invoke('favorite:remove', params),
     check: (params) => invoke('favorite:check', params)

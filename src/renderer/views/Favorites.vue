@@ -49,7 +49,16 @@
             </div>
             <div class="info-wrapper">
               <h3 class="anime-title" :title="item.title">{{ item.title }}</h3>
-              <p class="anime-date">收藏于 {{ formatDate(item.createdAt) }}</p>
+              <!-- 更新标记 -->
+              <el-tag v-if="item.hasUpdate" type="danger" size="small" class="update-tag">
+                更新 {{ item.newEpisodeCount }} 集
+              </el-tag>
+              <!-- 播放进度 -->
+              <div v-if="item.playbackProgress && item.playbackProgress.progressPercent > 0" class="progress-info">
+                <span class="progress-text">看到第{{ item.playbackProgress.episodeNum }}集 {{ item.playbackProgress.positionFormatted }}</span>
+                <el-progress :percentage="item.playbackProgress.progressPercent" :show-text="false" :stroke-width="4" />
+              </div>
+              <p class="anime-date">收藏于 {{ formatDate(item.addedAt) }}</p>
             </div>
           </div>
           
@@ -80,7 +89,20 @@ interface FavoriteAnime {
   title: string
   coverUrl?: string
   detailUrl: string
-  createdAt: number
+  addedAt: number
+  updatedAt: number
+  episode?: number
+  lastEpisode?: number
+  hasUpdate?: boolean
+  newEpisodeCount?: number
+  currentEpisode?: number
+  playbackProgress?: {
+    episodeNum: number
+    positionSeconds: number
+    positionFormatted: string
+    progressPercent: number
+    lastWatchedAt?: string
+  }
 }
 
 const router = useRouter()
@@ -257,6 +279,22 @@ onMounted(() => {
   margin: 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.update-tag {
+  margin-bottom: 6px;
+  display: inline-block;
+}
+
+.progress-info {
+  margin-bottom: 6px;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  display: block;
+  margin-bottom: 4px;
 }
 
 .card-actions {

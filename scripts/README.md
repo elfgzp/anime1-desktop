@@ -1,98 +1,51 @@
-# Scripts 目录说明
+# 开发工具脚本
 
-本目录包含 GitHub Actions workflow 使用的所有脚本。
-
-## 本地测试
-
-可以使用 `test-local-build.sh` 在本地验证所有平台的构建和打包脚本：
+## 快速修复脚本
 
 ```bash
-# Dry-run 模式（快速验证脚本逻辑）
-make test-local-build
+# 系统检查
+./scripts/quick-fix.sh check
 
-# 实际构建模式（需要安装依赖）
-make test-local-build-full
+# 重置数据库
+./scripts/quick-fix.sh db
 
-# 测试指定平台
-bash scripts/test-local-build.sh dry-run macos
+# 设置暗黑模式
+./scripts/quick-fix.sh theme
+
+# 清理缓存并重启
+./scripts/quick-fix.sh cache
+
+# 运行所有修复
+./scripts/quick-fix.sh all
 ```
 
-详细说明请参考 [TEST_LOCAL_BUILD.md](./TEST_LOCAL_BUILD.md)。
-
-## 脚本列表
-
-### 构建相关
-
-- **`build.py`** - Python 构建脚本
-  - 自动构建前端 (Vue) 和后端 (PyInstaller)
-  - 默认清理并重新构建
-  - 用法: `python scripts/build.py [选项]`
-  - 选项:
-    - `--clean` - 清理构建目录 (默认开启)
-    - `--onefile` - 创建单文件可执行文件 (默认)
-    - `--onedir` - 创建目录打包
-    - `--debug` - 调试模式
-    - `--remote` - CLI 版本 (浏览器模式)
-    - `--skip-frontend` - 跳过前端构建
-
-- **`build.sh`** - 根据平台构建应用
-  - 参数: 平台名称 (Windows/macOS/Linux)
-  - 功能: 根据平台调用 `build.py` 并传递正确的参数
-
-### 打包相关
-
-- **`prepare_artifacts.py`** - 准备构建产物
-  - 功能: 根据平台和架构将构建产物打包为相应格式
-  - Windows: zip
-  - macOS: dmg
-  - Linux: tar.gz
-
-- **`create_dmg.py`** - 创建 macOS DMG 文件
-  - 功能: 使用 create-dmg 工具创建 DMG 安装包
-
-- **`prepare_release_assets.py`** - 准备 Release 资源
-  - 功能: 从 artifacts 目录收集所有构建产物
-
-### 版本和变更日志
-
-- **`extract_version.sh`** - 提取版本号和 tag 名称
-  - 参数: event_name, input_version, github_ref
-  - 输出: tag_name, version
-
-- **`extract_changelog.sh`** - 提取 CHANGELOG 内容
-  - 参数: version, repository
-  - 功能: 从 CHANGELOG.md 提取对应版本的更新内容
-
-- **`extract_changelog.py`** - Python 版本的 CHANGELOG 提取器
-  - 功能: 从 CHANGELOG.md 中提取指定版本的更新内容
-
-### 测试相关
-
-- **`test-workflow.sh`** - Workflow 测试脚本
-  - 功能: 
-    - 检查依赖和 Git 状态
-    - 触发 workflow 测试
-    - 持续监测运行状态
-    - 验证所有平台的构建结果
-
-## 使用方式
-
-### 本地测试脚本
+## 调试脚本
 
 ```bash
-# 测试构建脚本
-bash scripts/build.sh macOS
-
-# 测试版本提取
-bash scripts/extract_version.sh workflow_dispatch 1.0.0-test refs/heads/main
+# 使用模板调试
+node scripts/debug-template.js
 ```
 
-### 在 GitHub Actions 中使用
+## 常用调试命令
 
-所有脚本都会在 workflow 中自动调用，无需手动执行。
+```bash
+# 截图验证
+npx playwright screenshot --browser=chromium \
+  "http://localhost:5173/" screenshots/test.png
 
-## 注意事项
+# 查看数据库
+sqlite3 ~/Library/Application\ Support/anime1-desktop-electron/anime1.db \
+  "SELECT * FROM settings;"
 
-- 所有 bash 脚本都已设置执行权限
-- Python 脚本需要 Python 3.8+
-- macOS DMG 创建需要 `create-dmg` 工具（workflow 中会自动安装）
+# 查看日志
+tail -f ~/Library/Application\ Support/anime1-desktop-electron/logs/main.log
+```
+
+## 故障排除
+
+| 问题 | 解决方案 |
+|------|----------|
+| 暗黑模式不生效 | `./scripts/quick-fix.sh theme` |
+| 收藏显示异常 | 检查 `favorite.ts` 中的 `isFavorite` getter |
+| 页面白屏 | 检查主进程日志，重启应用 |
+| 数据库锁定 | 关闭应用后删除 `instance.lock` |

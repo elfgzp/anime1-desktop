@@ -200,9 +200,10 @@ const addTask = async () => {
   
   adding.value = true
   try {
+    const filename = newTask.value.filename.trim()
     const result = await window.api.download.add({
       url: newTask.value.url.trim(),
-      filename: newTask.value.filename.trim() || undefined
+      filename: filename || 'download.mp4'
     })
     if (result.success) {
       ElMessage.success('下载任务已创建')
@@ -251,7 +252,7 @@ const cancelTask = async (taskId: string) => {
 }
 
 // 打开文件夹
-const openFolder = (task: DownloadTask) => {
+const openFolder = (_task: DownloadTask) => {
   // TODO: 实现打开文件夹功能
   ElMessage.info('功能开发中...')
 }

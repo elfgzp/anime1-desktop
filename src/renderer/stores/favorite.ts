@@ -80,6 +80,21 @@ export const useFavoriteStore = defineStore('favorite', () => {
     }
   }
 
+  // 批量检查收藏状态（用于首页）
+  async function batchCheckStatus(animeIds: string[]): Promise<Record<string, boolean>> {
+    if (animeIds.length === 0) return {}
+    
+    try {
+      const result = await window.api.favorite.batchStatus({ ids: animeIds })
+      if (result.success && result.data) {
+        return result.data
+      }
+    } catch (error) {
+      console.error('[FavoriteStore] Batch check status failed:', error)
+    }
+    return {}
+  }
+
   return {
     favorites,
     loading,
@@ -88,6 +103,7 @@ export const useFavoriteStore = defineStore('favorite', () => {
     loadFavorites,
     addFavorite,
     removeFavorite,
-    toggleFavorite
+    toggleFavorite,
+    batchCheckStatus
   }
 })

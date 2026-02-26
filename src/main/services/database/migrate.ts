@@ -7,16 +7,16 @@
  */
 
 import { app } from 'electron'
-import { join, dirname } from 'path'
-import { existsSync, copyFileSync } from 'fs'
-import type { Database as DatabaseType } from 'libsql'
+import { join } from 'path'
+import { existsSync } from 'fs'
 import log from 'electron-log'
 import type { DatabaseService } from './index'
 
 // 动态导入 libsql
-async function loadDatabase(): Promise<typeof DatabaseType> {
+async function loadDatabase(): Promise<any> {
   // libsql 默认导出 Database 类
-  return await import('libsql').then(m => m.default || m)
+  const libsql = await import('libsql')
+  return libsql.default || libsql
 }
 
 /**
@@ -136,7 +136,7 @@ interface MigrationStats {
 /**
  * 迁移收藏数据
  */
-async function migrateFavorites(legacyDb: Database.Database, newDb: DatabaseService): Promise<number> {
+async function migrateFavorites(legacyDb: any, newDb: DatabaseService): Promise<number> {
   try {
     // 检查旧表是否存在
     const tableExists = legacyDb.prepare(`
@@ -175,7 +175,7 @@ async function migrateFavorites(legacyDb: Database.Database, newDb: DatabaseServ
 /**
  * 迁移封面缓存数据
  */
-async function migrateCoverCaches(legacyDb: Database.Database, newDb: DatabaseService): Promise<number> {
+async function migrateCoverCaches(legacyDb: any, newDb: DatabaseService): Promise<number> {
   try {
     // 检查旧表是否存在 (可能是 covercache 或 cover_cache)
     const tableInfo = legacyDb.prepare(`
@@ -226,7 +226,7 @@ async function migrateCoverCaches(legacyDb: Database.Database, newDb: DatabaseSe
 /**
  * 迁移播放历史数据
  */
-async function migratePlaybackHistory(legacyDb: Database.Database, newDb: DatabaseService): Promise<number> {
+async function migratePlaybackHistory(legacyDb: any, newDb: DatabaseService): Promise<number> {
   try {
     // 检查旧表是否存在
     const tableExists = legacyDb.prepare(`
@@ -264,7 +264,7 @@ async function migratePlaybackHistory(legacyDb: Database.Database, newDb: Databa
 /**
  * 迁移设置数据
  */
-async function migrateSettings(legacyDb: Database.Database, newDb: DatabaseService): Promise<number> {
+async function migrateSettings(legacyDb: any, newDb: DatabaseService): Promise<number> {
   try {
     // 检查旧表是否存在
     const tableExists = legacyDb.prepare(`
