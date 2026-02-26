@@ -2,20 +2,23 @@ name: Test Build
 
 # 用于测试构建流程，不上传 Release
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
     inputs:
       platform:
-        description: '指定构建平台 (linux/windows/macos/arm64/x64/all)'
+        description: '指定构建平台 (linux/windows/macos/all)'
         required: false
         default: 'all'
         type: string
   push:
     branches:
-      - 'test-build'  # 推送到 test-build 分支时触发
+      - 'test-build'
   pull_request:
     branches:
       - main
       - master
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
   build-linux:
@@ -24,25 +27,23 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: |
-          cd frontend && npm ci && npm run build
-          cd .. && python scripts/inject-vite-assets.py
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-      - run: bash scripts/build.sh "Linux"
-      - run: python scripts/prepare_artifacts.py
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build:fast
         env:
-          ARCH: x64
-      - uses: actions/upload-artifact@v4
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: linux-x64-build
           path: release/
@@ -54,25 +55,23 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: |
-          cd frontend && npm ci && npm run build
-          cd .. && python scripts/inject-vite-assets.py
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-      - run: bash scripts/build.sh "Windows"
-      - run: python scripts/prepare_artifacts.py
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build:win:fast
         env:
-          ARCH: x64
-      - uses: actions/upload-artifact@v4
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: windows-x64-build
           path: release/
@@ -81,63 +80,27 @@ jobs:
   build-macos-arm64:
     name: Build on macOS-arm64
     runs-on: macos-latest
-    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos' || inputs.platform == 'arm64'
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: |
-          cd frontend && npm ci && npm run build
-          cd .. && python scripts/inject-vite-assets.py
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install -e .[macos]
-      - run: brew install create-dmg
-      - run: bash scripts/build.sh "macOS"
-      - run: python scripts/prepare_artifacts.py
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build:mac:fast
         env:
-          ARCH: arm64
-      - uses: actions/upload-artifact@v4
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-build
-          path: release/
-          retention-days: 7
-
-  build-macos-x64:
-    name: Build on macOS-x64
-    runs-on: macos-15-intel
-    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos' || inputs.platform == 'x64'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: |
-          cd frontend && npm ci && npm run build
-          cd .. && python scripts/inject-vite-assets.py
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install -e .[macos]
-      - run: brew install create-dmg
-      - run: bash scripts/build.sh "macOS"
-      - run: python scripts/prepare_artifacts.py
-        env:
-          ARCH: x64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-x64-build
           path: release/
           retention-days: 7
