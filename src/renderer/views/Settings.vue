@@ -17,7 +17,7 @@
           </template>
           
           <el-form-item label="主题">
-            <el-radio-group v-model="settings.theme">
+            <el-radio-group v-model="settings.theme" @change="handleThemeChange">
               <el-radio-button label="light">
                 <el-icon><Sunny /></el-icon> 浅色
               </el-radio-button>
@@ -211,7 +211,14 @@ const saveSettings = async () => {
 // 重置设置
 const resetSettings = () => {
   settings.value = { ...defaultSettings }
+  // 应用重置后的主题
+  applyTheme(settings.value.theme)
   ElMessage.info('设置已重置为默认值')
+}
+
+// 处理主题变更（立即应用）
+const handleThemeChange = (theme: string) => {
+  applyTheme(theme)
 }
 
 // 应用主题
