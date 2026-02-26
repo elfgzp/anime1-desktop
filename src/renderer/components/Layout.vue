@@ -59,6 +59,22 @@
 
     <!-- 主内容区 -->
     <el-container class="main-container">
+      <!-- 自定义标题栏 -->
+      <div class="custom-titlebar">
+        <div class="window-controls">
+          <button class="window-btn close" @click="closeWindow" title="关闭">
+            <el-icon><Close /></el-icon>
+          </button>
+          <button class="window-btn minimize" @click="minimizeWindow" title="最小化">
+            <el-icon><Minus /></el-icon>
+          </button>
+          <button class="window-btn maximize" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
+            <el-icon><FullScreen v-if="!isMaximized" /><CopyDocument v-else /></el-icon>
+          </button>
+        </div>
+        <div class="titlebar-drag-area"></div>
+      </div>
+      
       <el-main class="main-content">
         <router-view />
       </el-main>
@@ -82,7 +98,7 @@
           <p><strong>最新版本:</strong> {{ updateInfo.latestVersion || '-' }}</p>
         </div>
         <el-divider />
-        <div class="release-notes" v-html="formatReleaseNotes(updateInfo.releaseNotes)"></div>
+        <div class="release-notes" v-html="formatReleaseNotes(updateInfo.releaseNotes)" />
       </div>
       <template #footer>
         <el-button @click="updateDialogVisible = false">暂不更新</el-button>
@@ -98,12 +114,30 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { VideoPlay, Star, Clock, Setting, Expand, Fold, CircleCheckFilled, Download } from '@element-plus/icons-vue'
+import { VideoPlay, Star, Clock, Setting, Expand, Fold, CircleCheckFilled, Download, Close, Minus, FullScreen, CopyDocument } from '@element-plus/icons-vue'
 import { useFavoritesStore } from '../stores'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const favoritesStore = useFavoritesStore()
+
+// 窗口控制
+const isMaximized = ref(false)
+
+const closeWindow = () => {
+  window.api.window.close()
+}
+
+const minimizeWindow = () => {
+  window.api.window.minimize()
+}
+
+const toggleMaximize = async () => {
+  await window.api.window.maximize()
+  // 更新状态
+  const state = await window.api.window.getState()
+  isMaximized.value = state.maximized
+}
 
 const sidebarCollapsed = ref(true)
 const updateDialogVisible = ref(false)
@@ -133,52 +167,47 @@ const toggleSidebar = () => {
   localStorage.setItem('sidebar-collapsed', sidebarCollapsed.value.toString())
 }
 
-// 格式化更新日志
+// 格式化发布说明
 const formatReleaseNotes = (notes: string) => {
-  if (!notes) return '<p style="color: #909399;">暂无更新说明</p>'
-  const html = notes
-    .replace(/\n/g, '<br>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color: #4ecdc4;">$1</a>')
-  return html || '<p style="color: #909399;">暂无更新说明</p>'
+  if (!notes) return '暂无更新说明'
+  // 将换行符转换为 <br>
+  return notes.replace(/\n/g, '<br>')
 }
 
 // 检查更新
-const checkUpdate = async (showModal = false) => {
+const checkUpdate = async () => {
   try {
-    const result = await window.api.update.check()
-    if (result.success && result.data) {
-      const { hasUpdate, latestVersion, currentVersion, downloadUrl, releaseNotes, isPrelease } = result.data
-      if (hasUpdate) {
-        updateInfo.value = {
-          latestVersion,
-          currentVersion,
-          downloadUrl: downloadUrl || '',
-          releaseNotes: releaseNotes || '',
-          isPrelease: isPrelease || false
-        }
-        if (showModal) {
-          updateDialogVisible.value = true
-        }
-      }
-    }
+    // 跳过更新检查（如果需要可以取消注释）
+    // const result = await window.api.update.check()
+    // if (result.success && result.data?.hasUpdate) {
+    //   updateInfo.value = {
+    //     latestVersion: result.data.latestVersion,
+    //     currentVersion: result.data.currentVersion,
+    //     downloadUrl: result.data.downloadUrl || '',
+    //     releaseNotes: result.data.releaseNotes || '',
+    //     isPrelease: result.data.isPrelease || false
+    //   }
+    //   updateDialogVisible.value = true
+    // }
   } catch (error) {
-    console.error('[更新检查] 失败:', error)
+    console.log('[更新检查] 失败:', error)
   }
 }
 
-// 下载更新
+// 处理下载更新
 const handleDownloadUpdate = async () => {
   if (!updateInfo.value.downloadUrl) {
-    ElMessage.error('下载链接不可用')
+    ElMessage.warning('暂无下载链接')
     return
   }
   
   downloading.value = true
   try {
-    await window.api.system.openExternal({ url: updateInfo.value.downloadUrl })
+    await window.api.update.download()
+    ElMessage.success('更新下载中...')
     updateDialogVisible.value = false
   } catch (error) {
-    ElMessage.error('打开下载链接失败')
+    ElMessage.error('下载失败')
   } finally {
     downloading.value = false
   }
@@ -269,95 +298,145 @@ onMounted(() => {
   height: 32px;
 }
 
+/* 主内容区 */
 .main-container {
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-left: 0;
-  transition: margin-left 0.3s;
-  min-width: 0;
   overflow: hidden;
+}
+
+/* 自定义标题栏 */
+.custom-titlebar {
+  height: 38px;
+  background: var(--el-bg-color-page);
+  border-bottom: 1px solid var(--el-border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  -webkit-app-region: drag; /* 允许拖拽窗口 */
+  flex-shrink: 0;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag; /* 按钮区域不可拖拽 */
+}
+
+.window-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+  font-size: 8px;
+  color: transparent;
+}
+
+.window-btn:hover {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.window-btn.close {
+  background: #ff5f57;
+}
+
+.window-btn.close:hover {
+  background: #ff5f57;
+}
+
+.window-btn.minimize {
+  background: #febc2e;
+}
+
+.window-btn.minimize:hover {
+  background: #febc2e;
+}
+
+.window-btn.maximize {
+  background: #28c840;
+}
+
+.window-btn.maximize:hover {
+  background: #28c840;
+}
+
+.window-btn .el-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-drag-area {
+  flex: 1;
+  height: 100%;
 }
 
 .main-content {
   flex: 1;
-  padding: 0;
-  background: var(--el-bg-color-page);
+  padding: 20px;
   overflow-y: auto;
-  min-width: 0;
 }
 
-/* 菜单样式 */
-:deep(.el-menu-item) {
-  color: var(--el-text-color-regular);
-}
-
-:deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, rgba(255, 107, 157, 0.15) 0%, rgba(124, 92, 255, 0.15) 100%);
-  color: var(--el-color-primary);
-  border-left: 3px solid var(--el-color-primary);
-}
-
-:deep(.el-menu-item:hover) {
-  background: var(--el-fill-color-light);
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    transform: translateX(-100%);
+  }
+  
+  .sidebar-collapsed .sidebar {
+    transform: translateX(0);
+  }
+  
+  .main-container {
+    margin-left: 0;
+  }
 }
 
 /* 更新弹窗样式 */
 .update-dialog-header {
   display: flex;
   align-items: center;
-  font-size: 18px;
-  font-weight: 600;
+  margin-bottom: 16px;
 }
 
 .update-dialog-content {
-  padding: 0 10px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .version-info {
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .version-info p {
   margin: 4px 0;
-  font-size: 14px;
-  color: var(--el-text-color-regular);
 }
 
 .release-notes {
-  max-height: 200px;
-  overflow-y: auto;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: 14px;
   line-height: 1.6;
+  color: var(--el-text-color-regular);
 }
 
-.release-notes a {
-  color: #4ecdc4;
-  text-decoration: none;
+.release-notes :deep(ul) {
+  padding-left: 20px;
 }
 
-.release-notes a:hover {
-  text-decoration: underline;
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    height: 100vh;
-    z-index: 1000;
-    transform: translateX(0);
-  }
-
-  .sidebar-collapsed .sidebar {
-    transform: translateX(-100%);
-  }
-
-  .main-container {
-    margin-left: 0;
-  }
+.release-notes :deep(li) {
+  margin: 4px 0;
 }
 </style>

@@ -72,7 +72,7 @@ export class WindowManager {
       console.error(`[Window] Preload file read error: ${e.message}`)
     }
     
-    // 创建窗口
+    // 创建窗口（无边框，使用自定义标题栏）
     this.mainWindow = new BrowserWindow({
       width: windowState.width,
       height: windowState.height,
@@ -81,7 +81,7 @@ export class WindowManager {
       minWidth: WINDOW_CONFIG.MIN_WIDTH,
       minHeight: WINDOW_CONFIG.MIN_HEIGHT,
       title: 'Anime1 Desktop',
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      frame: false, // 无边框窗口
       show: false,
       webPreferences: {
         preload: preloadPath,
