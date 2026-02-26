@@ -24,6 +24,7 @@ import { AnimeService } from './services/anime'
 import { CrawlerService } from './services/crawler'
 import { DownloadService } from './services/download'
 import { UpdateService } from './services/update'
+import { videoProxyService } from './services/video-proxy'
 
 // 配置
 const APP_NAME = 'Anime1 Desktop'
@@ -116,6 +117,9 @@ app.whenReady().then(async () => {
   log.info(`[Main] ${APP_NAME} v${APP_VERSION} starting...`)
   
   try {
+    // 初始化视频代理协议（必须在 app.ready 后）
+    videoProxyService.initialize()
+    
     // 初始化服务
     await initializeServices()
     

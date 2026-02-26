@@ -92,7 +92,7 @@ export const SELECTORS = {
 // ==========================================
 
 export const VIDEO_API = {
-  URL: 'https://d1zquzjgwo9yb.cloudfront.net/',
+  URL: 'https://v.anime1.me/api',
   PARAM_C: 'c',
   PARAM_E: 'e',
   PARAM_T: 't',

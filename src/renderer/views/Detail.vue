@@ -370,14 +370,27 @@ const playEpisode = async (idx: number) => {
   videoUrl.value = ''
   
   try {
-    // 调用爬虫服务提取视频 URL
+    // 1. 提取视频 URL
     const result = await window.api.anime.extractVideo({ episodeUrl: ep.url })
     
     if (!result.success) {
       throw new Error(result.error?.message || '提取视频失败')
     }
     
-    videoUrl.value = result.data.url
+    const originalUrl = result.data.url
+    const cookies = result.data.cookies
+    
+    // 2. 获取代理 URL（解决 CORS 问题）
+    const proxyResult = await window.api.anime.getVideoProxyUrl({ 
+      videoUrl: originalUrl,
+      headers: cookies
+    })
+    
+    if (!proxyResult.success) {
+      throw new Error(proxyResult.error?.message || '获取代理 URL 失败')
+    }
+    
+    videoUrl.value = proxyResult.data.url
     videoLoading.value = false
     
     // 视频加载后自动播放

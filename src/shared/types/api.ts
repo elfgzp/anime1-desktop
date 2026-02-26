@@ -109,6 +109,16 @@ export type GetCacheStatusResponse = APIResponse<CacheStatus>
  */
 export type RefreshCacheResponse = APIResponse<void>
 
+/**
+ * 获取视频代理 URL
+ * IPC: anime:video:proxy
+ */
+export interface GetVideoProxyUrlRequest {
+  videoUrl: string
+}
+
+export type GetVideoProxyUrlResponse = APIResponse<{ url: string }>
+
 // ==========================================
 // 收藏相关 API
 // ==========================================

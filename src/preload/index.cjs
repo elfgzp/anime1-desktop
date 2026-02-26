@@ -23,6 +23,7 @@ const validChannels = [
   'anime:search',
   'anime:bangumi',
   'anime:video',
+  'anime:video:proxy',
   'anime:cache:status',
   'anime:cache:refresh',
   
@@ -92,6 +93,7 @@ const api = {
     search: (params) => invoke('anime:search', params),
     getBangumiInfo: (params) => invoke('anime:bangumi', params),
     extractVideo: (params) => invoke('anime:video', params),
+    getVideoProxyUrl: (params) => invoke('anime:video:proxy', params),
     getCacheStatus: () => invoke('anime:cache:status'),
     refreshCache: () => invoke('anime:cache:refresh')
   },

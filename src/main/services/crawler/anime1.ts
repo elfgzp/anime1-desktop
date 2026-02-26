@@ -442,6 +442,8 @@ export class Anime1Crawler {
   /**
    * 提取视频 URL
    * 对应原项目: src/routes/proxy.py - proxy_episode_api / proxy_video_url
+   * 
+   * 注意：使用原生 fetch API 以支持 cookie 会话保持
    */
   async extractVideoUrl(episodeUrl: string): Promise<{
     url: string
@@ -451,8 +453,25 @@ export class Anime1Crawler {
     
     const isPwDomain = episodeUrl.includes(DOMAINS.ANIME1_PW)
     
-    // 获取剧集页面
-    const html = await this.httpClient.get<string>(episodeUrl)
+    // 使用原生 fetch API 以支持自动 cookie 处理
+    const commonHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,*/*',
+      'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+      'Referer': URLS.ANIME1_BASE
+    }
+    
+    // 1. 获取剧集页面（会自动设置 cookies）
+    const episodeResponse = await fetch(episodeUrl, {
+      headers: commonHeaders,
+      redirect: 'follow'
+    })
+    
+    if (!episodeResponse.ok) {
+      throw new Error(`获取剧集页面失败: ${episodeResponse.status}`)
+    }
+    
+    const html = await episodeResponse.text()
     const $ = cheerio.load(html)
     
     // 对于 anime1.pw: 直接从 video 标签提取
@@ -494,8 +513,8 @@ export class Anime1Crawler {
       throw new Error('API 参数不完整')
     }
     
-    // 调用视频 API
-    const postData = {
+    // 2. 调用视频 API（会自动带上之前设置的 cookies）
+    const postData = new URLSearchParams({
       d: JSON.stringify({
         [VIDEO_API.PARAM_C]: c,
         [VIDEO_API.PARAM_E]: e,
@@ -503,26 +522,52 @@ export class Anime1Crawler {
         [VIDEO_API.PARAM_P]: p || 0,
         [VIDEO_API.PARAM_S]: s
       })
-    }
-    
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Referer': URLS.ANIME1_BASE,
-      'Origin': URLS.ANIME1_BASE
-    }
+    })
     
     log.info('[Anime1] Calling video API...')
-    const apiResponse = await this.httpClient.post<string>(VIDEO_API.URL, postData, headers)
+    const apiResponse = await fetch(VIDEO_API.URL, {
+      method: 'POST',
+      headers: {
+        ...commonHeaders,
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': URLS.ANIME1_BASE,
+        'Referer': URLS.ANIME1_BASE  // 使用首页作为 Referer（与 Python 一致）
+      },
+      body: postData.toString(),
+      redirect: 'manual'  // 不跟随重定向（与 Python 的 allow_redirects=False 一致）
+    })
     
+    if (!apiResponse.ok) {
+      throw new Error(`视频 API 请求失败: ${apiResponse.status}`)
+    }
+    
+    // 3. 解析响应
     let data: any
     try {
-      data = JSON.parse(apiResponse)
+      data = await apiResponse.json()
     } catch (error) {
       log.error('[Anime1] Failed to parse API response:', error)
       throw new Error('解析视频 API 响应失败')
     }
     
-    // 从响应中提取视频 URL
+    // 4. 从响应头中解析 cookies（用于后续视频流代理）
+    const cookies: Record<string, string> = {}
+    const setCookieHeader = apiResponse.headers.get('set-cookie')
+    if (setCookieHeader) {
+      // 简单解析 cookie
+      setCookieHeader.split(',').forEach(cookieStr => {
+        const [nameValue] = cookieStr.split(';')
+        const [name, value] = nameValue.trim().split('=')
+        if (name && value) {
+          cookies[name.trim()] = value.trim()
+        }
+      })
+    }
+    
+    log.debug(`[Anime1] Video API cookies: ${JSON.stringify(cookies)}`)
+    
+    // 5. 从响应中提取视频 URL
     // 新格式: {"s": [{"src": "//host/path/file.mp4", "type": "video/mp4"}]}
     const sources = data.s
     if (Array.isArray(sources) && sources.length > 0) {
@@ -530,10 +575,7 @@ export class Anime1Crawler {
       if (src) {
         const url = src.startsWith('//') ? `https:${src}` : src
         log.info(`[Anime1] Extracted video URL (api): ${url.substring(0, 50)}...`)
-        
-        // 解析 cookies
-        // 注意: httpClient 目前不返回 headers，这里简化处理
-        return { url, cookies: {} }
+        return { url, cookies }
       }
     }
     
@@ -541,7 +583,7 @@ export class Anime1Crawler {
     if (data.l || data.file) {
       const url = data.l || data.file
       log.info(`[Anime1] Extracted video URL (legacy): ${url.substring(0, 50)}...`)
-      return { url, cookies: {} }
+      return { url, cookies }
     }
     
     throw new Error('未能从 API 响应中提取视频 URL')

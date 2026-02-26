@@ -48,6 +48,12 @@ export class HttpClient {
     this.client.interceptors.request.use(
       (config) => {
         log.debug(`[HTTP] ${config.method?.toUpperCase()} ${config.url}`)
+        // 对于 POST 请求，记录请求体（用于调试）
+        if (config.method?.toLowerCase() === 'post' && config.data) {
+          const dataStr = typeof config.data === 'string' ? config.data : JSON.stringify(config.data)
+          log.debug(`[HTTP] POST body: ${dataStr.substring(0, 200)}`)
+          log.debug(`[HTTP] POST Content-Type: ${config.headers?.['Content-Type']}`)
+        }
         return config
       },
       (error) => {

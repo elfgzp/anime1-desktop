@@ -78,6 +78,7 @@ export interface ElectronAPI {
     search: (params: { keyword: string; page?: number }) => Promise<any>
     getBangumiInfo: (params: { id: string }) => Promise<any>
     extractVideo: (params: { episodeUrl: string }) => Promise<any>
+    getVideoProxyUrl: (params: { videoUrl: string }) => Promise<any>
     getCacheStatus: () => Promise<any>
     refreshCache: () => Promise<any>
   }
@@ -172,6 +173,7 @@ const api: ElectronAPI = {
     search: (params) => invoke('anime:search', params),
     getBangumiInfo: (params) => invoke('anime:bangumi', params),
     extractVideo: (params) => invoke('anime:video', params),
+    getVideoProxyUrl: (params) => invoke('anime:video:proxy', params),
     getCacheStatus: () => invoke('anime:cache:status'),
     refreshCache: () => invoke('anime:cache:refresh')
   },

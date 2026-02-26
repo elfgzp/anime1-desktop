@@ -11,6 +11,7 @@ import type { AnimeService } from '../services/anime'
 import type { CrawlerService } from '../services/crawler'
 import type { DownloadService } from '../services/download'
 import type { UpdateService } from '../services/update'
+import { videoProxyService } from '../services/video-proxy'
 
 // 服务容器接口
 interface Services {
@@ -86,6 +87,19 @@ export function registerIPCHandlers(services: Services): void {
     try {
       const result = await crawlerService.extractVideoUrl(params.episodeUrl)
       return { success: true, data: result }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // 视频流代理（解决 CORS 问题）
+  // 返回代理后的本地 URL，前端通过这个 URL 播放视频
+  ipcMain.handle('anime:video:proxy', async (_, params: { videoUrl: string; headers?: Record<string, string> }) => {
+    try {
+      // 生成一个本地代理 URL
+      // 使用 Electron 的 protocol 模块注册一个自定义协议来代理视频流
+      const proxyUrl = await videoProxyService.registerProxyUrl(params.videoUrl, params.headers)
+      return { success: true, data: { url: proxyUrl } }
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }

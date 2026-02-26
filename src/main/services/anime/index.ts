@@ -81,8 +81,37 @@ export class AnimeService extends EventEmitter {
     let fetchedCount = 0
     let failedCount = 0
     
-    // 分批处理，避免阻塞
-    const batchSize = 5
+    // 分批处理，避免阻塞和内存问题
+    // 先处理前 200 个，剩余的延迟处理
+    const initialLimit = 200
+    const priorityList = animeList.slice(0, initialLimit)
+    const remainingList = animeList.slice(initialLimit)
+    
+    log.info(`[AnimeService] Processing first ${priorityList.length} anime immediately, ${remainingList.length} deferred`)
+    
+    // 处理前 N 个
+    await this.processCoverCacheBatch(priorityList, cachedCount, fetchedCount, failedCount)
+    
+    // 延迟处理剩余的（避免启动时占用太多资源）
+    if (remainingList.length > 0) {
+      setTimeout(() => {
+        this.processCoverCacheBatch(remainingList, cachedCount, fetchedCount, failedCount)
+          .catch(e => log.error('[AnimeService] Deferred cover cache loading failed:', e))
+      }, 30000) // 30 秒后再处理剩余的
+    }
+  }
+  
+  /**
+   * 处理封面缓存批次
+   */
+  private async processCoverCacheBatch(
+    animeList: Anime[], 
+    cachedCount: number, 
+    fetchedCount: number, 
+    failedCount: number
+  ): Promise<void> {
+    // 分批处理，降低并发
+    const batchSize = 3
     for (let i = 0; i < animeList.length; i += batchSize) {
       const batch = animeList.slice(i, i + batchSize)
       log.debug(`[AnimeService] Processing batch ${i/batchSize + 1}/${Math.ceil(animeList.length/batchSize)}`)
