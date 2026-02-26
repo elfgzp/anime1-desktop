@@ -1,0 +1,16 @@
+{
+  "name": "anime1-e2e-tests",
+  "version": "1.0.0",
+  "description": "E2E tests for Anime1 Desktop using Playwright",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:headed": "playwright test --headed",
+    "install:browsers": "playwright install chromium",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}

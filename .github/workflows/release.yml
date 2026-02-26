@@ -1,10 +1,10 @@
-name: "Build and Release (Test: fix/windows-encoding)"
+name: Build and Release
 
 on:
   push:
     tags:
-      - 'v*'  # 当推送以 v 开头的 tag 时触发，例如 v1.0.0
-  workflow_dispatch:  # 手动触发，用于测试（GitHub 官方推荐方式）
+      - 'v*'
+  workflow_dispatch:
     inputs:
       version:
         description: '版本号（用于测试，例如 1.0.0-test）'
@@ -12,16 +12,19 @@ on:
         default: 'test'
         type: string
       create_release:
-        description: '是否创建 Release（仅 tag 触发时自动创建）'
+        description: '是否创建 Release'
         required: false
         default: false
         type: boolean
       platform:
-        description: '只构建指定平台（留空则构建所有平台）'
+        description: '只构建指定平台'
         required: false
         default: ''
         type: string
         enum: ['', 'windows', 'macos', 'linux']
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
   build-linux:
@@ -31,55 +34,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for accurate git describe
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Clean Unicode from dependencies
-        run: |
-          python scripts/cleanup_unicode.py
-
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
-          cd ..
-          python scripts/inject-vite-assets.py
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Extract version for release
-        id: version
-        run: |
-          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
-          source /tmp/version_vars.sh
-          echo "version=$version" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: Install dependencies
+        run: npm install --force
 
       - name: Build application
+        run: npm run build:fast
         env:
-          ANIME1_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          python scripts/build.py
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -95,73 +63,26 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for accurate git describe
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Clean Unicode from dependencies
-        run: |
-          python scripts/cleanup_unicode.py
-
-      - name: Build frontend (Windows)
-        run: |
-          chcp 65001
-          cd frontend
-          npm run build
-          cd ..
-          python scripts/inject-vite-assets.py
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Install NSIS (Windows only)
-        run: |
-          choco install nsis -y || echo "NSIS installation may have failed, trying anyway"
-
-      - name: Extract version for release
-        id: version
-        run: |
-          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
-          source /tmp/version_vars.sh
-          echo "version=$version" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: Install dependencies
+        run: npm install --force
 
       - name: Build application
+        run: npm run build:win:fast
         env:
-          ANIME1_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          python scripts/build.py
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload portable artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-x64-portable
-          path: release/*.zip
-          retention-days: 7
-
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64-setup
-          path: release/*.exe
+          name: windows-x64-build
+          path: release/
           retention-days: 7
 
   build-macos-arm64:
@@ -171,61 +92,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for accurate git describe
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Clean Unicode from dependencies
-        run: |
-          python scripts/cleanup_unicode.py
-
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
-          cd ..
-          python scripts/inject-vite-assets.py
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install -e .[macos]
-
-      - name: Install create-dmg
-        run: |
-          brew install create-dmg
-
-      - name: Extract version for release
-        id: version
-        run: |
-          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
-          source /tmp/version_vars.sh
-          echo "version=$version" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: Install dependencies
+        run: npm install --force
 
       - name: Build application
+        run: npm run build:mac:fast
         env:
-          ANIME1_VERSION: ${{ steps.version.outputs.version }}
-          ANIME1_ARCH: arm64
-        run: |
-          python scripts/build.py
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -234,75 +114,27 @@ jobs:
           path: release/
           retention-days: 7
 
-      - name: Upload portable ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64-portable
-          path: release/anime1-macos-arm64-*.zip
-          retention-days: 7
-
   build-macos-x64:
     name: Build on macOS-x64
-    runs-on: macos-15-intel
+    runs-on: macos-15
     if: ${{ inputs.platform == '' || inputs.platform == 'macos' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for accurate git describe
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Clean Unicode from dependencies
-        run: |
-          python scripts/cleanup_unicode.py
-
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
-          cd ..
-          python scripts/inject-vite-assets.py
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install -e .[macos]
-
-      - name: Install create-dmg
-        run: |
-          brew install create-dmg
-
-      - name: Extract version for release
-        id: version
-        run: |
-          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
-          source /tmp/version_vars.sh
-          echo "version=$version" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: Install dependencies
+        run: npm install --force
 
       - name: Build application
+        run: npm run build:mac:fast
         env:
-          ANIME1_VERSION: ${{ steps.version.outputs.version }}
-          ANIME1_ARCH: x64
-        run: |
-          python scripts/build.py
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -311,32 +143,17 @@ jobs:
           path: release/
           retention-days: 7
 
-      - name: Upload portable ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-x64-portable
-          path: release/anime1-macos-x64-*.zip
-          retention-days: 7
-
   release:
     name: Create Release
     needs: [build-linux, build-windows, build-macos-arm64, build-macos-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # 只在 push tag 或手动触发且选择创建 release 时执行
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for accurate git describe
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -345,74 +162,53 @@ jobs:
           merge-multiple: false
 
       - name: Prepare release assets
-        run: python scripts/prepare_release_assets.py
-        # 查找并复制所有构建产物（Windows 是 zip，macOS 是 dmg，Linux 是 tar.gz）
-
-      - name: Extract tag name
-        id: tag
         run: |
-          bash scripts/extract_version.sh "${{ github.event_name }}" "${{ github.event.inputs.version }}" "${{ github.ref }}" > /tmp/version_vars.sh
-          source /tmp/version_vars.sh
-          echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
-          echo "version=$version" >> $GITHUB_OUTPUT
-        shell: bash
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
 
-      - name: Extract changelog
-        id: changelog
+      - name: Extract version
+        id: version
         run: |
-          bash scripts/extract_changelog.sh "${{ steps.tag.outputs.version }}" "${{ github.repository }}" >> $GITHUB_OUTPUT
-
-      - name: Update CHANGELOG date
-        if: github.event_name == 'push'
-        run: |
-          python scripts/update_changelog.py "${{ steps.tag.outputs.version }}"
-          git checkout main
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          git commit -m "Chore: update release date for ${{ steps.tag.outputs.version }}"
-          git push
+          if [ "${{ github.event_name }}" == "push" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: Release ${{ steps.tag.outputs.tag_name }}
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Release ${{ steps.version.outputs.tag_name }}
           body: |
-            ## Anime1 Desktop ${{ steps.tag.outputs.tag_name }}
+            ## Anime1 Desktop ${{ steps.version.outputs.tag_name }}
 
             ### 下载
 
-            - **Windows (x64)**: `anime1-windows-x64.zip` (便携版，解压后运行 Anime1.exe)
-            - **Windows (x64) 安装包**: `anime1-windows-x64-setup.exe` (安装程序)
-            - **macOS (Intel)**: `anime1-macos-x64-${{ steps.tag.outputs.version }}.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
-            - **macOS (Apple Silicon)**: `anime1-macos-arm64-${{ steps.tag.outputs.version }}.dmg` (双击挂载，将 Anime1.app 拖拽到应用程序文件夹)
-            - **Linux (x64)**: `anime1-linux-x64.tar.gz` (解压后运行可执行文件)
-            - **Linux (ARM64)**: `anime1-linux-arm64.tar.gz` (解压后运行可执行文件)
+            - **Windows (x64)**: `Anime1 Desktop-*-win.zip` 或 `*-setup.exe`
+            - **macOS (Intel)**: `Anime1 Desktop-*-x64.dmg`
+            - **macOS (Apple Silicon)**: `Anime1 Desktop-*-arm64.dmg`
+            - **Linux (x64)**: `Anime1 Desktop-*-linux.tar.gz` 或 `*.AppImage`
 
             ### 安装说明
 
             - **macOS (推荐)**: 使用 Homebrew 安装
               ```bash
-              brew tap anime1-desktop/tap
-              brew install --cask anime1
+              brew tap elfgzp/tap
+              brew install --cask anime1-desktop
               ```
 
-            - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1.app 拖拽到应用程序文件夹
+            - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1 Desktop.app 拖拽到应用程序文件夹
 
-            - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1.exe
+            - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1 Desktop.exe
 
             - **Windows 安装包**: 双击运行 setup.exe，按照向导安装
 
-            - **Linux**: 根据你的系统架构选择对应的版本，解压 tar.gz 文件，添加执行权限后运行 `tar -xzf anime1-linux-*.tar.gz && chmod +x Anime1 && ./Anime1`
+            - **Linux**: 根据你的系统架构选择对应的版本，解压 tar.gz 文件后运行
 
-            ### 变更日志
-
-            ${{ steps.changelog.outputs.changelog }}
-
-            ---
-
-            查看完整的 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 或 [提交历史](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.tag_name }}^...${{ steps.tag.outputs.tag_name }})。
           files: release-assets/*
           draft: false
-          prerelease: ${{ contains(steps.tag.outputs.tag_name, '-') || contains(steps.tag.outputs.tag_name, 'alpha') || contains(steps.tag.outputs.tag_name, 'beta') || contains(steps.tag.outputs.tag_name, 'rc') }}
+          prerelease: ${{ contains(steps.version.outputs.tag_name, '-') || contains(steps.version.outputs.tag_name, 'alpha') || contains(steps.version.outputs.tag_name, 'beta') || contains(steps.version.outputs.tag_name, 'rc') }}

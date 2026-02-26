@@ -368,3 +368,56 @@ docker-clean:
 	docker-compose down -v --rmi local 2>/dev/null || true
 	docker rmi $(DOCKER_IMAGE):$(DOCKER_TAG) 2>/dev/null || true
 	@echo "Docker 资源已清理"
+
+# Development shortcuts
+.PHONY: dev check debug screenshot fix-theme fix-db clean
+
+# Start development server
+dev:
+	npm run dev
+
+# Check system status
+check:
+	@./scripts/quick-fix.sh check
+
+# Take screenshot
+screenshot:
+	@mkdir -p screenshots
+	@npx playwright screenshot --browser=chromium \
+		"http://localhost:5173/" screenshots/screenshot-$$(date +%s).png
+	@echo "Screenshot saved"
+
+# Debug with template
+debug:
+	@node scripts/debug-template.js
+
+# Fix dark theme
+fix-theme:
+	@./scripts/quick-fix.sh theme
+
+# Reset database
+fix-db:
+	@./scripts/quick-fix.sh db
+
+# Clean all caches
+clean:
+	@rm -rf dist/ dist-electron/
+	@rm -rf node_modules/.vite
+	@echo "Cache cleaned"
+
+# Full reset and restart
+reset: clean
+	@./scripts/quick-fix.sh db
+	@npm run dev
+
+# View logs
+logs:
+	@tail -f ~/Library/Application\ Support/anime1-desktop-electron/logs/main.log
+
+# Database CLI
+db:
+	@sqlite3 ~/Library/Application\ Support/anime1-desktop-electron/anime1.db
+
+# Quick test all
+quick-test: check screenshot
+	@echo "Quick test completed"

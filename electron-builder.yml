@@ -1,0 +1,66 @@
+appId: com.elfgzp.anime1-desktop
+productName: Anime1 Desktop
+copyright: Copyright © 2024 elfgzp
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/
+  - dist-electron/
+  - resources/
+  - '!**/*.map'
+
+asar: true
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**/*'
+  - '**/node_modules/better-sqlite3/build/Release/*.node'
+
+extraResources:
+  - from: resources/
+    to: resources/
+
+mac:
+  category: public.app-category.entertainment
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+linux:
+  icon: resources/icon.png
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64, arm64]
+  category: AudioVideo
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+
+dmg:
+  sign: false
+
+publish:
+  provider: github
+  owner: elfgzp
+  repo: anime1-desktop
+  releaseType: draft
