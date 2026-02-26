@@ -11,6 +11,23 @@
   - `src/renderer/views/Settings.vue` - 加载时解析 JSON
   - `src/renderer/stores/settings.ts` - 保存时序列化
 
+## [2.0.0] - 2026-02-26
+
+### Added
+- Electron + Vue 3 + TypeScript 重构
+- 自动下载服务（配置、筛选规则、定时调度）
+- 更新服务（electron-updater + GitHub Releases）
+- 9个 E2E 测试
+- 功能对比文档
+
+### Changed
+- 重写 GitHub Actions 为 Electron 模式
+- 升级构建系统为 electron-builder
+
+### Fixed
+- 图标和应用名称显示问题
+- Dock 栏图标显示
+
 #### 2. 收藏功能增强
 - **问题**: 收藏列表缺少播放进度和更新标记
 - **解决**: 
