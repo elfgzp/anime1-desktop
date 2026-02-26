@@ -112,15 +112,11 @@ tmp/
 # Electron build outputs
 dist-electron/
 
-# Test results
+# Test results (screenshots/videos from test runs)
 test-results/
-screenshots/
 e2e-report/
 
-# Temporary test files
-e2e/video-test.spec.ts
-e2e/debug-*.spec.ts
-e2e/test-*.spec.ts
+# Keep test files but ignore runtime outputs
 
 # Playwright
 playwright/.cache/
