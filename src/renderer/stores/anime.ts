@@ -121,7 +121,7 @@ export const useAnimeStore = defineStore('anime', () => {
       const result = await window.api.anime.getList({ page: currentPage.value })
       
       if (result.success && result.data) {
-        // 更新封面 URL，保留 UI 状态
+        // 更新封面 URL，保留 UI 状态和其他数据（如 playbackProgress）
         const freshData = result.data.animeList
         for (const freshAnime of freshData) {
           const existing = animeList.value.find(a => a.id === freshAnime.id)
@@ -130,6 +130,7 @@ export const useAnimeStore = defineStore('anime', () => {
             existing.year = freshAnime.year
             existing.season = freshAnime.season
             existing.subtitleGroup = freshAnime.subtitleGroup
+            // 注意：保留 existing.playbackProgress，不要覆盖
           }
         }
       }
