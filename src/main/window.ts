@@ -48,6 +48,7 @@ export class WindowManager {
   private mainWindow: BrowserWindow | null = null
   private tray: Tray | null = null
   private isQuitting = false
+  private normalBounds: { width: number; height: number; x: number; y: number } | null = null
 
   /**
    * 创建主窗口
@@ -276,13 +277,43 @@ export class WindowManager {
       this.mainWindow?.minimize()
     })
 
-    // 最大化/恢复
+    // 最大化/恢复（使用自定义实现，适配无边框窗口）
     ipcMain.handle('window:maximize', () => {
-      if (this.mainWindow?.isMaximized()) {
-        this.mainWindow.restore()
+      const win = this.mainWindow
+      if (!win) return { success: false, maximized: false }
+      
+      // 检查是否已经是最大化状态（通过比较窗口大小和屏幕大小）
+      const bounds = win.getBounds()
+      const screenBounds = screen.getPrimaryDisplay().workAreaSize
+      const isMaximized = bounds.width >= screenBounds.width && bounds.height >= screenBounds.height
+      
+      log.info(`[Window] Maximize toggled, current size: ${bounds.width}x${bounds.height}, screen: ${screenBounds.width}x${screenBounds.height}`)
+      
+      if (isMaximized) {
+        // 恢复之前的大小
+        if (this.normalBounds) {
+          win.setBounds(this.normalBounds)
+          log.info('[Window] Window restored to:', this.normalBounds)
+        } else {
+          // 使用默认大小
+          const defaultSize = { width: WINDOW_CONFIG.DEFAULT_WIDTH, height: WINDOW_CONFIG.DEFAULT_HEIGHT }
+          win.setSize(defaultSize.width, defaultSize.height)
+          win.center()
+          log.info('[Window] Window restored to default size')
+        }
       } else {
-        this.mainWindow?.maximize()
+        // 保存当前大小和位置，然后最大化
+        this.normalBounds = { ...bounds }
+        win.setBounds({
+          x: 0,
+          y: 0,
+          width: screenBounds.width,
+          height: screenBounds.height
+        })
+        log.info('[Window] Window maximized')
       }
+      
+      return { success: true, maximized: !isMaximized }
     })
 
     // 关闭窗口
@@ -297,12 +328,14 @@ export class WindowManager {
 
     // 获取窗口状态
     ipcMain.handle('window:getState', () => {
-      return {
+      const state = {
         maximized: this.mainWindow?.isMaximized() ?? false,
         minimized: this.mainWindow?.isMinimized() ?? false,
         fullscreen: this.mainWindow?.isFullScreen() ?? false,
         focused: this.mainWindow?.isFocused() ?? false
       }
+      log.info('[Window] getState called:', state)
+      return state
     })
   }
 

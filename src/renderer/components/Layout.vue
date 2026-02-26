@@ -136,9 +136,11 @@ const minimizeWindow = () => {
 }
 
 const toggleMaximize = async () => {
-  await window.api.window.maximize()
-  const state = await window.api.window.getState()
-  isMaximized.value = state.maximized
+  const result = await window.api.window.maximize()
+  console.log('[Window] Maximize result:', result)
+  if (result.success) {
+    isMaximized.value = result.maximized
+  }
 }
 
 const sidebarCollapsed = ref(true)
