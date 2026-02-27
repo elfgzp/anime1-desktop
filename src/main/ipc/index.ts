@@ -5,7 +5,7 @@
  * 职责: 注册所有 IPC 处理器，处理渲染进程请求
  */
 
-import { ipcMain, shell } from 'electron'
+import { ipcMain, shell, BrowserWindow } from 'electron'
 import type { DatabaseService } from '../services/database'
 import type { AnimeService } from '../services/anime'
 import type { CrawlerService } from '../services/crawler'
@@ -663,5 +663,51 @@ export function registerIPCHandlers(services: Services): void {
     } catch (error) {
       return { success: false, error: { message: String(error) } }
     }
+  })
+
+  // 获取更新状态
+  ipcMain.handle('update:getStatus', async () => {
+    try {
+      const status = {
+        downloadProgress: updateService.getDownloadProgress(),
+        isDownloading: updateService.isUpdateDownloading(),
+        currentUpdateInfo: updateService.getCurrentUpdateInfo(),
+      }
+      return { success: true, data: status }
+    } catch (error) {
+      return { success: false, error: { message: String(error) } }
+    }
+  })
+
+  // ==========================================
+  // 更新事件转发 - 将 UpdateService 事件转发到渲染进程
+  // ==========================================
+  
+  // 监听更新可用事件并转发
+  updateService.on('update-available', (info) => {
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('update:onAvailable', info)
+    })
+  })
+  
+  // 监听下载进度事件并转发
+  updateService.on('download-progress', (progress) => {
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('update:onProgress', progress)
+    })
+  })
+  
+  // 监听下载完成事件并转发
+  updateService.on('update-downloaded', (info) => {
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('update:onDownloaded', info)
+    })
+  })
+  
+  // 监听更新错误事件并转发
+  updateService.on('error', (error) => {
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('update:onError', { message: error.message })
+    })
   })
 }

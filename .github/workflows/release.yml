@@ -164,7 +164,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
+          # 复制所有构建产物（包括自动更新所需的 yml 文件）
+          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "latest-*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \;
           ls -la release-assets/
 
       - name: Extract version
@@ -184,14 +185,14 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag_name }}
           name: Release ${{ steps.version.outputs.tag_name }}
           body: |
-            ## Anime1 Desktop ${{ steps.version.outputs.tag_name }}
+            ## Anime1Desktop ${{ steps.version.outputs.tag_name }}
 
             ### 下载
 
-            - **Windows (x64)**: `Anime1 Desktop-*-win.zip` 或 `*-setup.exe`
-            - **macOS (Intel)**: `Anime1 Desktop-*-x64.dmg`
-            - **macOS (Apple Silicon)**: `Anime1 Desktop-*-arm64.dmg`
-            - **Linux (x64)**: `Anime1 Desktop-*-linux.tar.gz` 或 `*.AppImage`
+            - **Windows (x64)**: `Anime1Desktop-*-win.zip` 或 `*-setup.exe`
+            - **macOS (Intel)**: `Anime1Desktop-*-x64.dmg`
+            - **macOS (Apple Silicon)**: `Anime1Desktop-*-arm64.dmg`
+            - **Linux (x64)**: `Anime1Desktop-*-linux.tar.gz` 或 `*.AppImage`
 
             ### 安装说明
 
@@ -201,9 +202,9 @@ jobs:
               brew install --cask anime1-desktop
               ```
 
-            - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1 Desktop.app 拖拽到应用程序文件夹
+            - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1Desktop.app 拖拽到应用程序文件夹
 
-            - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1 Desktop.exe
+            - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1Desktop.exe
 
             - **Windows 安装包**: 双击运行 setup.exe，按照向导安装
 

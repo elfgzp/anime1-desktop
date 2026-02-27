@@ -25,13 +25,16 @@ mac:
   icon: resources/icon.icns
   target:
     - target: dmg
-      arch: [x64, arm64]
+      arch: [arm64]
     - target: zip
-      arch: [x64, arm64]
-  hardenedRuntime: true
+      arch: [arm64]
+  hardenedRuntime: false
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
+  # 本地测试禁用签名
+  identity: null
+  # 如果需要签名，取消注释下面两行
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
 
 win:
   icon: resources/icon.ico
@@ -63,4 +66,4 @@ publish:
   provider: github
   owner: elfgzp
   repo: anime1-desktop
-  releaseType: draft
+  releaseType: release

@@ -96,8 +96,54 @@
           </el-form-item>
           
           <el-form-item>
-            <el-button type="primary" @click="checkUpdate" :loading="checkingUpdate">
-              立即检查更新
+            <div class="update-status" v-if="updateInfo.hasUpdate">
+              <el-alert
+                :title="`发现新版本: ${updateInfo.latestVersion}`"
+                type="success"
+                show-icon
+                :closable="false"
+              />
+              <div class="release-notes" v-html="updateInfo.releaseNotes || '暂无更新说明'"></div>
+              <div class="update-actions">
+                <el-button 
+                  type="primary" 
+                  @click="downloadUpdate" 
+                  :loading="updateInfo.isDownloading"
+                  :disabled="updateInfo.isDownloaded"
+                >
+                  {{ updateInfo.isDownloaded ? '已下载' : updateInfo.isDownloading ? '下载中...' : '下载更新' }}
+                </el-button>
+                <el-button 
+                  type="success" 
+                  @click="installUpdate" 
+                  v-if="updateInfo.isDownloaded"
+                >
+                  立即安装
+                </el-button>
+              </div>
+              <div class="download-progress" v-if="updateInfo.isDownloading && updateInfo.progress">
+                <el-progress 
+                  :percentage="Math.round(updateInfo.progress.percent || 0)" 
+                  :format="progressFormat"
+                />
+              </div>
+            </div>
+            <div v-else-if="updateInfo.checked && !updateInfo.hasUpdate">
+              <el-alert
+                title="当前已是最新版本"
+                type="info"
+                :description="`当前版本: ${appVersion}`"
+                show-icon
+                :closable="false"
+              />
+            </div>
+            <el-button 
+              type="primary" 
+              @click="checkUpdate" 
+              :loading="checkingUpdate"
+              v-if="!updateInfo.hasUpdate"
+            >
+              {{ checkingUpdate ? '检查中...' : '立即检查更新' }}
             </el-button>
           </el-form-item>
         </el-card>
@@ -141,9 +187,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { Brush, Sunny, Moon, Monitor, VideoPlay, Download, Refresh, InfoFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 interface AppSettings {
   theme: 'light' | 'dark' | 'system'
@@ -156,7 +202,25 @@ interface AppSettings {
   updateChannel: 'stable' | 'beta'
 }
 
-const appVersion = ref('2.0.0')
+interface UpdateProgress {
+  percent: number
+  bytesPerSecond: number
+  total: number
+  transferred: number
+}
+
+interface UpdateInfo {
+  hasUpdate: boolean
+  checked: boolean
+  currentVersion: string
+  latestVersion: string
+  releaseNotes: string
+  isDownloading: boolean
+  isDownloaded: boolean
+  progress: UpdateProgress | null
+}
+
+const appVersion = ref('0.3.0')
 const saving = ref(false)
 const checkingUpdate = ref(false)
 
@@ -172,6 +236,22 @@ const defaultSettings: AppSettings = {
 }
 
 const settings = ref<AppSettings>({ ...defaultSettings })
+
+const updateInfo = ref<UpdateInfo>({
+  hasUpdate: false,
+  checked: false,
+  currentVersion: '',
+  latestVersion: '',
+  releaseNotes: '',
+  isDownloading: false,
+  isDownloaded: false,
+  progress: null
+})
+
+// 监听更新事件的回调
+let unsubscribeAvailable: (() => void) | null = null
+let unsubscribeProgress: (() => void) | null = null
+let unsubscribeDownloaded: (() => void) | null = null
 
 // 加载设置
 const loadSettings = async () => {
@@ -196,6 +276,19 @@ const loadSettings = async () => {
     // 使用默认设置
     settings.value = { ...defaultSettings }
     applyTheme(settings.value.theme)
+  }
+}
+
+// 获取应用版本
+const loadAppVersion = async () => {
+  try {
+    // 尝试从 API 获取版本
+    const result = await window.api.update.check()
+    if (result.success && result.data) {
+      appVersion.value = result.data.currentVersion || '0.3.0'
+    }
+  } catch (err) {
+    console.error('[Settings] 获取版本失败:', err)
   }
 }
 
@@ -258,21 +351,157 @@ const selectDownloadPath = async () => {
 // 检查更新
 const checkUpdate = async () => {
   checkingUpdate.value = true
+  updateInfo.value.checked = false
+  
   try {
+    // 先设置事件监听
+    setupUpdateListeners()
+    
     const result = await window.api.update.check()
     if (result.success && result.data) {
-      const { hasUpdate, latestVersion } = result.data
+      const { hasUpdate, currentVersion, latestVersion, releaseNotes } = result.data
+      
+      updateInfo.value = {
+        ...updateInfo.value,
+        hasUpdate,
+        checked: true,
+        currentVersion: currentVersion || '',
+        latestVersion: latestVersion || '',
+        releaseNotes: releaseNotes || ''
+      }
+      
       if (hasUpdate) {
         ElMessage.success(`发现新版本: ${latestVersion}`)
       } else {
         ElMessage.success('当前已是最新版本')
       }
+    } else {
+      ElMessage.error(result.error?.message || '检查更新失败')
     }
   } catch (err: any) {
+    console.error('[Settings] 检查更新失败:', err)
     ElMessage.error(err.message || '检查更新失败')
   } finally {
     checkingUpdate.value = false
   }
+}
+
+// 设置更新事件监听
+const setupUpdateListeners = () => {
+  // 清理旧的监听
+  cleanupUpdateListeners()
+  
+  // 监听更新可用事件
+  try {
+    window.api.update.onAvailable((info) => {
+      console.log('[Settings] Update available:', info)
+      if (info.hasUpdate) {
+        updateInfo.value = {
+          ...updateInfo.value,
+          hasUpdate: true,
+          latestVersion: info.latestVersion || '',
+          releaseNotes: info.releaseNotes || '',
+          currentVersion: info.currentVersion || ''
+        }
+      }
+    })
+  } catch (err) {
+    console.error('[Settings] 监听 update-available 失败:', err)
+  }
+  
+  // 监听下载进度
+  try {
+    window.api.update.onProgress((progress) => {
+      console.log('[Settings] Download progress:', progress)
+      updateInfo.value.progress = progress
+    })
+  } catch (err) {
+    console.error('[Settings] 监听 download-progress 失败:', err)
+  }
+  
+  // 监听下载完成
+  try {
+    window.api.update.onDownloaded((info) => {
+      console.log('[Settings] Update downloaded:', info)
+      updateInfo.value.isDownloading = false
+      updateInfo.value.isDownloaded = true
+      
+      ElMessageBox.confirm(
+        '更新已下载完成，是否立即安装并重启应用？',
+        '下载完成',
+        {
+          confirmButtonText: '立即安装',
+          cancelButtonText: '稍后安装',
+          type: 'success'
+        }
+      ).then(() => {
+        installUpdate()
+      }).catch(() => {
+        ElMessage.info('更新将在下次启动时自动安装')
+      })
+    })
+  } catch (err) {
+    console.error('[Settings] 监听 update-downloaded 失败:', err)
+  }
+}
+
+// 清理更新事件监听
+const cleanupUpdateListeners = () => {
+  // 注意：当前 API 设计可能不支持取消监听，需要时可以实现
+}
+
+// 下载更新
+const downloadUpdate = async () => {
+  try {
+    updateInfo.value.isDownloading = true
+    const result = await window.api.update.download()
+    
+    if (!result.success) {
+      throw new Error(result.error?.message || '下载更新失败')
+    }
+    
+    ElMessage.info('开始下载更新...')
+  } catch (err: any) {
+    console.error('[Settings] 下载更新失败:', err)
+    ElMessage.error(err.message || '下载更新失败')
+    updateInfo.value.isDownloading = false
+  }
+}
+
+// 安装更新
+const installUpdate = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '安装更新需要重启应用，是否继续？',
+      '确认安装',
+      {
+        confirmButtonText: '立即重启',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const result = await window.api.update.install()
+    if (!result.success) {
+      throw new Error(result.error?.message || '安装更新失败')
+    }
+    
+    // 应用会在 install() 后自动退出并重启
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      console.error('[Settings] 安装更新失败:', err)
+      ElMessage.error(err.message || '安装更新失败')
+    }
+  }
+}
+
+// 格式化下载进度
+const progressFormat = (percentage: number) => {
+  if (updateInfo.value.progress) {
+    const speed = ((updateInfo.value.progress.bytesPerSecond || 0) / 1024 / 1024).toFixed(2)
+    return `${percentage}% (${speed} MB/s)`
+  }
+  return `${percentage}%`
 }
 
 // 打开外部链接
@@ -286,6 +515,19 @@ const openExternal = async (url: string) => {
 
 onMounted(() => {
   loadSettings()
+  loadAppVersion()
+  setupUpdateListeners()
+  
+  // 如果启用了自动检查更新，启动时检查
+  if (settings.value.autoCheckUpdates) {
+    setTimeout(() => {
+      checkUpdate()
+    }, 5000) // 延迟 5 秒后检查
+  }
+})
+
+onUnmounted(() => {
+  cleanupUpdateListeners()
 })
 </script>
 
@@ -326,6 +568,58 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-weight: 500;
+}
+
+.update-status {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.release-notes {
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.release-notes :deep(h2) {
+  font-size: 18px;
+  margin: 0 0 12px 0;
+  color: var(--el-text-color-primary);
+}
+
+.release-notes :deep(h3) {
+  font-size: 16px;
+  margin: 16px 0 8px 0;
+  color: var(--el-text-color-primary);
+}
+
+.release-notes :deep(ul), .release-notes :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.release-notes :deep(li) {
+  margin: 4px 0;
+  color: var(--el-text-color-regular);
+}
+
+.release-notes :deep(p) {
+  margin: 8px 0;
+  color: var(--el-text-color-regular);
+}
+
+.update-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.download-progress {
+  width: 100%;
 }
 
 .about-content {
@@ -391,6 +685,15 @@ onMounted(() => {
   
   .settings-form :deep(.el-form-item__content) {
     margin-left: 0 !important;
+  }
+  
+  .update-actions {
+    flex-direction: column;
+  }
+  
+  .update-actions .el-button {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

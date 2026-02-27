@@ -48,7 +48,7 @@ import { videoProxyService } from './services/video-proxy'
 
 // 配置
 const APP_NAME = 'Anime1 Desktop'
-const APP_VERSION = '2.0.0'
+const APP_VERSION = '0.3.0'
 
 // 全局服务实例
 let windowManager: WindowManager | null = null
