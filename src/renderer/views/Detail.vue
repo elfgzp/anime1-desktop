@@ -162,10 +162,13 @@
               :src="videoUrl"
               controls
               class="video-player"
+              preload="metadata"
               @play="onVideoPlay"
               @pause="onVideoPause"
               @timeupdate="onTimeUpdate"
               @error="onVideoError"
+              @waiting="onVideoWaiting"
+              @canplay="onVideoCanPlay"
             ></video>
             
             <!-- 空状态 -->
@@ -521,8 +524,56 @@ const onTimeUpdate = (_e: Event) => {
   // 每 30 秒保存一次（由定时器处理）
 }
 
-const onVideoError = () => {
-  videoError.value = '视频加载失败，请稍后重试'
+const onVideoError = (e: Event) => {
+  const video = e.target as HTMLVideoElement
+  const error = video.error
+  
+  console.log('[Video] Error:', {
+    code: error?.code,
+    message: error?.message,
+    currentSrc: video.currentSrc,
+    networkState: video.networkState,
+    readyState: video.readyState
+  })
+  
+  // 不要立即显示错误，给视频一个恢复的机会
+  if (error?.code === MediaError.MEDIA_ERR_NETWORK) {
+    // 网络错误，可能是暂时的，等待自动恢复
+    console.log('[Video] Network error, waiting for recovery...')
+    // 3秒后如果还在错误状态，再显示错误
+    setTimeout(() => {
+      if (video.error) {
+        // 尝试恢复播放
+        video.load()
+        video.play().catch(() => {
+          videoError.value = '视频网络错误，请检查网络连接'
+        })
+      }
+    }, 3000)
+  } else if (error?.code === MediaError.MEDIA_ERR_DECODE) {
+    // 解码错误，尝试重新加载
+    console.log('[Video] Decode error, reloading...')
+    const currentTime = video.currentTime
+    video.load()
+    setTimeout(() => {
+      video.currentTime = currentTime
+      video.play().catch(() => {
+        videoError.value = '视频解码错误，请稍后重试'
+      })
+    }, 500)
+  } else {
+    videoError.value = '视频加载失败，请稍后重试'
+  }
+}
+
+// 视频缓冲中
+const onVideoWaiting = () => {
+  console.log('[Video] Buffering...')
+}
+
+// 视频可以播放
+const onVideoCanPlay = () => {
+  console.log('[Video] Can play')
 }
 
 // 组件卸载时清理

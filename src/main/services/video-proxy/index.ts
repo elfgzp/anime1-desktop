@@ -30,7 +30,13 @@ export class VideoProxyService {
       const proxyId = url.searchParams.get('id')
       
       if (!proxyId || !this.proxyMap.has(proxyId)) {
-        return new Response('Invalid proxy ID', { status: 400 })
+        log.error('[VideoProxy] Invalid or expired proxy ID:', proxyId)
+        return new Response('Invalid or expired proxy ID', { 
+          status: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*'
+          }
+        })
       }
 
       const proxyInfo = this.proxyMap.get(proxyId)!
@@ -39,9 +45,14 @@ export class VideoProxyService {
         // 使用 Electron 的 net 模块发起请求
         const response = await this.fetchVideoStream(proxyInfo.url, request.headers, proxyInfo.headers)
         return response
-      } catch (error) {
+      } catch (error: any) {
         log.error('[VideoProxy] Failed to fetch video stream:', error)
-        return new Response('Failed to fetch video', { status: 500 })
+        return new Response(`Failed to fetch video: ${error.message}`, { 
+          status: 502,
+          headers: {
+            'Access-Control-Allow-Origin': '*'
+          }
+        })
       }
     })
 
@@ -72,7 +83,8 @@ export class VideoProxyService {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': '*/*',
       'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-      'Referer': 'https://anime1.me'
+      'Referer': 'https://anime1.me',
+      'Connection': 'keep-alive'
     }
     
     // 处理 customHeaders - 如果是 cookies 对象，转换为 Cookie 头
@@ -97,14 +109,24 @@ export class VideoProxyService {
     const rangeHeader = requestHeaders.get('Range')
     if (rangeHeader) {
       headers['Range'] = rangeHeader
+      log.info('[VideoProxy] Range request:', rangeHeader)
     }
 
     // 使用 fetch API（Node.js 18+ 支持）
+    log.info('[VideoProxy] Fetching:', url.substring(0, 100) + '...', 'Range:', rangeHeader || 'none')
+    
     const response = await fetch(url, { 
       headers,
       // @ts-ignore - redirect 选项在 Node.js fetch 中可用
       redirect: 'follow'
     })
+    
+    log.info('[VideoProxy] Response status:', response.status, response.statusText)
+
+    // 如果响应不成功，抛出错误
+    if (!response.ok && response.status !== 206) { // 206 是 Partial Content（Range 请求成功）
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
 
     // 构建响应头
     const responseHeaders: Record<string, string> = {
@@ -128,6 +150,7 @@ export class VideoProxyService {
     const contentRange = response.headers.get('Content-Range')
     if (contentRange) {
       responseHeaders['Content-Range'] = contentRange
+      log.info('[VideoProxy] Content-Range:', contentRange)
     }
 
     const acceptRanges = response.headers.get('Accept-Ranges')
