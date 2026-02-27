@@ -36,7 +36,12 @@
       "icon": "resources/icon.ico"
     },
     "linux": {
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.png",
+      "category": "AudioVideo",
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ]
     },
     "publish": null
   },
