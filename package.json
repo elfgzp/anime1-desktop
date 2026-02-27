@@ -13,7 +13,7 @@
   "homepage": "https://github.com/elfgzp/anime1-desktop#readme",
   "build": {
     "appId": "com.elfgzp.anime1-desktop",
-    "productName": "Anime1 Desktop",
+    "productName": "Anime1Desktop",
     "directories": {
       "buildResources": "resources",
       "output": "release"
@@ -38,11 +38,7 @@
     "linux": {
       "icon": "resources/icon.png"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "elfgzp",
-      "repo": "anime1-desktop"
-    }
+    "publish": null
   },
   "private": true,
   "type": "module",
