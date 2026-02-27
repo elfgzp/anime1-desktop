@@ -1,0 +1,32 @@
+name: Trigger Homebrew Update
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  trigger-homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+          
+      - name: Trigger Homebrew Tap workflow
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: elfgzp/homebrew-tap
+          event-type: bump-cask
+          client-payload: |
+            {
+              "version": "${{ steps.get_version.outputs.version }}"
+            }
+          
+      - name: Verify trigger
+        run: |
+          echo "✅ 已触发 Homebrew Tap 更新"
+          echo "版本: ${{ steps.get_version.outputs.version }}"
