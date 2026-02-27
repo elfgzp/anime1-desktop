@@ -22,6 +22,74 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // IPC 频道白名单
 const validChannels = [
+  'window:minimize',
+  'window:maximize',
+  'window:close',
+  'window:toggleFullscreen',
+  'window:getState',
+
+  // 番剧
+  'anime:list',
+  'anime:listWithProgress',
+  'anime:detail',
+  'anime:episodes',
+  'anime:search',
+  'anime:searchWithProgress',
+  'anime:bangumi',
+  'anime:video',
+  'anime:video:proxy',
+  'anime:cache:status',
+  'anime:cache:refresh',
+  'anime:pwEpisodes',
+  // 收藏
+  'favorite:list',
+  'favorite:batchStatus',
+  'favorite:add',
+  'favorite:remove',
+  'favorite:check',
+  // 播放历史
+  'history:list',
+  'history:save',
+  'history:progress',
+  'history:clear',
+  'history:delete',
+  'history:byAnime',
+  'history:batchProgress',
+  // 设置
+  'settings:get',
+  'settings:set',
+  'settings:getAll',
+  // 下载
+  'download:list',
+  'download:add',
+  'download:pause',
+  'download:resume',
+  'download:cancel',
+  'download:onProgress',
+  'download:getHistory',
+  // 自动下载
+  'autoDownload:getConfig',
+  'autoDownload:updateConfig',
+  'autoDownload:getStatus',
+  'autoDownload:getHistory',
+  'autoDownload:previewFilter',
+  'autoDownload:runCheck',
+  // 系统
+  'system:showItemInFolder',
+  'system:openExternal',
+  // 更新
+  'update:check',
+  'update:download',
+  'update:install',
+  'update:onAvailable',
+  'update:onProgress',
+  'update:onDownloaded',
+]
+
+// 添加测试通道
+// validChannels.push(...validChannels, 'test', 'test')
+console.log('[Preload] 测试 API 已添加到 window.api.update')
+const validChannels = [
   // 窗口
   'window:minimize',
   'window:maximize',
@@ -180,9 +248,9 @@ const api = {
     check: () => invoke('update:check'),
     download: () => invoke('update:download'),
     install: () => invoke('update:install'),
-    onAvailable: (callback) => on('update:available', callback),
-    onProgress: (callback) => on('update:progress', callback),
-    onDownloaded: (callback) => on('update:downloaded', callback)
+    onAvailable: (callback) => on('update:onAvailable', callback),
+    onProgress: (callback) => on('update:onProgress', callback),
+    onDownloaded: (callback) => on('update:onDownloaded', callback)
   }
 }
 

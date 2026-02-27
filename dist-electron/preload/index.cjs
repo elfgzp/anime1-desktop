@@ -1,20 +1,20 @@
 /**
  * Preload 脚本 - CommonJS 格式
- * 
+ *
  * ⚠️⚠️⚠️ 警告 ⚠️⚠️⚠️
  * 这是唯一的 preload 文件！不要创建 index.ts 或其他重复的 preload 文件！
- * 
+ *
  * 构建流程:
  * 1. vite 构建时会直接复制此文件到 dist-electron/preload/index.cjs
  * 2. 不会进行任何编译或类型检查
  * 3. 所有 API 类型定义在 src/shared/types/api.ts 中
- * 
+ *
  * 如需修改 preload API:
  * 1. 修改此文件添加/删除 API
  * 2. 同时在 validChannels 数组中添加/删除 IPC 频道
  * 3. 在 src/shared/types/api.ts 中更新类型定义
  * 4. 在 src/main/ipc/index.ts 中添加/删除 IPC 处理程序
- * 
+ *
  * 职责: 安全地暴露主进程 API 到渲染进程
  */
 
@@ -28,7 +28,7 @@ const validChannels = [
   'window:close',
   'window:toggleFullscreen',
   'window:getState',
-  
+
   // 番剧
   'anime:list',
   'anime:listWithProgress',
@@ -42,14 +42,14 @@ const validChannels = [
   'anime:cache:status',
   'anime:cache:refresh',
   'anime:pwEpisodes',
-  
+
   // 收藏
   'favorite:list',
   'favorite:batchStatus',
   'favorite:add',
   'favorite:remove',
   'favorite:check',
-  
+
   // 播放历史
   'history:list',
   'history:save',
@@ -58,19 +58,21 @@ const validChannels = [
   'history:delete',
   'history:byAnime',
   'history:batchProgress',
-  
+
   // 设置
   'settings:get',
   'settings:set',
   'settings:getAll',
-  
+
   // 下载
   'download:list',
   'download:add',
   'download:pause',
   'download:resume',
   'download:cancel',
-  
+  'download:onProgress',
+  'download:getHistory',
+
   // 自动下载
   'autoDownload:getConfig',
   'autoDownload:updateConfig',
@@ -78,15 +80,18 @@ const validChannels = [
   'autoDownload:getHistory',
   'autoDownload:previewFilter',
   'autoDownload:runCheck',
-  
+
   // 系统
   'system:showItemInFolder',
   'system:openExternal',
-  
+
   // 更新
   'update:check',
   'update:download',
-  'update:install'
+  'update:install',
+  'update:onAvailable',
+  'update:onProgress',
+  'update:onDownloaded',
 ]
 
 // 安全的 IPC 调用
@@ -104,7 +109,7 @@ const on = (channel, callback) => {
   }
 }
 
-// 暴露 API
+// 完整的 API 对象
 const api = {
   window: {
     minimize: () => invoke('window:minimize'),
@@ -113,7 +118,18 @@ const api = {
     toggleFullscreen: () => invoke('window:toggleFullscreen'),
     getState: () => invoke('window:getState')
   },
-  
+
+  app: {
+    getInfo: () => {
+      return {
+        name: 'Anime1 Desktop',
+        version: '0.3.0',
+        electronVersion: process.versions.electron,
+        platform: process.platform
+      }
+    }
+  },
+
   anime: {
     getList: (params) => invoke('anime:list', params),
     getListWithProgress: (params) => invoke('anime:listWithProgress', params),
@@ -128,7 +144,7 @@ const api = {
     refreshCache: () => invoke('anime:cache:refresh'),
     parsePwEpisodes: (params) => invoke('anime:pwEpisodes', params)
   },
-  
+
   favorite: {
     getList: () => invoke('favorite:list'),
     batchStatus: (params) => invoke('favorite:batchStatus', params),
@@ -136,7 +152,7 @@ const api = {
     remove: (params) => invoke('favorite:remove', params),
     check: (params) => invoke('favorite:check', params)
   },
-  
+
   history: {
     getList: (params) => invoke('history:list', params),
     save: (params) => invoke('history:save', params),
@@ -146,13 +162,13 @@ const api = {
     getByAnime: (params) => invoke('history:byAnime', params),
     batchProgress: (params) => invoke('history:batchProgress', params)
   },
-  
+
   settings: {
     get: (params) => invoke('settings:get', params),
     set: (params) => invoke('settings:set', params),
     getAll: () => invoke('settings:getAll')
   },
-  
+
   download: {
     getList: () => invoke('download:list'),
     add: (params) => invoke('download:add', params),
@@ -161,7 +177,7 @@ const api = {
     cancel: (params) => invoke('download:cancel', params),
     onProgress: (callback) => on('download:progress', callback)
   },
-  
+
   autoDownload: {
     getConfig: () => invoke('autoDownload:getConfig'),
     updateConfig: (params) => invoke('autoDownload:updateConfig', params),
@@ -170,27 +186,51 @@ const api = {
     previewFilter: (params) => invoke('autoDownload:previewFilter', params),
     runCheck: () => invoke('autoDownload:runCheck')
   },
-  
+
   system: {
     showItemInFolder: (params) => invoke('system:showItemInFolder', params),
     openExternal: (params) => invoke('system:openExternal', params)
   },
-  
+
   update: {
     check: () => invoke('update:check'),
     download: () => invoke('update:download'),
     install: () => invoke('update:install'),
-    onAvailable: (callback) => on('update:available', callback),
-    onProgress: (callback) => on('update:progress', callback),
-    onDownloaded: (callback) => on('update:downloaded', callback)
-  }
+
+    // 事件监听
+    onAvailable: (callback) => on('update:onAvailable', callback),
+    onProgress: (callback) => on('update:onProgress', callback),
+    onDownloaded: (callback) => on('update:onDownloaded', callback),
+
+    // 测试 API
+    getTestUpdate: () => ({
+      hasUpdate: true,
+      currentVersion: '0.3.0',
+      latestVersion: '0.3.1',
+      isPrerelease: false,
+      releaseNotes: '测试更新 - 模拟的版本',
+      downloadUrl: 'http://test-mock-update.dmg',
+      publishedAt: new Date().toISOString()
+    }),
+
+    setTestVersion: (version) => {
+      console.log('[测试] 版本设置为:', version)
+      return { success: true }
+    },
+
+    clearTestMode: () => {
+      console.log('[测试] 清除测试模式')
+      return { success: true }
+    },
+
+    triggerUpdateAvailable: () => {
+      console.log('[测试] 触发 update-available 事件')
+      return { success: true }
+    },
+
+    getStatus: () => invoke('update:getStatus')
+  },
 }
 
 // 暴露到 window.api
-console.log('[Preload] Starting to expose API...')
-try {
-  contextBridge.exposeInMainWorld('api', api)
-  console.log('[Preload] API exposed successfully')
-} catch (error) {
-  console.error('[Preload] Failed to expose API:', error)
-}
+contextBridge.exposeInMainWorld('api', api)

@@ -1,11 +1,24 @@
 {
   "name": "anime1-desktop-electron",
   "productName": "Anime1 Desktop",
-  "version": "2.0.0",
+  "version": "0.3.0",
   "description": "Anime1 Desktop - Electron + TypeScript 重构版",
   "main": "dist-electron/main/index.js",
   "author": "elfgzp",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elfgzp/anime1-desktop.git"
+  },
+  "homepage": "https://github.com/elfgzp/anime1-desktop#readme",
+  "build": {
+    "appId": "com.elfgzp.anime1-desktop",
+    "publish": {
+      "provider": "github",
+      "owner": "elfgzp",
+      "repo": "anime1-desktop"
+    }
+  },
   "private": true,
   "type": "module",
   "scripts": {
