@@ -1,7 +1,7 @@
 {
   "name": "anime1-desktop-electron",
   "productName": "Anime1Desktop",
-  "version": "0.3.0",
+  "version": "0.3.4",
   "description": "Anime1 Desktop - Electron + TypeScript 重构版",
   "main": "dist-electron/main/index.js",
   "author": "elfgzp",
@@ -43,7 +43,11 @@
         "tar.gz"
       ]
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "elfgzp",
+      "repo": "anime1-desktop"
+    }
   },
   "private": true,
   "type": "module",
