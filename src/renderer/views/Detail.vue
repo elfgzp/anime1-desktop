@@ -169,6 +169,8 @@
               @error="onVideoError"
               @waiting="onVideoWaiting"
               @canplay="onVideoCanPlay"
+              @loadedmetadata="onLoadedMetadata"
+              @seeked="onVideoSeeked"
             ></video>
             
             <!-- 空状态 -->
@@ -524,45 +526,79 @@ const onTimeUpdate = (_e: Event) => {
   // 每 30 秒保存一次（由定时器处理）
 }
 
+let videoErrorRecoveryAttempts = 0
+const MAX_RECOVERY_ATTEMPTS = 3
+
 const onVideoError = (e: Event) => {
   const video = e.target as HTMLVideoElement
   const error = video.error
+  const currentTime = video.currentTime
   
   console.log('[Video] Error:', {
     code: error?.code,
     message: error?.message,
     currentSrc: video.currentSrc,
     networkState: video.networkState,
-    readyState: video.readyState
+    readyState: video.readyState,
+    currentTime
   })
   
-  // 不要立即显示错误，给视频一个恢复的机会
   if (error?.code === MediaError.MEDIA_ERR_NETWORK) {
-    // 网络错误，可能是暂时的，等待自动恢复
-    console.log('[Video] Network error, waiting for recovery...')
-    // 3秒后如果还在错误状态，再显示错误
+    console.log('[Video] Network error, attempting recovery at time:', currentTime)
+    
+    // 记录恢复尝试
+    videoErrorRecoveryAttempts++
+    if (videoErrorRecoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
+      videoError.value = '视频网络不稳定，请检查网络连接'
+      videoErrorRecoveryAttempts = 0
+      return
+    }
+    
+    // 网络错误需要重新加载视频源来清除错误状态
+    // 保存当前状态
+    const wasPlaying = !video.paused
+    const src = video.src
+    
+    // 短暂延迟后重新加载
     setTimeout(() => {
-      if (video.error) {
-        // 尝试恢复播放
-        video.load()
-        video.play().catch(() => {
-          videoError.value = '视频网络错误，请检查网络连接'
+      // 重新设置src会强制重新加载并清除错误
+      video.src = src
+      video.load()
+      
+      // 恢复时间戳
+      video.currentTime = currentTime
+      
+      // 如果之前在播放，恢复播放
+      if (wasPlaying) {
+        video.play().catch(err => {
+          console.log('[Video] Recovery play failed:', err)
         })
       }
-    }, 3000)
-  } else if (error?.code === MediaError.MEDIA_ERR_DECODE) {
-    // 解码错误，尝试重新加载
-    console.log('[Video] Decode error, reloading...')
-    const currentTime = video.currentTime
-    video.load()
-    setTimeout(() => {
-      video.currentTime = currentTime
-      video.play().catch(() => {
-        videoError.value = '视频解码错误，请稍后重试'
-      })
+      
+      // 重置错误计数
+      setTimeout(() => {
+        videoErrorRecoveryAttempts = 0
+      }, 2000)
     }, 500)
+    
+  } else if (error?.code === MediaError.MEDIA_ERR_DECODE) {
+    console.log('[Video] Decode error, attempting recovery...')
+    
+    // 解码错误：重新加载但保持时间戳
+    video.pause()
+    setTimeout(() => {
+      video.load()
+      video.currentTime = currentTime
+      video.play().catch(() => {})
+    }, 500)
+    
+  } else if (error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+    videoError.value = '视频格式不支持'
   } else {
-    videoError.value = '视频加载失败，请稍后重试'
+    // 只有在视频还没开始播放时才显示错误
+    if (!video.currentTime || video.currentTime < 1) {
+      videoError.value = '视频加载失败，请稍后重试'
+    }
   }
 }
 
@@ -573,7 +609,17 @@ const onVideoWaiting = () => {
 
 // 视频可以播放
 const onVideoCanPlay = () => {
-  console.log('[Video] Can play')
+  console.log('[Video] Can play, currentTime:', videoPlayer.value?.currentTime)
+}
+
+// 视频 seek 完成
+const onVideoSeeked = () => {
+  console.log('[Video] Seeked to:', videoPlayer.value?.currentTime)
+}
+
+// 视频加载元数据完成
+const onLoadedMetadata = () => {
+  console.log('[Video] Metadata loaded, duration:', videoPlayer.value?.duration)
 }
 
 // 组件卸载时清理

@@ -2,176 +2,216 @@
  * 视频代理服务
  * 
  * 解决 Electron 本地文件协议访问外部视频 URL 的 CORS 问题
- * 通过注册自定义 protocol 来代理视频流
+ * 使用本地 HTTP 服务器代理视频流（比 protocol.handle 更可靠）
  */
 
-import { protocol } from 'electron'
+import http from 'http'
+import https from 'https'
+import { URL } from 'url'
 import log from 'electron-log'
 
-const PROXY_PROTOCOL = 'video-proxy'
-const PROXY_HOST = 'localhost'
-
 export class VideoProxyService {
+  private server: http.Server | null = null
   private proxyMap = new Map<string, { url: string; headers?: Record<string, string> }>()
   private idCounter = 0
+  private port = 0
 
   /**
-   * 初始化视频代理协议
+   * 初始化视频代理服务
    */
-  initialize(): void {
-    // 注销旧协议（如果存在）
-    if (protocol.isProtocolHandled(PROXY_PROTOCOL)) {
-      protocol.unregisterProtocol(PROXY_PROTOCOL)
-    }
+  async initialize(): Promise<void> {
+    await this.startServer()
+    log.info(`[VideoProxy] Service initialized on port ${this.port}`)
+  }
 
-    // 注册新协议
-    protocol.handle(PROXY_PROTOCOL, async (request) => {
-      const url = new URL(request.url)
-      const proxyId = url.searchParams.get('id')
+  /**
+   * 启动本地 HTTP 代理服务器
+   */
+  private async startServer(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.server = http.createServer((req, res) => this.handleRequest(req, res))
       
-      if (!proxyId || !this.proxyMap.has(proxyId)) {
-        log.error('[VideoProxy] Invalid or expired proxy ID:', proxyId)
-        return new Response('Invalid or expired proxy ID', { 
-          status: 400,
-          headers: {
-            'Access-Control-Allow-Origin': '*'
-          }
-        })
-      }
-
-      const proxyInfo = this.proxyMap.get(proxyId)!
+      this.server.listen(0, '127.0.0.1', () => {
+        const addr = this.server?.address() as { port: number }
+        this.port = addr.port
+        resolve()
+      })
       
-      try {
-        // 使用 Electron 的 net 模块发起请求
-        const response = await this.fetchVideoStream(proxyInfo.url, request.headers, proxyInfo.headers)
-        return response
-      } catch (error: any) {
-        log.error('[VideoProxy] Failed to fetch video stream:', error)
-        return new Response(`Failed to fetch video: ${error.message}`, { 
-          status: 502,
-          headers: {
-            'Access-Control-Allow-Origin': '*'
-          }
-        })
-      }
+      this.server.on('error', reject)
     })
-
-    log.info('[VideoProxy] Service initialized')
   }
 
   /**
    * 注册代理 URL
    */
-  async registerProxyUrl(videoUrl: string, customHeaders?: Record<string, string>): Promise<string> {
+  registerProxyUrl(videoUrl: string, customHeaders?: Record<string, string>): string {
     const id = `${Date.now()}_${++this.idCounter}`
     this.proxyMap.set(id, { url: videoUrl, headers: customHeaders })
-    
-    // 返回代理 URL
-    return `${PROXY_PROTOCOL}://${PROXY_HOST}/?id=${id}`
+    return `http://127.0.0.1:${this.port}/proxy?id=${id}`
   }
 
   /**
-   * 获取视频流
+   * 处理 HTTP 请求
    */
-  private async fetchVideoStream(
-    url: string, 
-    requestHeaders: Headers,
+  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    // 设置 CORS 头
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Accept, Content-Type, Origin, Referer, User-Agent')
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200)
+      res.end()
+      return
+    }
+
+    const url = new URL(req.url || '', `http://${req.headers.host}`)
+    const proxyId = url.searchParams.get('id')
+
+    if (!proxyId || !this.proxyMap.has(proxyId)) {
+      res.writeHead(400)
+      res.end('Invalid proxy ID')
+      return
+    }
+
+    const proxyInfo = this.proxyMap.get(proxyId)!
+    
+    try {
+      await this.proxyVideoStream(proxyInfo.url, req, res, proxyInfo.headers)
+    } catch (error: any) {
+      log.error('[VideoProxy] Error:', error.message)
+      if (!res.headersSent) {
+        res.writeHead(502)
+        res.end(`Proxy error: ${error.message}`)
+      }
+    }
+  }
+
+  /**
+   * 代理视频流
+   */
+  private async proxyVideoStream(
+    targetUrl: string,
+    clientReq: http.IncomingMessage,
+    clientRes: http.ServerResponse,
     customHeaders?: Record<string, string>
-  ): Promise<Response> {
+  ): Promise<void> {
+    const parsedUrl = new URL(targetUrl)
+    const isHttps = parsedUrl.protocol === 'https:'
+    const requestLib = isHttps ? https : http
+
     // 构建请求头
     const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': '*/*',
       'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
       'Referer': 'https://anime1.me',
-      'Connection': 'keep-alive'
+      'Accept-Encoding': 'identity' // 禁用gzip，避免chunked编码问题
     }
-    
-    // 处理 customHeaders - 如果是 cookies 对象，转换为 Cookie 头
+
+    // 处理自定义 headers (cookies)
     if (customHeaders) {
-      // 检查是否是 cookies 格式（有 e, p, h 等字段）
-      const cookieFields = ['e', 'p', 'h'];
-      const hasCookieFields = cookieFields.some(f => customHeaders[f] !== undefined);
+      const cookieFields = ['e', 'p', 'h']
+      const hasCookieFields = cookieFields.some(f => customHeaders[f] !== undefined)
       
       if (hasCookieFields) {
-        // 转换为 Cookie 头格式
-        const cookieStr = Object.entries(customHeaders)
+        headers['Cookie'] = Object.entries(customHeaders)
           .map(([k, v]) => `${k}=${v}`)
-          .join('; ');
-        headers['Cookie'] = cookieStr;
+          .join('; ')
       } else {
-        // 普通 headers，直接合并
-        Object.assign(headers, customHeaders);
+        Object.assign(headers, customHeaders)
       }
     }
 
     // 转发 Range 头（用于视频 seek）
-    const rangeHeader = requestHeaders.get('Range')
+    const rangeHeader = clientReq.headers.range
     if (rangeHeader) {
-      headers['Range'] = rangeHeader
+      headers['Range'] = rangeHeader as string
       log.info('[VideoProxy] Range request:', rangeHeader)
     }
 
-    // 使用 fetch API（Node.js 18+ 支持）
-    log.info('[VideoProxy] Fetching:', url.substring(0, 100) + '...', 'Range:', rangeHeader || 'none')
-    
-    const response = await fetch(url, { 
-      headers,
-      // @ts-ignore - redirect 选项在 Node.js fetch 中可用
-      redirect: 'follow'
-    })
-    
-    log.info('[VideoProxy] Response status:', response.status, response.statusText)
+    return new Promise((resolve, reject) => {
+      const request = requestLib.get(targetUrl, { headers }, (response) => {
+        // 处理重定向
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          const redirectUrl = response.headers.location
+          if (redirectUrl) {
+            const fullRedirectUrl = redirectUrl.startsWith('http') 
+              ? redirectUrl 
+              : new URL(redirectUrl, targetUrl).toString()
+            log.info('[VideoProxy] Following redirect to:', fullRedirectUrl.substring(0, 100))
+            this.proxyVideoStream(fullRedirectUrl, clientReq, clientRes, customHeaders)
+              .then(resolve)
+              .catch(reject)
+            return
+          }
+        }
 
-    // 如果响应不成功，抛出错误
-    if (!response.ok && response.status !== 206) { // 206 是 Partial Content（Range 请求成功）
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
+        // 检查响应状态
+        if (response.statusCode !== 200 && response.statusCode !== 206) {
+          reject(new Error(`HTTP ${response.statusCode}`))
+          return
+        }
 
-    // 构建响应头
-    const responseHeaders: Record<string, string> = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Accept, Content-Type',
-      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges'
-    }
+        log.info('[VideoProxy] Response:', response.statusCode, 
+          'Content-Type:', response.headers['content-type'],
+          'Content-Length:', response.headers['content-length'])
 
-    // 复制重要的响应头
-    const contentType = response.headers.get('Content-Type')
-    if (contentType) {
-      responseHeaders['Content-Type'] = contentType
-    }
+        // 构建响应头
+        const responseHeaders: Record<string, string | number | string[]> = {
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
 
-    const contentLength = response.headers.get('Content-Length')
-    if (contentLength) {
-      responseHeaders['Content-Length'] = contentLength
-    }
+        if (response.headers['content-type']) {
+          responseHeaders['Content-Type'] = response.headers['content-type']
+        }
+        if (response.headers['content-length']) {
+          responseHeaders['Content-Length'] = response.headers['content-length']
+        }
+        if (response.headers['content-range']) {
+          responseHeaders['Content-Range'] = response.headers['content-range']
+          log.info('[VideoProxy] Content-Range:', response.headers['content-range'])
+        }
 
-    const contentRange = response.headers.get('Content-Range')
-    if (contentRange) {
-      responseHeaders['Content-Range'] = contentRange
-      log.info('[VideoProxy] Content-Range:', contentRange)
-    }
+        // 发送响应头
+        clientRes.writeHead(response.statusCode || 200, responseHeaders)
+        
+        // 使用 pipe 传输数据（流式传输）
+        response.pipe(clientRes)
+        
+        response.on('end', () => {
+          log.info('[VideoProxy] Stream ended')
+          resolve()
+        })
+        response.on('error', (err) => {
+          log.error('[VideoProxy] Response stream error:', err)
+          reject(err)
+        })
+      })
 
-    const acceptRanges = response.headers.get('Accept-Ranges')
-    if (acceptRanges) {
-      responseHeaders['Accept-Ranges'] = acceptRanges
-    }
+      request.on('error', (err) => {
+        log.error('[VideoProxy] Request error:', err)
+        reject(err)
+      })
 
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders
+      request.setTimeout(60000, () => {
+        request.destroy()
+        reject(new Error('Request timeout'))
+      })
     })
   }
 
   /**
-   * 清理过期的代理记录
+   * 停止代理服务器
    */
   cleanup(): void {
-    // 简单实现：清空所有记录
+    this.server?.close()
     this.proxyMap.clear()
-    log.info('[VideoProxy] Cleaned up proxy map')
+    log.info('[VideoProxy] Service stopped')
   }
 }
 
