@@ -248,11 +248,6 @@ const updateInfo = ref<UpdateInfo>({
   progress: null
 })
 
-// 监听更新事件的回调
-let unsubscribeAvailable: (() => void) | null = null
-let unsubscribeProgress: (() => void) | null = null
-let unsubscribeDownloaded: (() => void) | null = null
-
 // 加载设置
 const loadSettings = async () => {
   try {
@@ -390,10 +385,10 @@ const checkUpdate = async () => {
 const setupUpdateListeners = () => {
   // 清理旧的监听
   cleanupUpdateListeners()
-  
+
   // 监听更新可用事件
   try {
-    window.api.update.onAvailable((info) => {
+    window.api.update.onAvailable((info: any) => {
       console.log('[Settings] Update available:', info)
       if (info.hasUpdate) {
         updateInfo.value = {
@@ -408,20 +403,20 @@ const setupUpdateListeners = () => {
   } catch (err) {
     console.error('[Settings] 监听 update-available 失败:', err)
   }
-  
+
   // 监听下载进度
   try {
-    window.api.update.onProgress((progress) => {
+    window.api.update.onProgress((progress: any) => {
       console.log('[Settings] Download progress:', progress)
       updateInfo.value.progress = progress
     })
   } catch (err) {
     console.error('[Settings] 监听 download-progress 失败:', err)
   }
-  
+
   // 监听下载完成
   try {
-    window.api.update.onDownloaded((info) => {
+    window.api.update.onDownloaded((info: any) => {
       console.log('[Settings] Update downloaded:', info)
       updateInfo.value.isDownloading = false
       updateInfo.value.isDownloaded = true

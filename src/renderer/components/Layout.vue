@@ -115,6 +115,8 @@
 </template>
 
 <script setup lang="ts">
+// 引用类型定义
+import '../types/window.d'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { VideoPlay, Star, Clock, Setting, Expand, Fold, CircleCheckFilled, Download, Close, Minus, FullScreen, CopyDocument } from '@element-plus/icons-vue'
@@ -136,7 +138,7 @@ const minimizeWindow = () => {
 }
 
 const toggleMaximize = async () => {
-  const result = await window.api.window.maximize()
+  const result = await window.api.window.maximize() as { success: boolean; maximized: boolean }
   console.log('[Window] Maximize result:', result)
   if (result.success) {
     isMaximized.value = result.maximized

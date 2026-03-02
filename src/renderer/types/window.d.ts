@@ -71,7 +71,19 @@ export interface ElectronAPI {
     cancel: (params: { taskId: string }) => Promise<any>
     onProgress: (callback: (task: any) => void) => void
   }
-  
+
+  // 自动下载
+  autoDownload: {
+    start: () => Promise<any>
+    stop: () => Promise<any>
+    getStatus: () => Promise<any>
+    getSettings: () => Promise<any>
+    updateSettings: (params: any) => Promise<any>
+    getHistory: (params: { limit?: number }) => Promise<any>
+    previewFilter: (params: { filters: any }) => Promise<any>
+    updateConfig: (params: { config: any }) => Promise<any>
+  }
+
   // 系统
   system: {
     showItemInFolder: (params: { path: string }) => Promise<void>
@@ -85,7 +97,7 @@ export interface ElectronAPI {
     install: () => Promise<any>
     onAvailable: (callback: (info: any) => void) => void
     onProgress: (callback: (progress: number) => void) => void
-    onDownloaded: (callback: () => void) => void
+    onDownloaded: (callback: (info?: any) => void) => void
   }
 }
 

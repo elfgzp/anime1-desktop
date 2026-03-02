@@ -205,6 +205,48 @@ export class UpdateService extends EventEmitter {
         }
       }
 
+      // 测试模式：支持环境变量覆盖
+      const mockVersion = process.env.UPDATE_VERSION_OVERRIDE
+      if (mockVersion) {
+        log.info('[UpdateService] Test mode: using mocked version', mockVersion)
+
+        // 模拟下载更新
+        const mockDownload = process.env.MOCK_DOWNLOAD === 'true'
+        if (mockDownload) {
+          log.info('[UpdateService] Test mode: simulating download completion')
+
+          setTimeout(() => {
+            this.emit('update-available', {
+              hasUpdate: true,
+              currentVersion: app.getVersion(),
+              latestVersion: mockVersion,
+              isPrerelease: this.updateChannel === 'beta',
+              releaseNotes: `Test update to version ${mockVersion}`,
+              downloadUrl: `http://test-override/${mockVersion}.dmg`,
+              assetName: `Anime1 Desktop-${mockVersion}-mac.dmg`,
+              downloadSize: 1024 * 1024 * 100, // 100MB
+              publishedAt: new Date().toISOString()
+            })
+
+            log.info('[UpdateService] Simulated update-available event with version', mockVersion)
+          }, 2000)
+
+          return {
+            hasUpdate: true,
+            currentVersion: app.getVersion(),
+            latestVersion: mockVersion,
+            isPrerelease: this.updateChannel === 'beta',
+            releaseNotes: `Test update to version ${mockVersion}`,
+            downloadUrl: `http://test-override/${mockVersion}.dmg`,
+            assetName: `Anime1 Desktop-${mockVersion}-mac.dmg`,
+            downloadSize: 1024 * 1024 * 100,
+            publishedAt: new Date().toISOString()
+          }
+        } else {
+          log.info('[UpdateService] Test mode: forcing real update check')
+        }
+      }
+
       const result = await autoUpdater.checkForUpdates()
       
       if (result?.updateInfo) {

@@ -22,8 +22,10 @@ if (process.platform === 'darwin') {
   const iconPath = join(__dirname, '../../../resources/icon.png')
   try {
     const dockIcon = nativeImage.createFromPath(iconPath)
-    app.dock.setIcon(dockIcon)
-    console.log('[Main] Dock icon set successfully')
+    if (app.dock) {
+      app.dock.setIcon(dockIcon)
+      console.log('[Main] Dock icon set successfully')
+    }
   } catch (error) {
     console.error('[Main] Failed to set dock icon:', error)
   }
@@ -145,7 +147,7 @@ app.whenReady().then(async () => {
   
   try {
     // 初始化视频代理协议（必须在 app.ready 后）
-    videoProxyService.initialize()
+    await videoProxyService.initialize()
     
     // 初始化服务
     await initializeServices()
