@@ -18,6 +18,45 @@ import { autoUpdater, UpdateInfo as ElectronUpdateInfo } from 'electron-updater'
 import log from 'electron-log'
 import { EventEmitter } from 'events'
 import { app } from 'electron'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+
+// 读取 package.json 获取正确版本
+function getAppVersion(): string {
+  // 已打包时，使用 app.getVersion()
+  if (app.isPackaged) {
+    return app.getVersion()
+  }
+
+  // 开发模式下，从 package.json 读取版本
+  try {
+    // app.getAppPath() 在开发模式下返回 dist-electron/main，需要向上查找
+    const appPath = app.getAppPath()
+    // 尝试多个可能的路径
+    const possiblePaths = [
+      join(appPath, 'package.json'),
+      join(appPath, '../../package.json'),
+      join(appPath, '../../../package.json'),
+    ]
+
+    for (const packageJsonPath of possiblePaths) {
+      try {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+        if (packageJson.version) {
+          console.log('[UpdateService] Found version:', packageJson.version, 'from:', packageJsonPath)
+          return packageJson.version
+        }
+      } catch {
+        // 继续尝试下一个路径
+      }
+    }
+
+    return app.getVersion()
+  } catch (e) {
+    console.log('[UpdateService] Failed to read package.json:', e)
+    return app.getVersion()
+  }
+}
 
 export interface UpdateCheckResult {
   hasUpdate: boolean
@@ -136,7 +175,7 @@ export class UpdateService extends EventEmitter {
   private formatUpdateInfo(info: ElectronUpdateInfo, hasUpdate: boolean): UpdateCheckResult {
     const result: UpdateCheckResult = {
       hasUpdate,
-      currentVersion: app.getVersion(),
+      currentVersion: getAppVersion(),
       latestVersion: info.version,
       isPrerelease: this.updateChannel === 'beta',
       releaseNotes: Array.isArray(info.releaseNotes)
@@ -199,8 +238,8 @@ export class UpdateService extends EventEmitter {
         log.info('[UpdateService] Development mode, returning mock data')
         return {
           hasUpdate: false,
-          currentVersion: app.getVersion(),
-          latestVersion: app.getVersion(),
+          currentVersion: getAppVersion(),
+          latestVersion: getAppVersion(),
           releaseNotes: 'Development mode - no updates available'
         }
       }
@@ -218,7 +257,7 @@ export class UpdateService extends EventEmitter {
           setTimeout(() => {
             this.emit('update-available', {
               hasUpdate: true,
-              currentVersion: app.getVersion(),
+              currentVersion: getAppVersion(),
               latestVersion: mockVersion,
               isPrerelease: this.updateChannel === 'beta',
               releaseNotes: `Test update to version ${mockVersion}`,
@@ -233,7 +272,7 @@ export class UpdateService extends EventEmitter {
 
           return {
             hasUpdate: true,
-            currentVersion: app.getVersion(),
+            currentVersion: getAppVersion(),
             latestVersion: mockVersion,
             isPrerelease: this.updateChannel === 'beta',
             releaseNotes: `Test update to version ${mockVersion}`,
@@ -251,7 +290,7 @@ export class UpdateService extends EventEmitter {
       
       if (result?.updateInfo) {
         // 检查版本是否真的更新了
-        const currentVersion = app.getVersion()
+        const currentVersion = getAppVersion()
         const latestVersion = result.updateInfo.version
         const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0
         
@@ -260,7 +299,7 @@ export class UpdateService extends EventEmitter {
       
       return {
         hasUpdate: false,
-        currentVersion: app.getVersion()
+        currentVersion: getAppVersion()
       }
     } catch (error) {
       log.error('[UpdateService] Failed to check for updates:', error)
@@ -268,14 +307,14 @@ export class UpdateService extends EventEmitter {
       if (!silent) {
         return {
           hasUpdate: false,
-          currentVersion: app.getVersion(),
+          currentVersion: getAppVersion(),
           error: error instanceof Error ? error.message : 'Unknown error'
         }
       }
       
       return {
         hasUpdate: false,
-        currentVersion: app.getVersion()
+        currentVersion: getAppVersion()
       }
     }
   }
@@ -394,7 +433,7 @@ export class UpdateService extends EventEmitter {
    */
   getAppInfo() {
     return {
-      version: app.getVersion(),
+      version: getAppVersion(),
       name: app.getName(),
       channel: this.updateChannel,
       platform: process.platform,
