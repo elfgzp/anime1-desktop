@@ -20,10 +20,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
       - name: Install Playwright
-        run: |
-          npm install
-          npx playwright install chromium
+        run: npx playwright install chromium
 
       - name: Build application
         run: npm run build:fast
