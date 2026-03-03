@@ -37,16 +37,15 @@ jobs:
 
       - name: Extract version and update package.json
         run: |
-          # 从 git tag 获取版本号
-          VERSION=${GITHUB_REF#refs/tags/v}
-          VERSION=${VERSION#${{ github.event.inputs.version != '' && github.event.inputs.version || '' }}
+          # 从 git tag 获取版本号 (例如 v0.3.8 -> 0.3.8)
+          VERSION="${GITHUB_REF#refs/tags/v}"
           # 如果是 workflow_dispatch 且指定了版本
           if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "test" ]; then
             VERSION="${{ github.event.inputs.version }}"
           fi
           echo "Building version: $VERSION"
           # 更新 package.json
-          npm version $VERSION --no-git-tag-version
+          npm version "$VERSION" --no-git-tag-version
         shell: bash
 
       - name: Set up Node.js
