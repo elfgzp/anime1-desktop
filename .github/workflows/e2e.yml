@@ -26,10 +26,8 @@ jobs:
       - name: Install Playwright browsers and Electron
         run: |
           npx playwright install chromium
-          npx playwright install-deps chromium
-          # Install Electron binary for testing
-          npm install electron --ignore-scripts
-          npx electron --version
+          # Skip electron install, use system electron
+          echo "Skipping electron binary install"
 
       - name: Build application
         run: npm run build:fast -- --publish never
