@@ -21,10 +21,15 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install --ignore-scripts --force
+        run: npm install --ignore-scripts
 
-      - name: Install Playwright
-        run: npx playwright install chromium
+      - name: Install Playwright browsers and Electron
+        run: |
+          npx playwright install chromium
+          npx playwright install-deps chromium
+          # Install Electron binary for testing
+          npm install electron --ignore-scripts
+          npx electron --version
 
       - name: Build application
         run: npm run build:fast -- --publish never
