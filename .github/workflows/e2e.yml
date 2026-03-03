@@ -21,7 +21,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm install --ignore-scripts --force
 
       - name: Install Playwright browsers and Electron
         run: |
