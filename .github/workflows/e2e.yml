@@ -23,10 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts --force
 
-      - name: Install Playwright browsers and Electron
-        run: |
-          npx playwright install chromium
-          npx playwright install electron
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Install Electron
+        run: npm run postinstall || true
 
       - name: Build application
         run: npm run build:fast -- --publish never
