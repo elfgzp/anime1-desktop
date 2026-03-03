@@ -27,7 +27,7 @@ jobs:
         run: npx playwright install chromium
 
       - name: Build application
-        run: npm run build:fast
+        run: npm run build:fast -- --publish never
 
       - name: Run E2E tests
         run: npx playwright test
