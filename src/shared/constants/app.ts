@@ -9,7 +9,7 @@
 // ==========================================
 
 export const APP_NAME = 'Anime1 Desktop'
-export const APP_VERSION = '0.3.0'
+export const APP_VERSION = '0.3.6'
 export const APP_DESCRIPTION = 'Anime1 桌面客户端 - Electron 重构版'
 
 // ==========================================

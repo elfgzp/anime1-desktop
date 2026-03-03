@@ -220,7 +220,7 @@ interface UpdateInfo {
   progress: UpdateProgress | null
 }
 
-const appVersion = ref('0.3.0')
+const appVersion = ref('0.3.6')
 const saving = ref(false)
 const checkingUpdate = ref(false)
 
@@ -280,7 +280,7 @@ const loadAppVersion = async () => {
     // 尝试从 API 获取版本
     const result = await window.api.update.check()
     if (result.success && result.data) {
-      appVersion.value = result.data.currentVersion || '0.3.0'
+      appVersion.value = result.data.currentVersion || '0.3.6'
     }
   } catch (err) {
     console.error('[Settings] 获取版本失败:', err)

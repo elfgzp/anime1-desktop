@@ -35,6 +35,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Extract version and update package.json
+        run: |
+          # 从 git tag 获取版本号
+          VERSION=${GITHUB_REF#refs/tags/v}
+          VERSION=${VERSION#${{ github.event.inputs.version != '' && github.event.inputs.version || '' }}
+          # 如果是 workflow_dispatch 且指定了版本
+          if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "test" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "Building version: $VERSION"
+          # 更新 package.json
+          npm version $VERSION --no-git-tag-version
+        shell: bash
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -63,6 +77,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Extract version and update package.json
+        run: |
+          $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          if ("${{ github.event.inputs.version }}" -ne "" -and "${{ github.event.inputs.version }}" -ne "test") {
+            $version = "${{ github.event.inputs.version }}"
+          }
+          echo "Building version: $version"
+          npm version $version --no-git-tag-version
+        shell: pwsh
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -93,6 +117,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Extract version and update package.json
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "test" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "Building version: $VERSION"
+          npm version $VERSION --no-git-tag-version
+        shell: bash
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -121,6 +155,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Extract version and update package.json
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          if [ "${{ github.event.inputs.version }}" != "" ] && [ "${{ github.event.inputs.version }}" != "test" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "Building version: $VERSION"
+          npm version $VERSION --no-git-tag-version
+        shell: bash
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

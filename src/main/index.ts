@@ -50,7 +50,33 @@ import { videoProxyService } from './services/video-proxy'
 
 // 配置
 const APP_NAME = 'Anime1 Desktop'
-const APP_VERSION = '0.3.0'
+
+// 动态获取版本号（从 package.json 或 app.getVersion()）
+function getAppVersion(): string {
+  try {
+    const { readFileSync } = require('fs')
+    const { join } = require('path')
+    const appPath = app.getAppPath()
+    const possiblePaths = [
+      join(appPath, 'package.json'),
+      join(appPath, '../../package.json'),
+      join(appPath, '../../../package.json'),
+    ]
+    for (const packageJsonPath of possiblePaths) {
+      try {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+        if (packageJson.version) {
+          return packageJson.version
+        }
+      } catch {
+        // continue
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return app.getVersion()
+}
 
 // 全局服务实例
 let windowManager: WindowManager | null = null
@@ -143,7 +169,7 @@ async function createWindow(): Promise<void> {
  * 应用就绪
  */
 app.whenReady().then(async () => {
-  log.info(`[Main] ${APP_NAME} v${APP_VERSION} starting...`)
+  log.info(`[Main] ${APP_NAME} v${getAppVersion()} starting...`)
   
   try {
     // 初始化视频代理协议（必须在 app.ready 后）
