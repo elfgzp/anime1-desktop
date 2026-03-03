@@ -32,6 +32,7 @@ export const test = base.extend<ElectronFixtures>({
     const mainPath = resolve(__dirname, '../../dist-electron/main/index.js')
     
     const electronApp = await electron.launch({
+      headless: true,
       args: [mainPath, '--no-sandbox'],
       cwd: resolve(__dirname, '../..'),
       env: {

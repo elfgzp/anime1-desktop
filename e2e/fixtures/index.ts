@@ -68,6 +68,7 @@ export const test = base.extend<ElectronFixtures>({
     }
     
     const electronApp = await electron.launch({
+      headless: true,
       args: [mainPath, '--no-sandbox', '--enable-logging', '--v=1'],
       cwd: resolve(__dirname, '../..'),
       env: {
