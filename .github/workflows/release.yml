@@ -140,6 +140,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Add fix script
+        run: |
+          cat > release/fix-macos.sh << 'EOF'
+          #!/bin/bash
+          APP_NAME="Anime1Desktop"
+          APP_PATH="/Applications/${APP_NAME}.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "错误: 未找到 $APP_NAME"
+            echo "请先将应用拖拽到「应用程序」文件夹"
+            exit 1
+          fi
+
+          echo "正在修复 $APP_NAME..."
+          xattr -cr "$APP_PATH"
+          codesign --force --deep --sign - "$APP_PATH"
+          echo "修复完成！"
+          EOF
+          chmod +x release/fix-macos.sh
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -179,6 +199,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Add fix script
+        run: |
+          cat > release/fix-macos.sh << 'EOF'
+          #!/bin/bash
+          APP_NAME="Anime1Desktop"
+          APP_PATH="/Applications/${APP_NAME}.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "错误: 未找到 $APP_NAME"
+            echo "请先将应用拖拽到「应用程序」文件夹"
+            exit 1
+          fi
+
+          echo "正在修复 $APP_NAME..."
+          xattr -cr "$APP_PATH"
+          codesign --force --deep --sign - "$APP_PATH"
+          echo "修复完成！"
+          EOF
+          chmod +x release/fix-macos.sh
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -208,7 +248,7 @@ jobs:
         run: |
           mkdir -p release-assets
           # 复制所有构建产物（包括自动更新所需的 yml 文件）
-          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "latest-*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \;
+          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.tar.gz" -o -name "latest-*.yml" -o -name "*.blockmap" -o -name "fix-macos.sh" \) -exec cp {} release-assets/ \;
           ls -la release-assets/
 
       - name: Extract version
@@ -246,6 +286,28 @@ jobs:
               ```
 
             - **macOS (手动)**: 下载对应的 DMG 文件，双击挂载，将 Anime1Desktop.app 拖拽到应用程序文件夹
+
+            ### macOS "已损坏" 错误修复
+
+            如果在 macOS 上遇到 "Anime1Desktop 已损坏，无法打开" 的错误，请运行 `fix-macos.sh` 脚本修复：
+
+            ```bash
+            # 1. 打开终端，进入下载目录
+            cd ~/Downloads
+
+            # 2. 给脚本添加执行权限
+            chmod +x fix-macos.sh
+
+            # 3. 运行修复脚本
+            ./fix-macos.sh
+            ```
+
+            或者手动运行以下命令：
+
+            ```bash
+            xattr -cr /Applications/Anime1Desktop.app
+            codesign --force --deep --sign - /Applications/Anime1Desktop.app
+            ```
 
             - **Windows 便携版**: 解压 zip 文件，运行其中的 Anime1Desktop.exe
 
