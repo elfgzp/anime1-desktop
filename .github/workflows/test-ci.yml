@@ -49,8 +49,11 @@ jobs:
       - name: Install Playwright
         run: npx playwright install --with-deps
 
+      - name: Install Electron
+        run: npm run postinstall || true
+
       - name: Build application
-        run: npm run build:fast
+        run: npm run build:fast -- --publish never
 
       - name: Run E2E tests
         run: npx playwright test --reporter=list
