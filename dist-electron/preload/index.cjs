@@ -18,219 +18,184 @@
  * 职责: 安全地暴露主进程 API 到渲染进程
  */
 
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer } = require("electron");
 
 // IPC 频道白名单
 const validChannels = [
-  // 窗口
-  'window:minimize',
-  'window:maximize',
-  'window:close',
-  'window:toggleFullscreen',
-  'window:getState',
+  "window:minimize",
+  "window:maximize",
+  "window:close",
+  "window:toggleFullscreen",
+  "window:getState",
 
   // 番剧
-  'anime:list',
-  'anime:listWithProgress',
-  'anime:detail',
-  'anime:episodes',
-  'anime:search',
-  'anime:searchWithProgress',
-  'anime:bangumi',
-  'anime:video',
-  'anime:video:proxy',
-  'anime:cache:status',
-  'anime:cache:refresh',
-  'anime:pwEpisodes',
+  "anime:list",
+  "anime:listWithProgress",
+  "anime:detail",
+  "anime:episodes",
+  "anime:search",
+  "anime:searchWithProgress",
+  "anime:bangumi",
+  "anime:video",
+  "anime:video:proxy",
+  "anime:getHlsProxyUrl",
+  "anime:cache:status",
+  "anime:cache:refresh",
+  "anime:pwEpisodes",
 
   // 收藏
-  'favorite:list',
-  'favorite:batchStatus',
-  'favorite:add',
-  'favorite:remove',
-  'favorite:check',
+  "favorite:list",
+  "favorite:batchStatus",
+  "favorite:add",
+  "favorite:remove",
+  "favorite:check",
 
   // 播放历史
-  'history:list',
-  'history:save',
-  'history:progress',
-  'history:clear',
-  'history:delete',
-  'history:byAnime',
-  'history:batchProgress',
+  "history:list",
+  "history:save",
+  "history:progress",
+  "history:clear",
+  "history:delete",
+  "history:byAnime",
 
   // 设置
-  'settings:get',
-  'settings:set',
-  'settings:getAll',
+  "settings:get",
+  "settings:set",
+  "settings:getAll",
 
   // 下载
-  'download:list',
-  'download:add',
-  'download:pause',
-  'download:resume',
-  'download:cancel',
-  'download:onProgress',
-  'download:getHistory',
+  "download:list",
+  "download:add",
+  "download:pause",
+  "download:resume",
+  "download:cancel",
+  "download:onProgress",
+  "download:getHistory",
 
   // 自动下载
-  'autoDownload:getConfig',
-  'autoDownload:updateConfig',
-  'autoDownload:getStatus',
-  'autoDownload:getHistory',
-  'autoDownload:previewFilter',
-  'autoDownload:runCheck',
+  "autoDownload:getConfig",
+  "autoDownload:updateConfig",
+  "autoDownload:getStatus",
+  "autoDownload:getHistory",
+  "autoDownload:previewFilter",
+  "autoDownload:runCheck",
 
   // 系统
-  'system:showItemInFolder',
-  'system:openExternal',
+  "system:showItemInFolder",
+  "system:openExternal",
 
   // 更新
-  'update:check',
-  'update:download',
-  'update:install',
-  'update:onAvailable',
-  'update:onProgress',
-  'update:onDownloaded',
-]
+  "update:check",
+  "update:download",
+  "update:install",
+  "update:onAvailable",
+  "update:onProgress",
+  "update:onDownloaded",
+];
 
 // 安全的 IPC 调用
 const invoke = async (channel, ...args) => {
   if (validChannels.includes(channel)) {
-    return ipcRenderer.invoke(channel, ...args)
+    return ipcRenderer.invoke(channel, ...args);
   }
-  throw new Error(`Invalid channel: ${channel}`)
-}
+  throw new Error(`Invalid channel: ${channel}`);
+};
 
 // 事件监听
 const on = (channel, callback) => {
   if (validChannels.includes(channel)) {
-    ipcRenderer.on(channel, (_, ...args) => callback(...args))
+    ipcRenderer.on(channel, (_, ...args) => callback(...args));
   }
-}
+};
 
-// 完整的 API 对象
+// 暴露 API
 const api = {
   window: {
-    minimize: () => invoke('window:minimize'),
-    maximize: () => invoke('window:maximize'),
-    close: () => invoke('window:close'),
-    toggleFullscreen: () => invoke('window:toggleFullscreen'),
-    getState: () => invoke('window:getState')
-  },
-
-  app: {
-    getInfo: () => {
-      return {
-        name: 'Anime1 Desktop',
-        version: '0.3.0',
-        electronVersion: process.versions.electron,
-        platform: process.platform
-      }
-    }
+    minimize: () => invoke("window:minimize"),
+    maximize: () => invoke("window:maximize"),
+    close: () => invoke("window:close"),
+    toggleFullscreen: () => invoke("window:toggleFullscreen"),
+    getState: () => invoke("window:getState"),
   },
 
   anime: {
-    getList: (params) => invoke('anime:list', params),
-    getListWithProgress: (params) => invoke('anime:listWithProgress', params),
-    getDetail: (params) => invoke('anime:detail', params),
-    getEpisodes: (params) => invoke('anime:episodes', params),
-    search: (params) => invoke('anime:search', params),
-    searchWithProgress: (params) => invoke('anime:searchWithProgress', params),
-    getBangumiInfo: (params) => invoke('anime:bangumi', params),
-    extractVideo: (params) => invoke('anime:video', params),
-    getVideoProxyUrl: (params) => invoke('anime:video:proxy', params),
-    getCacheStatus: () => invoke('anime:cache:status'),
-    refreshCache: () => invoke('anime:cache:refresh'),
-    parsePwEpisodes: (params) => invoke('anime:pwEpisodes', params)
+    getList: (params) => invoke("anime:list", params),
+    getListWithProgress: (params) => invoke("anime:listWithProgress", params),
+    getDetail: (params) => invoke("anime:detail", params),
+    getEpisodes: (params) => invoke("anime:episodes", params),
+    search: (params) => invoke("anime:search", params),
+    searchWithProgress: (params) => invoke("anime:searchWithProgress", params),
+    getBangumiInfo: (params) => invoke("anime:bangumi", params),
+    extractVideo: (params) => invoke("anime:video", params),
+    getVideoProxyUrl: (params) => invoke("anime:video:proxy", params),
+    getHlsProxyUrl: (params) => invoke("anime:getHlsProxyUrl", params),
+    getCacheStatus: () => invoke("anime:cache:status"),
+    refreshCache: () => invoke("anime:cache:refresh"),
+    parsePwEpisodes: (params) => invoke("anime:pwEpisodes", params),
   },
 
   favorite: {
-    getList: () => invoke('favorite:list'),
-    batchStatus: (params) => invoke('favorite:batchStatus', params),
-    add: (params) => invoke('favorite:add', params),
-    remove: (params) => invoke('favorite:remove', params),
-    check: (params) => invoke('favorite:check', params)
+    getList: () => invoke("favorite:list"),
+    batchStatus: (params) => invoke("favorite:batchStatus", params),
+    add: (params) => invoke("favorite:add", params),
+    remove: (params) => invoke("favorite:remove", params),
+    check: (params) => invoke("favorite:check", params),
   },
 
   history: {
-    getList: (params) => invoke('history:list', params),
-    save: (params) => invoke('history:save', params),
-    getProgress: (params) => invoke('history:progress', params),
-    clear: () => invoke('history:clear'),
-    delete: (params) => invoke('history:delete', params),
-    getByAnime: (params) => invoke('history:byAnime', params),
-    batchProgress: (params) => invoke('history:batchProgress', params)
+    getList: (params) => invoke("history:list", params),
+    save: (params) => invoke("history:save", params),
+    getProgress: (params) => invoke("history:progress", params),
+    clear: () => invoke("history:clear"),
+    delete: (params) => invoke("history:delete", params),
+    getByAnime: (params) => invoke("history:byAnime", params),
+    batchProgress: (params) => invoke("history:batchProgress", params),
   },
 
   settings: {
-    get: (params) => invoke('settings:get', params),
-    set: (params) => invoke('settings:set', params),
-    getAll: () => invoke('settings:getAll')
+    get: (params) => invoke("settings:get", params),
+    set: (params) => invoke("settings:set", params),
+    getAll: () => invoke("settings:getAll"),
   },
 
   download: {
-    getList: () => invoke('download:list'),
-    add: (params) => invoke('download:add', params),
-    pause: (params) => invoke('download:pause', params),
-    resume: (params) => invoke('download:resume', params),
-    cancel: (params) => invoke('download:cancel', params),
-    onProgress: (callback) => on('download:progress', callback)
+    getList: () => invoke("download:list"),
+    add: (params) => invoke("download:add", params),
+    pause: (params) => invoke("download:pause", params),
+    resume: (params) => invoke("download:resume", params),
+    cancel: (params) => invoke("download:cancel", params),
+    onProgress: (callback) => on("download:progress", callback),
   },
 
   autoDownload: {
-    getConfig: () => invoke('autoDownload:getConfig'),
-    updateConfig: (params) => invoke('autoDownload:updateConfig', params),
-    getStatus: () => invoke('autoDownload:getStatus'),
-    getHistory: (params) => invoke('autoDownload:getHistory', params),
-    previewFilter: (params) => invoke('autoDownload:previewFilter', params),
-    runCheck: () => invoke('autoDownload:runCheck')
+    getConfig: () => invoke("autoDownload:getConfig"),
+    updateConfig: (params) => invoke("autoDownload:updateConfig", params),
+    getStatus: () => invoke("autoDownload:getStatus"),
+    getHistory: (params) => invoke("autoDownload:getHistory", params),
+    previewFilter: (params) => invoke("autoDownload:previewFilter", params),
+    runCheck: () => invoke("autoDownload:runCheck"),
   },
 
   system: {
-    showItemInFolder: (params) => invoke('system:showItemInFolder', params),
-    openExternal: (params) => invoke('system:openExternal', params)
+    showItemInFolder: (params) => invoke("system:showItemInFolder", params),
+    openExternal: (params) => invoke("system:openExternal", params),
   },
 
   update: {
-    check: () => invoke('update:check'),
-    download: () => invoke('update:download'),
-    install: () => invoke('update:install'),
-
-    // 事件监听
-    onAvailable: (callback) => on('update:onAvailable', callback),
-    onProgress: (callback) => on('update:onProgress', callback),
-    onDownloaded: (callback) => on('update:onDownloaded', callback),
-
-    // 测试 API
-    getTestUpdate: () => ({
-      hasUpdate: true,
-      currentVersion: '0.3.0',
-      latestVersion: '0.3.1',
-      isPrerelease: false,
-      releaseNotes: '测试更新 - 模拟的版本',
-      downloadUrl: 'http://test-mock-update.dmg',
-      publishedAt: new Date().toISOString()
-    }),
-
-    setTestVersion: (version) => {
-      console.log('[测试] 版本设置为:', version)
-      return { success: true }
-    },
-
-    clearTestMode: () => {
-      console.log('[测试] 清除测试模式')
-      return { success: true }
-    },
-
-    triggerUpdateAvailable: () => {
-      console.log('[测试] 触发 update-available 事件')
-      return { success: true }
-    },
-
-    getStatus: () => invoke('update:getStatus')
+    check: () => invoke("update:check"),
+    download: () => invoke("update:download"),
+    install: () => invoke("update:install"),
+    onAvailable: (callback) => on("update:onAvailable", callback),
+    onProgress: (callback) => on("update:onProgress", callback),
+    onDownloaded: (callback) => on("update:onDownloaded", callback),
   },
-}
+};
 
 // 暴露到 window.api
-contextBridge.exposeInMainWorld('api', api)
+console.log("[Preload] Starting to expose API...");
+try {
+  contextBridge.exposeInMainWorld("api", api);
+  console.log("[Preload] API exposed successfully");
+} catch (error) {
+  console.error("[Preload] Failed to expose API:", error);
+}
