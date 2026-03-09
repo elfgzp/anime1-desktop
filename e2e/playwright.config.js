@@ -1,12 +1,12 @@
 // @ts-check
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Playwright configuration for Anime1 Desktop E2E tests
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './tests',
+  testDir: "./tests",
 
   /* Run tests in files in parallel */
   fullyParallel: false,
@@ -17,28 +17,29 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
 
-  /* Opt out of parallel tests on CI */
-  workers: process.env.CI ? 1 : undefined,
+  /* 单个 worker 运行所有测试，避免启动多个 Electron 实例 */
+  workers: 1,
+
+  /* 全局设置和清理暂时禁用 */
+  // globalSetup: './global-setup',
+  // globalTeardown: './global-teardown',
 
   /* Reporter to use */
-  reporter: [
-    ['html', { outputFolder: 'playwright-report' }],
-    ['list']
-  ],
+  reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
 
   /* Shared settings for all the projects below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')` */
-    baseURL: 'http://localhost:5173',
+    baseURL: "http://localhost:5173",
 
     /* Collect trace when retrying the failed test */
-    trace: 'on-first-retry',
+    trace: "on-first-retry",
 
     /* Screenshot on failure */
-    screenshot: 'only-on-failure',
+    screenshot: "only-on-failure",
 
     /* Video recording */
-    video: 'on-first-retry',
+    video: "on-first-retry",
 
     /* Default viewport */
     viewport: { width: 1280, height: 800 },
@@ -47,16 +48,16 @@ export default defineConfig({
   /* Configure projects for major browsers */
   projects: [
     {
-      name: 'chromium',
+      name: "chromium",
       use: {
-        ...devices['Desktop Chrome'],
+        ...devices["Desktop Chrome"],
         launchOptions: {
           headless: true,
           args: [
-            '--disable-web-security',
-            '--disable-features=IsolateOrigins,site-per-process',
-          ]
-        }
+            "--disable-web-security",
+            "--disable-features=IsolateOrigins,site-per-process",
+          ],
+        },
       },
     },
   ],
