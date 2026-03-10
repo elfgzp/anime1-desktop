@@ -187,6 +187,7 @@
               :src="videoUrl"
               class="video-player"
               preload="metadata"
+              controls
               tabindex="0"
               @keydown="handleVideoKeydown"
               @play="onVideoPlay"
@@ -256,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowLeft,
@@ -505,47 +506,69 @@ const playEpisode = async (idx: number) => {
       // 检查是否为 m3u8 视频
       if (result.data.isM3u8) {
         // 使用 HLS.js 播放 m3u8 视频
-        console.log("[Detail] 使用 HLS.js 播放 m3u8 视频");
+        console.log("[Detail] 检测到 m3u8 视频，使用 HLS.js 播放");
+        console.log("[Detail] 视频 URL:", videoUrl.value);
+        console.log(
+          "[Detail] 是否代理 URL:",
+          videoUrl.value.includes("127.0.0.1"),
+        );
 
         if (hlsInstance.value) {
           hlsInstance.value.destroy();
           hlsInstance.value = null;
+          console.log("[Detail] 销毁旧的 HLS 实例");
         }
 
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
         });
+        console.log("[Detail] HLS 实例已创建");
 
         hls.loadSource(videoUrl.value);
+        console.log("[Detail] HLS 开始加载源");
+
         hls.attachMedia(video);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log("[Detail] HLS manifest 解析完成");
           video.play().catch(() => {
             // 自动播放被阻止
           });
         });
 
+        hls.on(Hls.Events.LEVEL_LOADED, () => {
+          console.log("[Detail] HLS levels 加载完成");
+        });
+
         hls.on(Hls.Events.ERROR, (_, data) => {
+          console.error("[Detail] HLS 发生错误:");
+          console.error("[Detail]   错误类型:", data.type);
+          console.error("[Detail]   是否致命:", data.fatal);
+          console.error("[Detail]   错误详情:", data);
+          console.error("[Detail]   错误 URL:", data.url);
+
           if (data.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error("[HLS] 网络错误:", data);
+                console.error("[HLS] 网络错误，尝试重新加载");
                 hls.startLoad();
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                console.error("[HLS] 媒体错误:", data);
+                console.error("[HLS] 媒体解码错误");
                 hls.recoverMediaError();
                 break;
               default:
-                console.error("[HLS] 无法恢复的错误:", data);
+                console.error("[HLS] 无法恢复的错误，销毁 HLS 实例");
                 hls.destroy();
+                videoError.value = "视频播放失败: " + data.details;
                 break;
             }
           }
         });
 
         hlsInstance.value = hls;
+        console.log("[Detail] HLS 实例已附加到视频元素");
       } else {
         // 直接使用原生 video 标签播放
         video.src = videoUrl.value;
